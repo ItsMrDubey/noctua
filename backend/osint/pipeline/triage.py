@@ -275,8 +275,15 @@ class Triage:
             return cls(yaml.safe_load(f) or {}, gazetteer)
 
     @classmethod
-    def default(cls) -> "Triage":
-        return cls.from_file(DEFAULT_CONFIG, LazyGazetteer(DEFAULT_GAZETTEER_DIR))
+    def default(cls, config_path: Path = DEFAULT_CONFIG,
+                gazetteer_dir: Path = DEFAULT_GAZETTEER_DIR) -> "Triage":
+        return cls.from_file(config_path, LazyGazetteer(gazetteer_dir))
+
+    def preload(self) -> None:
+        """Load the (lazy) gazetteer now; blocking, so call it from a worker thread."""
+        get = getattr(self.gazetteer, "get", None)
+        if get is not None:
+            get()
 
     # ------------------------------------------------------------------ scoring
 

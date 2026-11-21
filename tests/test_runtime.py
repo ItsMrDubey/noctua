@@ -68,7 +68,7 @@ async def test_maintenance_prunes_off_the_event_loop(tmp_path, monkeypatch):
 
 
 def test_prune_live_uses_per_kind_max_age(tmp_path):
-    from osint.runtime import prune_live
+    from osint.runtime import LIVE_MAX_AGE
 
     runtime = _runtime(tmp_path)
     now = utcnow()
@@ -78,6 +78,51 @@ def test_prune_live_uses_per_kind_max_age(tmp_path):
                            ("sea:new", "sea", timedelta(hours=5)),
                            ("sea:old", "sea", timedelta(hours=7))):
         live[tid] = Position(track_id=tid, kind=kind, ts=now - age, lat=0, lon=0, source="t")
-    assert prune_live(runtime.ingestor, now) == 2
+    assert runtime.ingestor.prune_live(LIVE_MAX_AGE, now) == 2
     assert set(runtime.ingestor.live) == {"air:new", "sea:new"}
     runtime.store.close()
+
+
+async def test_maintenance_compacts_every_dataset_off_the_loop(tmp_path, monkeypatch):
+    import threading
+
+    from osint.store.lake import SCHEMAS
+
+    runtime = _runtime(tmp_path)
+    runtime.maintenance_interval_s = 0.01
+    calls = []
+
+    def compact(dataset, older_than):
+        calls.append((dataset, threading.current_thread() is threading.main_thread()))
+        assert older_than <= utcnow() - timedelta(minutes=10)
+        return 0
+
+    monkeypatch.setattr(runtime.lake, "compact", compact)
+    await runtime.start()
+    try:
+        await eventually(lambda: {d for d, _ in calls} >= set(SCHEMAS))
+    finally:
+        await runtime.stop()
+    assert not any(on_main for _, on_main in calls)
+
+
+def test_triage_built_from_settings_paths(tmp_path):
+    runtime = _runtime(tmp_path)
+    triage = runtime.ingestor._triage
+    assert triage is not None
+    assert triage.gazetteer.src_dir == tmp_path / "gazetteer"
+    runtime.store.close()
+
+
+async def test_start_preloads_triage_in_a_thread(tmp_path, monkeypatch):
+    import threading
+
+    runtime = _runtime(tmp_path)
+    threads = []
+    monkeypatch.setattr(runtime.ingestor._triage, "preload",
+                        lambda: threads.append(threading.current_thread()))
+    await runtime.start()
+    try:
+        assert len(threads) == 1 and threads[0] is not threading.main_thread()
+    finally:
+        await runtime.stop()

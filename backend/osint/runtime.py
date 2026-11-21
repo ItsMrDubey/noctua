@@ -12,7 +12,8 @@ from osint.core.geo import utcnow
 from osint.core.metrics import Metrics
 from osint.core.scheduler import Scheduler
 from osint.pipeline.ingest import Ingestor
-from osint.store.lake import Lake
+from osint.pipeline.triage import Triage
+from osint.store.lake import SCHEMAS, Lake
 from osint.store.sqlite import SqliteStore
 
 log = logging.getLogger(__name__)
@@ -21,6 +22,8 @@ DEDUPE_WINDOW = timedelta(hours=48)
 USER_AGENT = "osint-poc/0.1"
 # how long a live position stays "current" per kind; shared with the map layers and counts
 LIVE_MAX_AGE = {"air": timedelta(minutes=30), "sea": timedelta(hours=6)}
+# closed lake partitions (hour ended this long ago) are compacted by maintenance
+COMPACT_GRACE = timedelta(minutes=10)
 
 
 def live_cutoffs(now: datetime | None = None) -> dict[str, datetime]:
@@ -34,21 +37,6 @@ def is_current(p, cutoffs: dict[str, datetime]) -> bool:
     return cutoff is None or p.ts >= cutoff
 
 
-def prune_live(ingestor: Ingestor, now: datetime | None = None) -> int:
-    """Drop stale entries from ``ingestor.live`` per kind (LIVE_MAX_AGE).
-
-    Coupling note: this reaches into Ingestor internals (``live`` and ``_lock``) because the
-    ingestor's own ``prune`` uses the 48 h dedupe window for everything. It rebinds ``live``
-    to a new dict (like ``Ingestor.prune``) so lock-free readers never see a dict mutate
-    mid-iteration. Candidate to move into Ingestor.prune.
-    """
-    cutoffs = live_cutoffs(now)
-    with ingestor._lock:
-        before = len(ingestor.live)
-        ingestor.live = {k: p for k, p in ingestor.live.items() if is_current(p, cutoffs)}
-        return before - len(ingestor.live)
-
-
 class Runtime:
     def __init__(self, settings: Settings, collectors: list[BaseCollector]) -> None:
         self.settings = settings
@@ -57,7 +45,9 @@ class Runtime:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.store = SqliteStore(settings.sqlite_path)
         self.lake = Lake(settings.lake_dir)
-        self.ingestor = Ingestor(self.store, self.lake, self.metrics)
+        self.triage = Triage.default(settings.config_dir / "triage.yaml",
+                                     settings.data_dir / "gazetteer")
+        self.ingestor = Ingestor(self.store, self.lake, self.metrics, triage=self.triage)
         self.http = httpx.AsyncClient(
             headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=30.0
         )
@@ -74,7 +64,11 @@ class Runtime:
         return self._ingest_task is not None and not self._ingest_task.done()
 
     async def start(self) -> None:
-        await asyncio.to_thread(self.ingestor.warm_start, utcnow() - DEDUPE_WINDOW)
+        # gazetteer load (~30 s) must not happen inside the first document batch
+        await asyncio.gather(
+            asyncio.to_thread(self.ingestor.warm_start, utcnow() - DEDUPE_WINDOW),
+            asyncio.to_thread(self.triage.preload),
+        )
         self._ingest_task = asyncio.create_task(self.ingestor.run(), name="ingestor")
         self._tasks.append(self._ingest_task)
         self._tasks.append(asyncio.create_task(self._maintenance(), name="maintenance"))
@@ -85,9 +79,14 @@ class Runtime:
             await asyncio.sleep(self.maintenance_interval_s)
             try:
                 await asyncio.to_thread(self.ingestor.prune, utcnow() - DEDUPE_WINDOW)
-                await asyncio.to_thread(prune_live, self.ingestor)
+                await asyncio.to_thread(self.ingestor.prune_live, LIVE_MAX_AGE)
             except Exception:
                 log.exception("maintenance pass failed")
+            for dataset in SCHEMAS:
+                try:
+                    await asyncio.to_thread(self.lake.compact, dataset, utcnow() - COMPACT_GRACE)
+                except Exception:
+                    log.exception("lake compaction of %s failed", dataset)
 
     async def stop(self) -> None:
         try:
@@ -111,3 +110,4 @@ class Runtime:
                 await self.http.aclose()
             finally:
                 self.store.close()
+                self.lake.close()

@@ -57,7 +57,8 @@ class Ingestor:
         self._seen_obs: dict[tuple[str, str], datetime] = {}
         # document id -> fetched_at; kept >= doc_max_age so a stale-skip covers expiry
         self._seen_docs: dict[str, datetime] = {}
-        self._triage = triage  # created lazily (loads lexicons + gazetteer) on first document
+        # Runtime passes a settings-aware Triage and preloads it; else created lazily
+        self._triage = triage
         self.doc_max_age = doc_max_age
         self._last_flush = time.monotonic()
         self._task: asyncio.Task | None = None
@@ -223,6 +224,20 @@ class Ingestor:
                 k: ts for k, ts in self._last_written.items() if ts >= older_than
             }
             self.live = {k: p for k, p in self.live.items() if p.ts >= older_than}
+
+    def prune_live(self, max_age_by_kind: dict[str, timedelta],
+                   now: datetime | None = None) -> int:
+        """Drop live positions older than their kind's max age (unknown kinds are kept).
+
+        Rebinds ``live`` to a new dict (like ``prune``) so lock-free readers never see the
+        dict mutate mid-iteration. Returns the number of entries dropped."""
+        now = now or utcnow()
+        cutoffs = {kind: now - age for kind, age in max_age_by_kind.items()}
+        with self._lock:
+            before = len(self.live)
+            self.live = {k: p for k, p in self.live.items()
+                         if (c := cutoffs.get(p.kind)) is None or p.ts >= c}
+            return before - len(self.live)
 
     def _error(self, what: str, exc: BaseException) -> str:
         with self._lock:
