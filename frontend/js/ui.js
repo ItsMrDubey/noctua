@@ -1,0 +1,67 @@
+// DOM helpers: status bar, details panel, formatting.
+export const $ = (id) => document.getElementById(id);
+const ENT = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+export const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ENT[c]);
+const nf = (n, d = 0) => (n == null || isNaN(n) ? "–" : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));
+
+export function ago(ts) {
+  if (ts == null) return "–";
+  const t = typeof ts === "number" ? (ts < 1e11 ? ts * 1000 : ts) : Date.parse(ts);
+  if (isNaN(t)) return esc(ts);
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  const rel = s < 60 ? s + " s ago" : s < 3600 ? Math.floor(s / 60) + " min ago" : s < 86400 ? Math.floor(s / 3600) + " h ago" : Math.floor(s / 86400) + " d ago";
+  return rel + " (" + new Date(t).toISOString().replace("T", " ").slice(0, 19) + " UTC)";
+}
+
+export function renderStatus(status, errors) {
+  const rows = [];
+  const sources = (status && status.sources) || {};
+  for (const n of Object.keys(sources)) {
+    const s = sources[n] || {};
+    const tip = n + ": " + (s.status || "unknown") + "\nlast success: " + (s.last_success || "–") + "\nlast error: " + (s.last_error || "none") + "\nlast batch: " + (s.last_batch_size == null ? "–" : s.last_batch_size);
+    rows.push('<div class="src" title="' + esc(tip) + '"><i class="dot ' + esc(s.status) + '"></i>' + esc(n) + "</div>");
+  }
+  if (!status) rows.push('<div class="src" title="' + esc("status: " + (errors.status || "no data")) + '"><i class="dot down"></i>api</div>');
+  for (const k of ["aircraft", "ships", "fires", "quakes"]) {
+    if (errors[k]) rows.push('<div class="src" title="' + esc(k + " feed: " + errors[k]) + '"><i class="dot degraded"></i>' + k + "</div>");
+  }
+  $("sources").innerHTML = rows.join("");
+  const c = (status && status.counts) || {};
+  $("counts").innerHTML = "Aircraft <b>" + nf(c.aircraft) + "</b> &nbsp; Ships <b>" + nf(c.ships) + "</b>";
+}
+
+export function startClock() {
+  const f = () => { $("clock").textContent = new Date().toISOString().slice(11, 19) + " UTC"; };
+  f();
+  setInterval(f, 1000);
+}
+
+const kv = (rows) => '<div class="kv">' + rows.filter((r) => r[1] != null && r[1] !== "").map((r) => "<span>" + esc(r[0]) + "</span><div>" + r[1] + "</div>").join("") + "</div>";
+const coords = (it) => nf(it.lat, 4) + ", " + nf(it.lon, 4);
+const extras = (ex, skip) => Object.entries(ex || {}).filter(([k]) => !skip.includes(k)).map(([k, v]) => [k, esc(typeof v === "object" ? JSON.stringify(v) : v)]);
+const unit = (v, u, d = 0) => (v == null ? "–" : nf(v, d) + " " + u);
+
+// Returns [title, bodyHtml]
+export function detailsHtml(kind, it) {
+  const ex = it.extra || {};
+  if (kind === "aircraft") {
+    const flags = [it.high_priority ? "HIGH PRIORITY" : "", it.is_mil ? "MILITARY" : ""].filter(Boolean).join(" · ");
+    return [it.name || it.id, kv([["Callsign", esc(it.name)], ["ID / hex", esc(it.id)], ["Type", esc(it.type_code)], ["Description", esc(ex.desc)],
+      ["Operator", esc(it.operator)], ["Category", esc(it.category)], ["Flags", esc(flags)],
+      ["Altitude", it.alt_ft == null ? "–" : nf(it.alt_ft) + " ft (" + nf(it.alt_ft * 0.3048) + " m)"],
+      ["Speed", unit(it.speed_kts, "kts")], ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"],
+      ["Squawk", esc(ex.squawk)], ["Position", coords(it)], ["Last seen", ago(it.ts)], ...extras(ex, ["squawk", "desc"])])];
+  }
+  if (kind === "ships") {
+    return [it.name || it.id, kv([["Name", esc(it.name)], ["ID / MMSI", esc(it.id)], ["Type", esc(it.type_code)], ["Operator", esc(it.operator)], ["Category", esc(it.category)],
+      ["Military", it.is_mil ? "Yes" : "No"], ["Speed", unit(it.speed_kts, "kts", 1)], ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"],
+      ["Position", coords(it)], ["Last seen", ago(it.ts)], ...extras(ex, [])])];
+  }
+  if (kind === "fires") {
+    return ["Fire detection", kv([["ID", esc(it.id)], ["FRP", unit(it.frp, "MW", 1)], ["Confidence", esc(it.confidence)], ["Satellite", esc(it.satellite)],
+      ["Day / night", it.daynight === "D" ? "Day" : it.daynight === "N" ? "Night" : esc(it.daynight)], ["Position", coords(it)], ["Detected", ago(it.ts)]])];
+  }
+  const url = /^https?:\/\//.test(it.url || "") ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener">USGS event page</a>' : "";
+  return ["M " + nf(it.mag, 1) + " · " + (it.place || "Earthquake"), kv([["Magnitude", nf(it.mag, 1)], ["Place", esc(it.place)], ["Depth", unit(it.depth_km, "km", 1)],
+    ["Type", esc(it.event_type)], ["Position", coords(it)], ["Time", ago(it.ts)], ["Link", url], ["ID", esc(it.id)]])];
+}

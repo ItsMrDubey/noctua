@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OSINT // Global Picture</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1/Build/Cesium/Widgets/widgets.css">
+<link rel="stylesheet" href="/static/style.css">
+<script>window.CESIUM_BASE_URL = "https://cdn.jsdelivr.net/npm/cesium@1/Build/Cesium/";</script>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1/Build/Cesium/Cesium.js"></script>
+</head>
+<body>
+<div id="globe"></div>
+
+<header id="topbar" class="panel">
+  <div class="brand">OSINT <span>//</span> Global Picture</div>
+  <div id="sources" class="sources"></div>
+  <div id="counts" class="counts"></div>
+  <div class="search">
+    <input id="search" type="search" placeholder="Search name / id / type / operator" autocomplete="off">
+    <div id="results" class="results hidden"></div>
+  </div>
+  <div id="clock" class="clock">--:--:-- UTC</div>
+</header>
+
+<aside id="left" class="panel">
+  <h3>Layers</h3>
+  <label class="row"><input type="checkbox" id="t-aircraft" checked><span class="sw" style="--c:#ff9a1f"></span>Military aircraft<b id="c-aircraft">–</b></label>
+  <label class="row sub"><input type="checkbox" id="t-aircraft-hp"><span class="sw" style="--c:#ff3b3b"></span>High-priority only</label>
+  <label class="row"><input type="checkbox" id="t-ships" checked><span class="sw" style="--c:#2fd8ff"></span>Ships<b id="c-ships">–</b></label>
+  <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw" style="--c:#ff3b3b"></span>Military ships only</label>
+  <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a00"></span>Fires 24 h<b id="c-fires">–</b></label>
+  <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw" style="--c:#ffe14a"></span>Quakes 24 h<b id="c-quakes">–</b></label>
+  <h3>Imagery</h3>
+  <label class="row"><input type="checkbox" id="t-labels"><span class="sw" style="--c:#aaa"></span>Labels overlay</label>
+  <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
+  <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
+  <label class="row date">GIBS date <input type="date" id="gibs-date"></label>
+</aside>
+
+<aside id="right" class="panel hidden">
+  <button id="close-details" class="close" title="Close">&times;</button>
+  <h3 id="d-title">Details</h3>
+  <div id="d-body"></div>
+  <div class="actions">
+    <button id="d-fly">Fly to</button>
+    <button id="d-follow" class="hidden">Follow: off</button>
+  </div>
+</aside>
+
+<footer id="attrib" class="panel">Imagery: Esri / NASA GIBS &bull; Data: ADS-B aggregators, AISStream, NASA FIRMS, USGS</footer>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
