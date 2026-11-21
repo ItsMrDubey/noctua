@@ -3,9 +3,10 @@ events, so gazetteer / triage fixes apply retroactively.
 
     python -m osint.pipeline.retriage [--days N] [--rebuild-events] [--dry-run]
 
-Safe while the server runs: partitions are rewritten one at a time and the lake write lock is
-held only for each file swap (``Lake.rewrite_partition``). The running server's EventBuilder
-keeps an in-memory index, so RESTART THE SERVER after ``--rebuild-events``.
+Safe while the server runs: partitions are rewritten one at a time and the lake's dataset
+lock (an OS file lock shared with the server) is held only for each file swap
+(``Lake.rewrite_partition``). ``--rebuild-events`` holds ``data/.event_rebuild.lock``: the
+server's EventBuilder pauses meanwhile and reloads its index afterwards (no restart needed).
 """
 
 import argparse
@@ -111,12 +112,7 @@ def retriage(lake: Lake, triage: Triage, *, since: datetime | None = None,
 
 def _event_snapshot(store: Any) -> dict[str, tuple]:
     """doc_id -> (title, place_name) of the event that holds it (news events)."""
-    with store._lock:
-        rows = store._db.execute(
-            "SELECT d.doc_id, e.title, e.place_name FROM events e JOIN event_documents d "
-            "ON d.event_id = e.id WHERE e.id NOT IN (SELECT event_id FROM sensor_events)"
-        ).fetchall()
-    return {r[0]: (r[1], r[2]) for r in rows}
+    return store.doc_event_places()
 
 
 def event_examples(before: dict[str, tuple], after: dict[str, tuple], n: int = 8) -> list[dict]:
@@ -157,12 +153,16 @@ def main(argv: list[str] | None = None) -> int:
 
         store = SqliteStore(st.sqlite_path)
         before = _event_snapshot(store)
+        from osint.pipeline.extract.store import ExtractionStore
+
+        verifier = ExtractionStore(st.data_dir / "extraction.sqlite")
         res = rebuild_events(store, lake, EventsConfig.from_file(st.config_dir / "events.yaml"),
-                             cameo_category=load_cameo_map(st.config_dir / "triage.yaml"))
+                             cameo_category=load_cameo_map(st.config_dir / "triage.yaml"),
+                             verifier=verifier)
         examples = event_examples(before, _event_snapshot(store))
         print(msgspec.json.format(msgspec.json.encode(
             {"rebuild_events": res, "place_change_examples": examples}), indent=2).decode())
-        print("NOTE: restart the server now; its EventBuilder keeps an in-memory index.")
+        verifier.close()
         store.close()
     lake.close()
     return 0

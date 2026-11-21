@@ -34,6 +34,7 @@ Pure CPU and deterministic for a given input order; the caller persists the resu
 from __future__ import annotations
 
 import base64
+import hashlib
 import math
 import os
 import re
@@ -71,6 +72,21 @@ def new_ulid(ts: datetime | None = None) -> str:
     Lexical order follows creation time."""
     ms = int((ts.timestamp() if ts else time.time()) * 1000)
     value = (ms & ((1 << 48) - 1)) << 80 | int.from_bytes(os.urandom(10), "big")
+    out = []
+    for _ in range(26):
+        out.append(_CROCKFORD[value & 31])
+        value >>= 5
+    return "".join(reversed(out))
+
+
+def event_id_for(doc_id: str, ts: datetime) -> str:
+    """Deterministic ULID-shaped event id: 48-bit milliseconds of ``ts`` (the primary
+    article's published_at) + 80 bits of sha1(primary document id). The same primary
+    article always yields the same id, so extraction results, verification, imagery and
+    benchmark labels stay linked across event rebuilds."""
+    ms = int(ts.timestamp() * 1000)
+    digest = int.from_bytes(hashlib.sha1(doc_id.encode("utf-8")).digest()[:10], "big")
+    value = (ms & ((1 << 48) - 1)) << 80 | digest
     out = []
     for _ in range(26):
         out.append(_CROCKFORD[value & 31])
@@ -319,6 +335,7 @@ class EventState:
     # hooks for M3/M4 status levels
     sensor_corroborated: bool = False
     official: bool = False
+    gen: int = 0  # rebuild generation that wrote the event (events.rebuild_events)
 
     @property
     def source_diversity(self) -> int:
@@ -349,7 +366,7 @@ class EventState:
                 "has_article": self.has_article, "vector": self.vector,
                 "languages": sorted(self.languages),
                 "sensor_corroborated": self.sensor_corroborated, "official": self.official,
-                "v": CLUSTER_VERSION,
+                "v": CLUSTER_VERSION, "gen": self.gen,
             },
         }
 
@@ -378,7 +395,7 @@ class EventState:
             has_article=bool(st.get("has_article")), vector=st.get("vector"),
             languages=set(st.get("languages") or []),
             sensor_corroborated=bool(st.get("sensor_corroborated")),
-            official=bool(st.get("official")),
+            official=bool(st.get("official")), gen=int(st.get("gen") or 0),
         )
 
 
@@ -444,6 +461,9 @@ class Clusterer:
         self.lsh = LSHIndex(cfg.permutations, cfg.bands)
         self.events: dict[str, EventState] = {}
         self._geo: dict[int, set[str]] = {}
+        self.generation = 0  # stamped on created events (rebuild generation)
+        # primary document id -> event id to reuse (a rebuild keeps pre-existing ids)
+        self.id_override: dict[str, str] = {}
         from osint.pipeline.triage import Lexicon  # local: triage loads the gazetteer stack
 
         self._gates = Lexicon()
@@ -467,6 +487,12 @@ class Clusterer:
                     del self._geo[old_cell]
         if ev.h3_3 is not None:
             self._geo.setdefault(ev.h3_3, set()).add(ev.id)
+
+    def reset(self) -> None:
+        """Forget every in-memory event (after an external rebuild)."""
+        self.events.clear()
+        self._geo.clear()
+        self.lsh = LSHIndex(self.cfg.permutations, self.cfg.bands)
 
     def _add_event(self, ev: EventState) -> None:
         self.events[ev.id] = ev
@@ -586,10 +612,13 @@ class Clusterer:
     # ---------------------------------------------------------------- mutation
 
     def _new_event(self, doc: ClusterDoc, category: str, now: datetime) -> EventState:
-        ev = EventState(id=new_ulid(now), category=category, t_start=doc.published_at,
+        eid = self.id_override.get(doc.id) or event_id_for(doc.id, doc.published_at)
+        if eid in self.events:  # same primary article again (re-fetch): keep ids unique
+            eid = new_ulid(now)
+        ev = EventState(id=eid, category=category, t_start=doc.published_at,
                         t_end=doc.published_at, first_seen=now, updated_at=now,
                         title=doc.title, summary=doc.snippet,
-                        precision=None if doc.located else UNLOCATED)
+                        precision=None if doc.located else UNLOCATED, gen=self.generation)
         self._add_event(ev)
         return ev
 

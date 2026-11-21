@@ -23,9 +23,8 @@ import hashlib
 import inspect
 import json
 import logging
-import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -37,15 +36,17 @@ import yaml
 from osint.config import ROOT
 from osint.core.geo import utcnow
 from osint.core.metrics import Metrics
+from osint.enrich.gazetteer import fold
 from osint.pipeline.cluster import (
     CLUSTER_VERSION,
+    PRECISION_RANK,
     ClusterDoc,
     Clusterer,
     Embedder,
     EventState,
 )
 from osint.pipeline.corroborate import CorroborationConfig, Corroborator
-from osint.store.lake import Lake
+from osint.store.lake import FileLock, Lake
 from osint.store.sqlite import SqliteStore
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ log = logging.getLogger(__name__)
 DEFAULT_CONFIG = ROOT / "config" / "events.yaml"
 CURSOR_NAME = "event_builder"
 REBUILD_STATE = "event_rebuild"
+REBUILD_LOCK = ".event_rebuild.lock"
 NO_ARTICLE_BACKING = "no_article_backing"
 STATUS_LEVELS = ("reported", "multi-source", "sensor-corroborated", "official")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -270,6 +272,11 @@ LIMIT ?
 """
 
 
+def rebuild_lock_path(sqlite_path: Path) -> Path:
+    """``data/.event_rebuild.lock`` next to the events database."""
+    return Path(sqlite_path).parent / REBUILD_LOCK
+
+
 def _ts(us: int | None) -> datetime | None:
     return None if us is None else _EPOCH + timedelta(microseconds=us)
 
@@ -344,6 +351,11 @@ class EventBuilder:
         except (TypeError, ValueError):
             self._lake_time_window = False
         self._warm = False
+        self._rebuild_at: str | None = None
+        # OS lock shared with rebuild_events: passes are skipped while a rebuild runs
+        path = getattr(store, "path", None)
+        self.rebuild_lock: Path | None = rebuild_lock_path(path) if path else None
+        self.paused = False
         self._stop = asyncio.Event()
         self.passes = 0
         self.last_pass: PassStats | None = None
@@ -366,11 +378,13 @@ class EventBuilder:
     def warm_start(self) -> None:
         """Rebuild the in-memory index (recent events) and the processed-document set."""
         migrate_events(self.store)
+        marker = self.store.get_cursor(REBUILD_STATE) or {}
+        self._rebuild_at = marker.get("at")
+        self.clusterer.generation = int(marker.get("generation") or 0)
         now = self.clock()
         since = now - timedelta(hours=self.cfg.index_window_h)
-        sensor_ids = self.store.sensor_event_ids()  # owned by pipeline.sensor_events
-        n = self.clusterer.load(r for r in self.store.recent_events(since)
-                                if r["id"] not in sensor_ids)
+        # news events only (origin column): sensor and historical rows are never clustered
+        n = self.clusterer.load(self.store.recent_events(since))
         if self.corroborator is not None:
             self.corroborator.warm_start(now)
         self.verdicts = {k: v["verdict"] for k, v in self.store.verifications().items()}
@@ -407,9 +421,31 @@ class EventBuilder:
         return out
 
     def run_once(self) -> PassStats:
-        """One synchronous pass (call from a worker thread)."""
+        """One synchronous pass (call from a worker thread). Skipped (``paused``) while an
+        event rebuild holds the rebuild lock; after a rebuild the index is reloaded."""
+        lock = FileLock(self.rebuild_lock, timeout=0) if self.rebuild_lock else None
+        if lock is not None:
+            try:
+                lock.acquire()
+            except TimeoutError:
+                self.paused = True
+                self._warm = False  # reload everything once the rebuild is done
+                return PassStats()
+        self.paused = False
+        try:
+            return self._run_once()
+        finally:
+            if lock is not None:
+                lock.release()
+
+    def _run_once(self) -> PassStats:
         t0 = time.perf_counter()
+        if self._warm and (self.store.get_cursor(REBUILD_STATE) or {}).get(
+                "at") != self._rebuild_at:
+            self._warm = False  # a rebuild ran (another process): reload the index
         if not self._warm:
+            self.clusterer.reset()
+            self._seen.clear()
             self.warm_start()
         now = self.clock()
         cursor = self._cursor()
@@ -463,42 +499,59 @@ class EventBuilder:
     # ------------------------------------------------------------ verification
 
     def apply_verdicts(self, now: datetime) -> int:
-        """Merge new extraction verdicts (``verifier.verdicts_since`` cursor) into events:
-
-        * unsupported: confidence capped (and hidden from the map default view)
-        * mismatch: confidence penalised; if the extraction geocoded a city/point place, the
-          event moves there (old place kept as field ``location_before_extraction``)
-        * supported: confidence bonus; verbatim quotes become event_fields
-        Idempotent: a verdict whose fingerprint is unchanged is not re-applied."""
+        """Merge new extraction verdicts (``verifier.verdicts_since`` cursor) into events
+        held in the clusterer's index (see ``apply_verdict_records``)."""
         since = self._verdict_cursor or now - timedelta(hours=self.cfg.index_window_h)
         changed = self.verifier.verdicts_since(since - timedelta(minutes=1))
         self._verdict_cursor = now
         ids = [e for e in changed if e in self.clusterer.events]
         if not ids:
             return 0
-        recs = self.verifier.get_many(ids)
-        known = self.store.verifications(ids)
+        return self.apply_verdict_records(
+            {e: self.clusterer.events[e] for e in ids}, self.verifier.get_many(ids), now)
+
+    def apply_verdict_records(self, events: dict[str, EventState], recs: dict[str, dict],
+                              now: datetime, *, force: bool = False) -> int:
+        """Apply extraction records to ``events``:
+
+        * unsupported - and a mismatch on the event *type* (incl. an article about an
+          untracked ``other`` event): confidence capped, hidden from the map default view
+        * mismatch (place/country): confidence penalised; if the extraction geocoded a
+          city/point place, the event moves there (old place kept as field
+          ``location_before_extraction``)
+        * supported: confidence bonus; verbatim quotes become event_fields; an event
+          coarser than city is refined to the extraction's city/point place when it is in
+          the same country (or, for an unlocated event, when the place name is quoted
+          verbatim) - never a downgrade, never across countries
+        Idempotent: a verdict whose fingerprint is unchanged is not re-applied (``force``
+        re-applies, e.g. after a rebuild re-created the events)."""
+        from osint.pipeline.extract.verdict import effective_verdict
+
+        known = self.store.verifications(list(events))
         rows, fields, verifs = [], [], []
-        for eid in ids:
+        for eid, ev in events.items():
             rec = recs.get(eid) or {}
-            verdict = rec.get("verdict")
-            if rec.get("status") != "done" or verdict not in (
+            raw = rec.get("verdict")
+            if rec.get("status") != "done" or raw not in (
                     "supported", "unsupported", "mismatch"):
                 continue
+            reasons = list(rec.get("reasons") or [])
+            verdict = effective_verdict(raw, reasons)
             quotes = [q for q in rec.get("quotes") or [] if isinstance(q, dict)]
             geo = rec.get("geo") or None
-            fp = json.dumps([verdict, rec.get("reasons"), geo, quotes], sort_keys=True,
-                            default=str)
+            fp = json.dumps([verdict, reasons, geo, quotes], sort_keys=True, default=str)
             fp = hashlib.sha1(fp.encode("utf-8")).hexdigest()[:16]
             self.verdicts[eid] = verdict
-            if (known.get(eid) or {}).get("fingerprint") == fp:
+            if not force and (known.get(eid) or {}).get("fingerprint") == fp:
                 continue
-            ev = self.clusterer.events[eid]
             doc_id = rec.get("doc_id") or "extraction"
-            if verdict == "mismatch" and geo and geo.get("precision") in ("city", "point") \
-                    and geo.get("lat") is not None and geo.get("lon") is not None:
+            fine = bool(geo) and geo.get("precision") in ("city", "point") \
+                and geo.get("lat") is not None and geo.get("lon") is not None
+            if verdict == "mismatch" and fine:
                 fields += self._relocate(ev, rec, geo, doc_id)
             if verdict == "supported":
+                if fine and self._may_refine(ev, rec, geo, quotes):
+                    fields += self._relocate(ev, rec, geo, doc_id, refine=True)
                 for q in quotes:
                     if q.get("verbatim") and q.get("quote"):
                         fields.append({"event_id": eid, "field": str(q.get("field") or "quote"),
@@ -507,16 +560,33 @@ class EventBuilder:
             ev.status, ev.confidence = self.clusterer.scorer(ev, now)
             ev.updated_at = now
             rows.append(ev.to_row())
-            verifs.append({"event_id": eid, "verdict": verdict,
-                           "reasons": rec.get("reasons") or [], "quotes": quotes,
-                           "fingerprint": fp})
+            verifs.append({"event_id": eid, "verdict": verdict, "reasons": reasons,
+                           "quotes": quotes, "fingerprint": fp})
             self.metrics.inc("event_verdicts_applied_total", verdict=verdict)
         if verifs:
             self.store.save_events(rows, fields=fields)
             self.store.save_verifications(verifs)
         return len(verifs)
 
-    def _relocate(self, ev: EventState, rec: dict, geo: dict, doc_id: str) -> list[dict]:
+    @staticmethod
+    def _may_refine(ev: EventState, rec: dict, geo: dict, quotes: list[dict]) -> bool:
+        """Supported extraction with a finer place: upgrade only, same country only."""
+        if PRECISION_RANK.get(ev.precision or "", -1) >= PRECISION_RANK["city"]:
+            return False  # already city/point: never moved by a supported verdict
+        country = (geo.get("country") or "").upper()
+        if ev.lat is not None and ev.country:
+            return bool(country) and country == ev.country.upper()
+        # unlocated (or no known country): the place must be quoted verbatim
+        where = (rec.get("result") or {}).get("where") or {}
+        name = fold(str(where.get("place_name") or "")).strip()
+        if len(name) < 3:
+            return False
+        texts = [str(q.get("quote") or "") for q in quotes if q.get("verbatim")]
+        texts += [ev.title or "", ev.summary or ""]
+        return any(name in fold(t) for t in texts)
+
+    def _relocate(self, ev: EventState, rec: dict, geo: dict, doc_id: str, *,
+                  refine: bool = False) -> list[dict]:
         lat, lon = float(geo["lat"]), float(geo["lon"])
         if ev.lat is not None and abs(ev.lat - lat) < 1e-6 and abs(ev.lon - lon) < 1e-6:
             return []
@@ -532,8 +602,10 @@ class EventBuilder:
         ev.h3_3, ev.h3_5, ev.h3_7 = (h3.str_to_int(h3.latlng_to_cell(lat, lon, r))
                                      for r in (3, 5, 7))
         self.clusterer._index_geo(ev, old_cell)
+        note = ("refined: supported extraction names a finer place" if refine
+                else "moved: extraction place mismatch")
         return [{"event_id": ev.id, "field": "location_before_extraction", "value": old[:300],
-                 "doc_id": doc_id, "quote": "moved: extraction place mismatch"},
+                 "doc_id": doc_id, "quote": note},
                 {"event_id": ev.id, "field": "location", "value": name, "doc_id": doc_id,
                  "quote": f"extraction: {name}"}]
 
@@ -611,65 +683,184 @@ def migrate_events(store: SqliteStore) -> dict[str, int]:
     return out
 
 
+# rebuild replay reads (same columns as _DOC_SQL, for row_to_doc): one fetched_at day of
+# articles at a time, then that day's GDELT rows streamed in fetched_at order
+_REBUILD_ARTICLES_SQL = """
+SELECT id, source, kind, origin_id, url, title, snippet, language,
+       epoch_us(published_at), epoch_us(fetched_at), attrs, relevance, categories, places,
+       place_name, place_precision, place_confidence, lat, lon, h3_3, h3_5, h3_7
+FROM documents
+WHERE fetched_at >= ? AND fetched_at < ? AND published_at >= ? AND relevance >= ?
+  AND kind <> 'gdelt_event'
+ORDER BY fetched_at, id
+"""
+_REBUILD_GDELT_SQL = """
+SELECT id, source, kind, origin_id, url, title, snippet, language,
+       epoch_us(published_at), epoch_us(fetched_at), attrs, relevance, categories, places,
+       place_name, place_precision, place_confidence, lat, lon, h3_3, h3_5, h3_7
+FROM documents
+WHERE fetched_at >= ? AND fetched_at < ? AND published_at >= ? AND kind = 'gdelt_event'
+ORDER BY fetched_at, id
+"""
+_FETCHED_RANGE_SQL = """
+SELECT min(epoch_us(fetched_at)), max(epoch_us(fetched_at)) FROM documents
+WHERE kind <> 'gdelt_event' AND relevance >= ?
+"""
+
+
+def _docs(rows: list[tuple]) -> list[ClusterDoc]:
+    out = []
+    for r in rows:
+        try:
+            d = row_to_doc(r)
+        except (TypeError, ValueError):
+            continue
+        if d.fetched_at is not None:
+            out.append(d)
+    return out
+
+
 def rebuild_events(store: SqliteStore, lake: Lake, config: EventsConfig | None = None, *,
                    cameo_category: Callable[[str, str], str | None] | None = None,
                    step: timedelta = timedelta(minutes=15),
-                   metrics: Metrics | None = None) -> dict[str, Any]:
-    """Re-cluster every lake document from scratch with the current rules.
+                   metrics: Metrics | None = None, verifier: Any = None,
+                   batch: int = 5000, lock_timeout: float = 600.0,
+                   now: datetime | None = None) -> dict[str, Any]:
+    """Re-cluster every lake document from scratch with the current rules, memory-bounded.
 
-    Clears news events (and their documents/fields/corroborations) and all GDELT decisions,
-    then replays the documents in fetched_at order in ``step`` slices, each with the clock
-    set to the slice end, so time-dependent rules (GDELT staleness, windows, index pruning)
-    behave as they did live. GDELT decisions are re-derived from the same lake rows. Sets
-    the builder cursor and a rebuild marker (see ``migrate_events``)."""
+    Runs under the rebuild lock (``data/.event_rebuild.lock``): a live EventBuilder of any
+    process skips its passes meanwhile and reloads its index afterwards. Documents are
+    replayed one fetched_at day at a time (partition-pruned reads): the day's articles,
+    and - only when the day has articles - its GDELT rows streamed in ``batch``-row reads,
+    merged in fetched_at order and processed in ``step`` slices with the clock at the slice
+    end, so time rules (GDELT staleness, windows, index pruning) behave as they did live.
+    Only the clusterer's 72 h index and one slice stay in memory.
+
+    Identity: an event re-created from the same primary article keeps its id (existing
+    ids are carried over; new ones are derived from the primary article), so extraction,
+    verification, imagery and benchmark labels stay linked. Events are stamped with a new
+    rebuild generation; afterwards only *older-generation news* events are deleted - sensor
+    and historical events are never touched. GDELT decisions are re-derived."""
     cfg = config or EventsConfig()
-    store.clear_news_events()
-    rows = lake.query(_DOC_SQL, [_EPOCH, _EPOCH, cfg.min_relevance, 2**62])
-    docs = []
-    for r in rows:
-        try:
-            docs.append(row_to_doc(r))
-        except (TypeError, ValueError):
-            continue
-    docs = [d for d in docs if d.fetched_at is not None]
-    sim = [docs[0].fetched_at if docs else utcnow()]
+    with FileLock(rebuild_lock_path(store.path), lock_timeout):
+        return _rebuild_locked(store, lake, cfg, cameo_category=cameo_category, step=step,
+                               metrics=metrics, verifier=verifier, batch=batch, now=now)
+
+
+def _rebuild_locked(store: SqliteStore, lake: Lake, cfg: EventsConfig, *,
+                    cameo_category: Callable[[str, str], str | None] | None,
+                    step: timedelta, metrics: Metrics | None, verifier: Any, batch: int,
+                    now: datetime | None) -> dict[str, Any]:
+    marker = store.get_cursor(REBUILD_STATE) or {}
+    gen = int(marker.get("generation") or 0) + 1
+    carry = store.news_primary_event_ids()
+    carried = set(carry.values())
+    store.clear_gdelt_decisions()
+    sim = [utcnow()]
     builder = EventBuilder(store, lake, metrics or Metrics(), cfg,
                            cameo_category=cameo_category, clock=lambda: sim[0])
     builder._warm = True
+    builder.clusterer.generation = gen
+    builder.clusterer.id_override = carry
+    builder.verdicts = {k: v["verdict"] for k, v in store.verifications().items()}
     totals = PassStats()
-    i = 0
-    while i < len(docs):
-        end = docs[i].fetched_at + step
-        j = i
-        while j < len(docs) and docs[j].fetched_at < end:
-            j += 1
-        now = docs[j - 1].fetched_at
-        sim[0] = now
-        horizon = now - timedelta(hours=cfg.index_window_h)
-        batch = [d for d in docs[i:j] if d.published_at >= horizon]
-        res = builder.clusterer.process(batch, now)
-        changed = [builder.clusterer.events[e].to_row() for e in res.changed
-                   if e in builder.clusterer.events]
-        store.save_events(changed, res.documents, res.fields, res.decisions)
-        totals.documents += len(batch)
-        totals.clustered += res.clustered
-        totals.created += len(res.created)
-        totals.gdelt_accepted += res.gdelt_accepted
-        for k, v in res.gdelt_rejected.items():
-            totals.gdelt_rejected[k] = totals.gdelt_rejected.get(k, 0) + v
-        for k, v in res.skipped.items():
-            totals.skipped[k] = totals.skipped.get(k, 0) + v
-        i = j
+    peak = 0
+    reset: set[str] = set()
+    window = timedelta(hours=cfg.index_window_h)
+    stale = timedelta(hours=cfg.gdelt_stale_h)
+    rng = lake.query(_FETCHED_RANGE_SQL, [cfg.min_relevance])
+    newest: datetime | None = None
+    if rng and rng[0][0] is not None:
+        day = _ts(rng[0][0]).replace(hour=0, minute=0, second=0, microsecond=0)
+        last = _ts(rng[0][1])
+        recent_ids: dict[str, datetime] = {}  # article id -> fetched (re-fetch dedupe)
+        while day <= last:
+            end = day + timedelta(days=1)
+            articles = _docs(lake.query(
+                _REBUILD_ARTICLES_SQL, [day, end, day - window, cfg.min_relevance],
+                start=day - window, end=end))
+            fresh = []
+            for d in articles:  # first fetch of each article only (as live: _seen)
+                if d.id not in recent_ids and d.published_at >= d.fetched_at - window:
+                    recent_ids[d.id] = d.fetched_at
+                    fresh.append(d)
+            articles = fresh
+            if articles:
+                gdelt = (d for rows in lake.iter_query(
+                    _REBUILD_GDELT_SQL, [day, end, day - stale], start=day - stale, end=end,
+                    batch=batch) for d in _docs(rows))
+                for slice_now, docs in _slices(articles, gdelt, step):
+                    peak = max(peak, len(docs))
+                    sim[0] = slice_now
+                    newest = max(newest or slice_now, slice_now)
+                    horizon = slice_now - window
+                    docs = [d for d in docs if d.published_at >= horizon]
+                    res = builder.clusterer.process(docs, slice_now)
+                    again = [e for e in res.created if e in carried and e not in reset]
+                    if again:  # an old event re-created under its id: re-derive its links
+                        store.reset_event_links(again)
+                        reset.update(again)
+                    changed = [builder.clusterer.events[e].to_row() for e in res.changed
+                               if e in builder.clusterer.events]
+                    store.save_events(changed, res.documents, res.fields, res.decisions)
+                    totals.documents += len(docs)
+                    totals.clustered += res.clustered
+                    totals.created += len(res.created)
+                    totals.gdelt_accepted += res.gdelt_accepted
+                    for k, v in res.gdelt_rejected.items():
+                        totals.gdelt_rejected[k] = totals.gdelt_rejected.get(k, 0) + v
+                    for k, v in res.skipped.items():
+                        totals.skipped[k] = totals.skipped.get(k, 0) + v
+            cutoff = end - window - timedelta(days=1)
+            recent_ids = {k: v for k, v in recent_ids.items() if v >= cutoff}
+            day = end
+    deleted = store.delete_events(store.news_events_before_generation(gen))
+    store.reject_orphan_gdelt_decisions(NO_ARTICLE_BACKING)
+    verified = 0
+    if verifier is not None:  # re-apply extraction results (relocations, caps)
+        events = {r["id"]: EventState.from_row(r) for r in store.recent_events(_EPOCH)}
+        builder.clusterer.reset()
+        for ev in events.values():
+            builder.clusterer._add_event(ev)
+        ids = list(events)
+        recs: dict[str, dict] = {}
+        for i in range(0, len(ids), 500):
+            recs.update(verifier.get_many(ids[i:i + 500]))
+        verified = builder.apply_verdict_records(events, recs, now or utcnow(), force=True)
+        builder.clusterer.reset()
     cursor: dict[str, Any] = {}
-    if docs:
-        newest = docs[-1].fetched_at
+    if newest is not None:
         cursor = {"fetched_at_us": int((newest - _EPOCH) / timedelta(microseconds=1)),
                   "fetched_at": newest.isoformat()}
         store.set_cursor(CURSOR_NAME, cursor)
-    store.set_cursor(REBUILD_STATE, {**cursor, "at": utcnow().isoformat()})
+    store.set_cursor(REBUILD_STATE, {**cursor, "at": utcnow().isoformat(),
+                                     "generation": gen})
     return {"documents": totals.documents, "clustered": totals.clustered,
             "created": totals.created, "gdelt_accepted": totals.gdelt_accepted,
-            "gdelt_rejected": totals.gdelt_rejected, "skipped": totals.skipped}
+            "gdelt_rejected": totals.gdelt_rejected, "skipped": totals.skipped,
+            "generation": gen, "carried_over_ids": len(reset),
+            "deleted_stale": deleted, "verdicts_reapplied": verified,
+            "peak_slice_docs": peak}
+
+
+def _slices(articles: list[ClusterDoc], gdelt: Iterator[ClusterDoc], step: timedelta
+            ) -> Iterator[tuple[datetime, list[ClusterDoc]]]:
+    """Merge two fetched_at-sorted streams and cut them into ``step`` slices; yields
+    (clock = newest fetched_at in the slice, docs). Holds one slice at a time."""
+    ai = 0
+    pending = next(gdelt, None)
+    while ai < len(articles) or pending is not None:
+        first = min(d.fetched_at for d in (
+            articles[ai] if ai < len(articles) else None, pending) if d is not None)
+        end = first + step
+        out: list[ClusterDoc] = []
+        while ai < len(articles) and articles[ai].fetched_at < end:
+            out.append(articles[ai])
+            ai += 1
+        while pending is not None and pending.fetched_at < end:
+            out.append(pending)
+            pending = next(gdelt, None)
+        yield max(d.fetched_at for d in out), out
 
 
 def wire(runtime: Runtime) -> EventBuilder:
@@ -686,6 +877,3 @@ def wire(runtime: Runtime) -> EventBuilder:
     runtime.event_builder = builder
     return builder
 
-
-def _unused(*_: object) -> None:  # pragma: no cover - keeps math import explicit for ruff
-    math.isfinite(0.0)

@@ -101,3 +101,13 @@ def test_country_inferred_from_geocoded_place_when_not_stated():
     assert v.verdict == "mismatch" and "geocodes to FI" in v.reasons[0]
     assert judge({**kal, "country": "FI"}, ext,
                  geocode=lambda p, a, c: (60.8, 24.9, "FI", "country")).verdict == "supported"
+
+
+def test_type_mismatch_is_applied_as_unsupported():
+    from osint.pipeline.extract.verdict import effective_verdict
+
+    v = judge({**EVENT, "category": "armed_conflict"},
+              normalise(raw(event_type="other"), TEXT))
+    assert v.verdict == "mismatch" and effective_verdict(v.verdict, v.reasons) == "unsupported"
+    assert effective_verdict("mismatch", ["place: X is 400 km from Y"]) == "mismatch"
+    assert effective_verdict("supported", []) == "supported"

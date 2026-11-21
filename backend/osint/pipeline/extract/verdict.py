@@ -120,6 +120,16 @@ def normalise(raw: dict, text: str) -> dict:
     }
 
 
+def effective_verdict(verdict: str | None, reasons: list[str] | None) -> str | None:
+    """The verdict the event pipeline applies: a mismatch on the event *type* (the
+    article reports an untracked ``other`` event, or an incompatible category) means the
+    article does not support this event at all -> ``unsupported`` (capped confidence,
+    hidden from the default map). Place/country mismatches stay ``mismatch``."""
+    if verdict == "mismatch" and any(str(r).startswith("type:") for r in reasons or ()):
+        return "unsupported"
+    return verdict
+
+
 def judge(event: dict, ext: dict, *, geocode: Geocoder | None = None,
           mismatch_km: float = 300.0) -> Verdict:
     """Compare a normalised extraction with the event (columns from SqliteStore)."""
