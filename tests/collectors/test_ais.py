@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import json
 from datetime import UTC, datetime
@@ -98,3 +99,60 @@ async def test_stream_raises_on_server_error():
     gen = c.stream(SimpleNamespace(settings=SimpleNamespace(aisstream_api_key="k")))
     with pytest.raises(RuntimeError, match="Api Key Is Not Valid"):
         await gen.__anext__()
+
+
+def _pos(mtype="PositionReport", **body):
+    base = {"Latitude": 30.0, "Longitude": 32.0, "Sog": 5.0, "Cog": 90.0, "TrueHeading": 91}
+    base.update(body)
+    return {"MessageType": mtype, "MetaData": {"MMSI": 1},
+            "Message": {mtype: base}}
+
+
+@pytest.mark.parametrize("mtype", ["StandardClassBPositionReport", "ExtendedClassBPositionReport"])
+def test_class_b_reports_parsed_as_positions(mtype):
+    pos, track = parse_message(_pos(mtype))
+    assert track is None and pos.track_id == "sea:1"
+    assert (pos.lat, pos.lon, pos.speed_kts, pos.heading_deg) == (30.0, 32.0, 5.0, 91)
+
+
+async def test_subscribe_includes_class_b():
+    ws = FakeWS([json.dumps(POS_MSG)])
+    c = AisCollector({"batch_seconds": 0.05})
+    c._connect = lambda *a, **k: ws
+    gen = c.stream(SimpleNamespace(settings=SimpleNamespace(aisstream_api_key="k")))
+    await asyncio.wait_for(gen.__anext__(), timeout=2)
+    await gen.aclose()
+    types = json.loads(ws.sent[0])["FilterMessageTypes"]
+    assert {"StandardClassBPositionReport", "ExtendedClassBPositionReport"} <= set(types)
+
+
+def test_cog_360_unavailable():
+    pos, _ = parse_message(_pos(Cog=360.0, TrueHeading=511))
+    assert pos.heading_deg is None
+    pos, _ = parse_message(_pos(Cog=360.0, TrueHeading=45))
+    assert pos.heading_deg == 45
+
+
+def test_sog_sentinel_102_3_unavailable():
+    assert parse_message(_pos(Sog=102.3))[0].speed_kts is None
+    assert parse_message(_pos(Sog=102.2))[0].speed_kts == 102.2
+
+
+def test_position_sentinels_dropped():
+    assert parse_message(_pos(Latitude=91.0)) == (None, None)
+    assert parse_message(_pos(Longitude=181.0)) == (None, None)
+
+
+async def test_stream_survives_bad_records(caplog):
+    bad_time = json.loads(json.dumps(POS_MSG))
+    bad_time["MetaData"]["time_utc"] = "garbage"
+    bad_lat = _pos(Latitude="x")
+    ws = FakeWS([json.dumps(bad_time), json.dumps(bad_lat), json.dumps(POS_MSG)])
+    c = AisCollector({"batch_seconds": 0.05})
+    c._connect = lambda *a, **k: ws
+    gen = c.stream(SimpleNamespace(settings=SimpleNamespace(aisstream_api_key="k")))
+    with caplog.at_level(logging.WARNING, logger="osint.collectors.ais"):
+        batch = await asyncio.wait_for(gen.__anext__(), timeout=2)
+    await gen.aclose()
+    assert len(batch.positions) == 1
+    assert len([r for r in caplog.records if "skipped 2" in r.getMessage()]) == 1

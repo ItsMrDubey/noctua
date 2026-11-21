@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -12,8 +13,13 @@ from osint.core.collector import CollectorContext, StreamCollector, register
 from osint.core.geo import utcnow
 from osint.core.models import Batch, Position, TrackInfo
 
+log = logging.getLogger(__name__)
+
 AIS_URL = "wss://stream.aisstream.io/v0/stream"
 GLOBAL_BBOX = [[[-90, -180], [90, 180]]]
+POSITION_TYPES = (
+    "PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport"
+)
 
 SHIP_TYPES = {
     0: "Not Available", 30: "Fishing", 31: "Towing", 32: "Towing (Large)", 33: "Dredging",
@@ -44,18 +50,24 @@ def parse_message(msg: dict) -> tuple[Position | None, TrackInfo | None]:
     track_id = f"sea:{mmsi}"
     mtype = msg.get("MessageType")
     body = (msg.get("Message") or {}).get(mtype) or {}
-    if mtype == "PositionReport":
+    if mtype in POSITION_TYPES:
+        lat = body.get("Latitude", meta.get("latitude"))
+        lon = body.get("Longitude", meta.get("longitude"))
+        lat, lon = float(lat), float(lon)  # TypeError/ValueError -> caller skips record
+        if lat == 91.0 or lon == 181.0:  # AIS "not available" sentinels
+            return None, None
+        cog = body.get("Cog")
+        if cog is not None and cog >= 360:  # 360 = not available
+            cog = None
         heading = body.get("TrueHeading")
         if heading is None or heading == 511:  # 511 = not available
-            heading = body.get("Cog")
+            heading = cog
         sog = body.get("Sog")
         ts = parse_ais_time(meta["time_utc"]) if meta.get("time_utc") else utcnow()
         return Position(
-            track_id=track_id, kind="sea", ts=ts,
-            lat=body.get("Latitude", meta.get("latitude")),
-            lon=body.get("Longitude", meta.get("longitude")),
+            track_id=track_id, kind="sea", ts=ts, lat=lat, lon=lon,
             source="aisstream",
-            speed_kts=sog if sog is not None and sog < 102.2 else None,  # 102.3 = n/a
+            speed_kts=sog if sog is not None and sog < 102.3 else None,  # 102.3 = n/a
             heading_deg=heading,
         ), None
     if mtype == "ShipStaticData":
@@ -94,7 +106,7 @@ class AisCollector(StreamCollector):
         subscribe = {
             "APIKey": key,
             "BoundingBoxes": self.cfg.get("bboxes") or GLOBAL_BBOX,
-            "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
+            "FilterMessageTypes": [*POSITION_TYPES, "ShipStaticData"],
         }
         batch_s = float(self.cfg.get("batch_seconds", 5))
         batch_max = int(self.cfg.get("batch_max", 5000))
@@ -102,6 +114,7 @@ class AisCollector(StreamCollector):
                                  max_size=2**20) as ws:
             await ws.send(json.dumps(subscribe))
             batch, count, deadline = Batch(source=self.name), 0, time.monotonic() + batch_s
+            skipped = 0
             while True:
                 remaining = deadline - time.monotonic()
                 raw = None
@@ -117,13 +130,21 @@ class AisCollector(StreamCollector):
                         continue
                     if "error" in msg:
                         raise RuntimeError(f"AISStream error: {msg['error']}")
-                    pos, track = parse_message(msg)
+                    try:
+                        pos, track = parse_message(msg)
+                    except (ValueError, TypeError, KeyError, AttributeError):
+                        skipped += 1
+                        count += 1
+                        pos = track = None
                     if pos is not None:
                         batch.positions.append(pos)
                     if track is not None:
                         batch.tracks.append(track)
                     count += 1
                 if time.monotonic() >= deadline or count >= batch_max:
+                    if skipped:
+                        log.warning("AIS: skipped %d malformed message(s) in batch", skipped)
+                    skipped = 0
                     if batch.size():
                         yield batch
                     batch, count, deadline = Batch(source=self.name), 0, time.monotonic() + batch_s
