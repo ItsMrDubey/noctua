@@ -1,0 +1,44 @@
+"""HTTP API: health, metrics, sources and live summary."""
+
+from collections import Counter
+from contextlib import asynccontextmanager
+from dataclasses import asdict
+
+from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
+
+from osint.runtime import Runtime
+
+
+def create_app(runtime: Runtime) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await runtime.start()
+        yield
+        await runtime.stop()
+
+    app = FastAPI(title="OSINT", version="0.1.0", lifespan=lifespan)
+
+    @app.get("/health")
+    def health() -> dict:
+        sources = {}
+        for name, h in runtime.scheduler.health.items():
+            d = asdict(h)
+            d["last_success"] = h.last_success.isoformat() if h.last_success else None
+            sources[name] = d
+        return {"status": "ok", "sources": sources}
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    def metrics() -> str:
+        return runtime.metrics.render_prometheus()
+
+    @app.get("/api/sources")
+    def sources() -> list[dict]:
+        return runtime.store.list_sources()
+
+    @app.get("/api/live/summary")
+    def live_summary() -> dict:
+        kinds = Counter(p.kind for p in list(runtime.ingestor.live.values()))
+        return {"tracks": dict(kinds), "quarantined": runtime.store.quarantine_count()}
+
+    return app
