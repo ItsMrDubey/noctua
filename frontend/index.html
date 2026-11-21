@@ -31,6 +31,20 @@
   <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw" style="--c:#ff3b3b"></span>Military ships only</label>
   <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a00"></span>Fires 24 h<b id="c-fires">–</b></label>
   <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw" style="--c:#ffe14a"></span>Quakes 24 h<b id="c-quakes">–</b></label>
+  <h3>Reference</h3>
+  <label class="row"><input type="checkbox" id="r-airports" checked><span class="sw sq" style="--c:#36c5ff"></span>Airports</label>
+  <label class="row sub"><input type="checkbox" id="r-airports-med"><span class="sw sq" style="--c:#36c5ff"></span>Include medium</label>
+  <label class="row sub"><input type="checkbox" id="r-airports-mil"><span class="sw sq" style="--c:#ff4d4d"></span>Military only</label>
+  <label class="row"><input type="checkbox" id="r-runways"><span class="sw sq" style="--c:#36c5ff"></span>Runways (zoom &lt; 400 km)</label>
+  <label class="row"><input type="checkbox" id="r-ports"><span class="sw sq" style="--c:#3ddcc2"></span>Seaports</label>
+  <label class="row"><input type="checkbox" id="r-bases" checked><span class="sw dm" style="--c:#ff5a5a"></span>Military bases</label>
+  <div id="r-chips" class="chips"></div>
+  <label class="row sub"><input type="checkbox" id="r-rings"><span class="sw" style="--c:#ff5a5a"></span>Range rings 100/300/500 km</label>
+  <label class="row"><input type="checkbox" id="r-borders" checked><span class="sw ln" style="--c:#36c5ff"></span>Country borders</label>
+  <label class="row"><input type="checkbox" id="r-disputed"><span class="sw ln" style="--c:#ffb020"></span>Disputed boundaries</label>
+  <label class="row"><input type="checkbox" id="r-maritime"><span class="sw ln" style="--c:#3ddcc2"></span>Maritime lines</label>
+  <label class="row"><input type="checkbox" id="r-choke" checked><span class="sw sq" style="--c:#ffb020"></span>Chokepoints</label>
+  <label class="row"><input type="checkbox" id="r-clabels"><span class="sw" style="--c:#36c5ff"></span>Country labels</label>
   <h3>Trails</h3>
   <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw" style="--c:#ff9a1f"></span>Show trails for all military aircraft (last 1 h)</label>
   <h3>Density (H3)</h3>
@@ -75,7 +89,7 @@
 
 <div id="pick-tip" class="panel hidden"></div>
 
-<footer id="attrib" class="panel">Imagery: Esri / NASA GIBS &bull; Data: ADS-B aggregators, AISStream, NASA FIRMS, USGS</footer>
+<footer id="attrib" class="panel">Imagery: Esri / NASA GIBS &bull; Data: ADS-B aggregators, AISStream, NASA FIRMS, USGS &bull; Reference: OurAirports, NGA WPI / Natural Earth (public domain)</footer>
 
 <script type="module" src="/static/app.js"></script>
 </body>

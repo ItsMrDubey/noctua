@@ -5,6 +5,7 @@ import { Trails } from "/static/js/trails.js";
 import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
+import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
 import { $, esc, renderStatus, startClock, detailsHtml } from "/static/js/ui.js";
 
 const errors = {};
@@ -126,6 +127,7 @@ async function main() {
   }
   function select(kind, id) {
     setFollow(false);
+    refSel = null;
     selected = { kind, id };
     $("right").classList.remove("hidden");
     tracklist.setVisible(false);
@@ -140,9 +142,12 @@ async function main() {
     const alt = (kind === "aircraft" ? 4e5 : kind === "ships" ? 2e5 : 1.5e6);
     viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(it.lon, it.lat, alt), duration: 1.8 });
   }
-  $("d-fly").addEventListener("click", () => selected && flyToItem(selected.kind, selected.id));
+  $("d-fly").addEventListener("click", () => {
+    if (refSel) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(refSel.item.lon, refSel.item.lat, refSel.kind === "airport" || refSel.kind === "runway" ? 8e4 : 4e5), duration: 1.8 });
+    else if (selected) flyToItem(selected.kind, selected.id);
+  });
   followBtn.addEventListener("click", () => setFollow(!following));
-  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; trails.clearSelected(); $("right").classList.add("hidden"); tracklist.setVisible(true); tracklist.render(true); });
+  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; refSel = null; trails.clearSelected(); $("right").classList.add("hidden"); tracklist.setVisible(true); tracklist.render(true); });
 
   const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); });
   tracklist.render(true);
@@ -151,9 +156,10 @@ async function main() {
     let hits = [];
     try { hits = scene.drillPick(click.position, 25, 16, 16); } catch (e) { hits = []; }
     if (!hits.length) { const p = scene.pick(click.position, 16, 16); if (Cesium.defined(p)) hits = [p]; }
-    let best = null, bestD = Infinity, densityHit = null;
+    let best = null, bestD = Infinity, densityHit = null, refHit = null;
     for (const picked of hits) {
       if (!picked || !picked.primitive) continue;
+      if (picked.id && picked.id.ref) { refHit = refHit || picked.id; continue; }
       if (picked.id && picked.id.h3) { densityHit = densityHit || picked.id; continue; }
       for (const l of all) {
         if (l.map.get(picked.id) !== picked.primitive) continue;
@@ -163,6 +169,7 @@ async function main() {
       }
     }
     if (best) { select(best.kind, best.id); return; }
+    if (refHit) { showRef(refHit); return; }
     if (densityHit) {
       const tip = $("pick-tip");
       tip.textContent = densityHit.density + " density: " + densityHit.count.toLocaleString() + " (H3 " + densityHit.h3 + ")";
@@ -174,6 +181,40 @@ async function main() {
   viewer.trackedEntityChanged.addEventListener(() => {
     if (following && !viewer.trackedEntity) { following = false; followBtn.textContent = "Follow: off"; followBtn.classList.remove("on"); }
   });
+
+  // ---- Reference geography ----
+  const refLayers = new ReferenceLayers(viewer, null);
+  let refSel = null;
+  const baseOn = new Set(BASE_CHIPS.map((c) => c[0]));
+  refLayers.baseTypes = baseOn;
+  $("r-chips").innerHTML = BASE_CHIPS.map(([k, c]) => '<button class="chip on" data-k="' + k + '" style="--c:' + c + '">' + k + "</button>").join("");
+  $("r-chips").addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b) return;
+    b.classList.toggle("on");
+    if (b.classList.contains("on")) baseOn.add(b.dataset.k); else baseOn.delete(b.dataset.k);
+    refLayers.setBaseTypes(baseOn);
+  });
+  for (const id of REF_IDS) {
+    $(id).addEventListener("change", (e) => refLayers.setOn(id, e.target.checked));
+    refLayers.state[id] = $(id).checked;
+  }
+  for (const id of REF_IDS) if ($(id).checked) refLayers.apply(id);
+  async function showRef(ref) {
+    setFollow(false);
+    selected = null; trails.clearSelected();
+    refSel = ref;
+    $("right").classList.remove("hidden");
+    tracklist.setVisible(false);
+    followBtn.classList.add("hidden");
+    const [title, body] = refDetails(ref);
+    $("d-title").textContent = title;
+    $("d-body").innerHTML = body;
+    if (ref.kind === "airport") {
+      const rw = await airportRunwaysHtml(ref.item);
+      if (refSel === ref && rw) { const [, b2] = refDetails(ref, rw); $("d-body").innerHTML = b2; }
+    }
+  }
 
   // ---- Search ----
   const sIn = $("search"), sOut = $("results");
@@ -211,6 +252,7 @@ async function main() {
     if (!paths.length) return;
     const has = (p) => paths.some((x) => x.startsWith(p));
     if (!has("/api/density")) disable(["d-aircraft", "d-ships", "d-fires", "d-quakes", "d-res"], "Not supported by this backend version");
+    if (!has("/api/reference")) { disable([...REF_IDS], "Reference data not supported by this backend version"); for (const id of REF_IDS) refLayers.setOn(id, false); }
     if (!has("/api/tracks")) disable(["t-miltrails"], "Not supported by this backend version");
     if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
   }).catch(() => { /* openapi unavailable: leave controls enabled */ });

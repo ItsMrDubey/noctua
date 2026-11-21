@@ -63,3 +63,11 @@ select{background:rgba(0,0,0,.35);border:1px solid var(--bd);color:var(--fg);bor
 #tracks-table td{padding:3px 4px;border-top:1px solid rgba(255,255,255,.05);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #tracks-table tr[data-id]{cursor:pointer}#tracks-table tr[data-id]:hover{background:rgba(54,197,255,.15)}
 #tracks-table tr.hp td{color:#ff7b7b;background:rgba(255,59,59,.08)}
+
+.sw.sq{border-radius:1px;background:transparent;border:1.5px solid var(--c);box-shadow:0 0 4px var(--c)}
+.sw.dm{border-radius:1px;background:transparent;border:1.5px solid var(--c);transform:rotate(45deg) scale(.85);box-shadow:0 0 4px var(--c)}
+.sw.ln{width:14px;height:0;border-radius:0;background:none;border-top:2px solid var(--c)}
+.chips{display:flex;flex-wrap:wrap;gap:4px;padding:2px 0 4px 22px}
+.chip{font:10px Consolas,"JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:3px;border:1px solid var(--c);color:var(--c);background:transparent;opacity:.4;cursor:pointer}
+.chip.on{opacity:1;background:rgba(255,255,255,.06)}
+input:disabled+.sw{opacity:.3}
