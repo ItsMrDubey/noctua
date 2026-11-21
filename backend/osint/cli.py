@@ -1,7 +1,16 @@
 """Command line entry point: `osint run`, `osint backfill <source>`."""
 
 import argparse
+import faulthandler
 import logging
+import os
+import subprocess
+import sys
+import threading
+import time
+from collections import deque
+from datetime import UTC, datetime
+from pathlib import Path
 
 import uvicorn
 
@@ -18,6 +27,90 @@ def configure_logging() -> None:
     # httpx logs full request URLs at INFO, which would leak API keys (e.g. FIRMS)
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
+
+
+_crash_file = None
+
+
+def _stamp() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def install_crash_handlers(data_dir: Path) -> Path:
+    """faulthandler (native crashes, fatal signals, hangs on SIGABRT) -> data/crash.log (append,
+    timestamped per start), and unhandled exceptions (main thread and worker threads) logged."""
+    global _crash_file
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = data_dir / "crash.log"
+    _crash_file = path.open("a", buffering=1, encoding="utf-8")
+    _crash_file.write(f"\n--- osint start {_stamp()} pid={os.getpid()} ---\n")
+    faulthandler.enable(file=_crash_file, all_threads=True)
+    log = logging.getLogger("osint.crash")
+    prev = sys.excepthook
+
+    def hook(etype, value, tb):
+        if not issubclass(etype, KeyboardInterrupt):
+            log.critical("unhandled exception", exc_info=(etype, value, tb))
+            _crash_file.write(f"{_stamp()} unhandled {etype.__name__}: {value}\n")
+        prev(etype, value, tb)
+
+    def thread_hook(args):
+        log.critical("unhandled exception in thread %s", args.thread and args.thread.name,
+                     exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+    sys.excepthook = hook
+    threading.excepthook = thread_hook
+    return path
+
+
+def describe_exit(code: int) -> str:
+    if code < 0:
+        return f"killed by signal {-code}"
+    if code > 0x7FFFFFFF - 1 or code >= 0xC0000000:  # Windows NTSTATUS crash codes
+        return f"exit code {code} (0x{code:08X})"
+    return f"exit code {code}"
+
+
+def supervise(cmd: list[str], log_path: Path, *, max_restarts: int = 5, window_s: float = 600,
+              base_backoff_s: float = 2.0, max_backoff_s: float = 60.0,
+              sleep=time.sleep, clock=time.monotonic, spawn=subprocess.Popen) -> int:
+    """Run ``cmd`` as a child; restart it after a crash with exponential backoff, giving up after
+    ``max_restarts`` restarts within ``window_s`` seconds. Exit code 0 (clean stop) is not restarted."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def note(msg: str) -> None:
+        line = f"{_stamp()} {msg}"
+        print(line, flush=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+    restarts: deque[float] = deque()
+    attempt = 0
+    while True:
+        started = clock()
+        child = spawn(cmd)
+        note(f"started pid={child.pid}: {' '.join(cmd)}")
+        try:
+            code = child.wait()
+        except KeyboardInterrupt:
+            child.terminate()
+            code = child.wait()
+            note(f"interrupted; child stopped ({describe_exit(code)})")
+            return 0
+        note(f"child pid={child.pid} exited: {describe_exit(code)} after {clock() - started:.0f}s")
+        if code == 0:
+            return 0
+        now = clock()
+        while restarts and now - restarts[0] > window_s:
+            restarts.popleft()
+        if len(restarts) >= max_restarts:
+            note(f"giving up: {max_restarts} restarts within {window_s:.0f}s")
+            return 1
+        restarts.append(now)
+        attempt = attempt + 1 if now - started < window_s else 1
+        delay = min(max_backoff_s, base_backoff_s * 2 ** (attempt - 1))
+        note(f"restart {len(restarts)}/{max_restarts} in {delay:.0f}s")
+        sleep(delay)
 
 
 def check_bind(settings: Settings) -> None:
@@ -65,6 +158,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="osint")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run", help="run collectors and the API server")
+    sub.add_parser("supervise", help="run `osint run` as a child process; restart it with backoff after a crash")
     add_backfill_parser(sub)
     args = parser.parse_args(argv)
 
@@ -72,9 +166,15 @@ def main(argv: list[str] | None = None) -> None:
         configure_logging()
         raise SystemExit(run_backfill(args))
 
+    if args.cmd == "supervise":
+        settings = Settings()
+        cmd = [sys.executable, "-c", "from osint.cli import main; main(['run'])"]
+        raise SystemExit(supervise(cmd, settings.data_dir / "supervisor.log"))
+
     if args.cmd == "run":
         configure_logging()
         settings = Settings()
+        install_crash_handlers(settings.data_dir)
         check_bind(settings)
         collectors = build_collectors(load_sources(settings.config_dir))
         app = create_app(Runtime(settings, collectors))
