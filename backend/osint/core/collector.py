@@ -64,6 +64,7 @@ def build_collectors(sources_cfg: dict[str, dict[str, Any]]) -> list[BaseCollect
 
     out: list[BaseCollector] = []
     for name, cfg in sources_cfg.items():
+        cfg = cfg or {}  # an empty YAML block parses as None
         if not cfg.get("enabled", True):
             continue
         if name not in REGISTRY:

@@ -39,6 +39,8 @@ class Scheduler:
         breaker_threshold: int = 5,
         breaker_cooldown_s: float = 600.0,
         poll_timeout_s: float = 120.0,
+        stream_stable_s: float = 60.0,
+        stream_idle_timeout_s: float = 300.0,
     ) -> None:
         self.collectors = collectors
         self.ctx = ctx
@@ -49,18 +51,26 @@ class Scheduler:
         self.breaker_threshold = breaker_threshold
         self.breaker_cooldown_s = breaker_cooldown_s
         self.poll_timeout_s = poll_timeout_s
+        # a stream must stay connected this long before its failure count resets
+        self.stream_stable_s = stream_stable_s
+        # no batch for this long counts as a failure and forces a reconnect
+        self.stream_idle_timeout_s = stream_idle_timeout_s
         self.health = {c.name: SourceHealth() for c in collectors}
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
-        for c in self.collectors:
-            if isinstance(c, PollCollector):
-                coro = self._run_poll(c)
-            elif isinstance(c, StreamCollector):
-                coro = self._run_stream(c)
-            else:
-                raise TypeError(f"{c.name} is neither a poll nor a stream collector")
-            self._tasks.append(asyncio.create_task(coro, name=f"collector:{c.name}"))
+        try:
+            for c in self.collectors:
+                if isinstance(c, PollCollector):
+                    coro = self._run_poll(c)
+                elif isinstance(c, StreamCollector):
+                    coro = self._run_stream(c)
+                else:
+                    raise TypeError(f"{c.name} is neither a poll nor a stream collector")
+                self._tasks.append(asyncio.create_task(coro, name=f"collector:{c.name}"))
+        except BaseException:
+            await self.stop()  # don't leak the tasks already started
+            raise
 
     async def stop(self) -> None:
         for t in self._tasks:
@@ -76,9 +86,12 @@ class Scheduler:
         delay = min(self.max_backoff_s, self.base_backoff_s * 2 ** (failures - 1))
         return delay * random.uniform(0.5, 1.0)
 
-    def _ok(self, c: BaseCollector, batch: Batch, duration_s: float) -> None:
+    def _ok(
+        self, c: BaseCollector, batch: Batch, duration_s: float, *, reset_failures: bool = True
+    ) -> None:
         h = self.health[c.name]
-        h.status, h.consecutive_failures = "healthy", 0
+        if reset_failures or h.consecutive_failures == 0:
+            h.status, h.consecutive_failures = "healthy", 0
         h.last_success, h.last_batch_size = utcnow(), batch.size()
         self.metrics.inc("collector_runs_total", source=c.name, result="ok")
         self.metrics.inc("records_collected_total", batch.size(), source=c.name)
@@ -88,7 +101,7 @@ class Scheduler:
         h = self.health[c.name]
         h.consecutive_failures += 1
         h.status = "down" if h.consecutive_failures >= self.breaker_threshold else "degraded"
-        h.last_error = f"{type(exc).__name__}: {exc}"[:300]
+        h.last_error = f"{type(exc).__name__}: {str(exc) or '(no message)'}"[:300]
         self.metrics.inc("collector_runs_total", source=c.name, result="error")
         log.warning("collector %s failed (%d in a row): %s", c.name, h.consecutive_failures,
                     h.last_error)
@@ -110,12 +123,22 @@ class Scheduler:
 
     async def _run_stream(self, c: StreamCollector) -> None:
         while True:
-            t0 = time.monotonic()
+            connected_at = t0 = time.monotonic()
             try:
-                async for batch in c.stream(self.ctx):
-                    await self.submit(batch)
-                    self._ok(c, batch, time.monotonic() - t0)
-                    t0 = time.monotonic()
+                async with contextlib.aclosing(c.stream(self.ctx)) as stream:
+                    while True:
+                        try:
+                            async with asyncio.timeout(self.stream_idle_timeout_s):
+                                batch = await anext(stream)
+                        except StopAsyncIteration:
+                            break
+                        await self.submit(batch)
+                        now = time.monotonic()
+                        # only a connection that has stayed up long enough clears the
+                        # failure count, so a flapping stream still trips the breaker
+                        stable = now - connected_at >= self.stream_stable_s
+                        self._ok(c, batch, now - t0, reset_failures=stable)
+                        t0 = now
                 raise ConnectionError("stream ended")
             except asyncio.CancelledError:
                 raise
