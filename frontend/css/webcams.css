@@ -1,0 +1,20 @@
+/* Public webcams layer: inspector + nearby thumbnails. Uses theme.css variables. */
+.wc-insp { display: flex; flex-direction: column; gap: 8px; }
+.wc-hd { font: 600 13px/1.3 var(--f-head); letter-spacing: .04em; color: var(--fg); }
+.wc-img { position: relative; background: var(--void); border: 1px solid var(--line); min-height: 120px; }
+.wc-img img { display: block; width: 100%; height: auto; }
+.wc-video { width: 100%; background: #000; border: 1px solid var(--line); }
+.wc-loading { padding: 18px 10px; text-align: center; font: 11px/1.4 var(--f-mono); color: var(--dim); }
+.wc-insp a, .wc-near-h + .wc-near a { color: var(--acc); text-decoration: none; }
+.wc-insp a:hover { text-decoration: underline; }
+.wc-near-h { font: 600 9.5px/1.9 var(--f-head); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: 8px; }
+.wc-near-h span { color: var(--acc); margin-left: 4px; }
+.wc-near { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; margin-top: 4px; }
+.wc-thumb { position: relative; display: block; padding: 0; text-align: left; cursor: pointer; overflow: hidden;
+  background: var(--deep); border: 1px solid var(--line); color: var(--fg-2);
+  transition: border-color var(--t-fast) var(--ease); }
+.wc-thumb:hover, .wc-thumb:focus-visible { border-color: var(--acc); outline: none; }
+.wc-thumb img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--void); }
+.wc-thumb img.wc-bad { visibility: hidden; }
+.wc-thumb span { display: block; padding: 3px 5px 0; font: 10px/1.3 var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wc-thumb em { display: block; padding: 0 5px 3px; font: normal 9.5px/1.3 var(--f-mono); color: var(--dim); }
