@@ -377,7 +377,7 @@ class EventBuilder:
 
     def warm_start(self) -> None:
         """Rebuild the in-memory index (recent events) and the processed-document set."""
-        migrate_events(self.store)
+        migrate_events(self.store, self.cfg.verification.get("unsupported_cap", 0.2))
         marker = self.store.get_cursor(REBUILD_STATE) or {}
         self._rebuild_at = marker.get("at")
         self.clusterer.generation = int(marker.get("generation") or 0)
@@ -650,7 +650,7 @@ class EventBuilder:
 # ------------------------------------------------------------- migration / rebuild
 
 
-def migrate_events(store: SqliteStore) -> dict[str, int]:
+def migrate_events(store: SqliteStore, unsupported_cap: float = 0.2) -> dict[str, int]:
     """Idempotent clean-up run at every EventBuilder start.
 
     1. Events backed only by GDELT rows (no article) are deleted with their documents,
@@ -659,6 +659,8 @@ def migrate_events(store: SqliteStore) -> dict[str, int]:
        server still running old code during the rebuild) are deleted too and the builder
        cursor is rewound to the rebuild's cursor so their documents are clustered again.
     3. Accepted GDELT decisions whose event is gone become rejected/no_article_backing.
+    4. Stored type-mismatch verdicts are applied as unsupported (capped, off the map).
+    Sensor and historical events are never touched (origin column).
     """
     out = {"gdelt_only": 0, "legacy": 0, "decisions": 0}
     ids = store.gdelt_only_event_ids()  # news events only (origin column)
@@ -678,6 +680,9 @@ def migrate_events(store: SqliteStore) -> dict[str, int]:
                                                ("fetched_at_us", "fetched_at") if k in marker})
         store.set_cursor(REBUILD_STATE, {**marker, "migrated": True})
     out["decisions"] = store.reject_orphan_gdelt_decisions(NO_ARTICLE_BACKING)
+    n = store.type_mismatches_to_unsupported(unsupported_cap)
+    if n:
+        log.info("events migration: %d type-mismatch verdicts now unsupported", n)
     if any(out.values()):
         log.info("events migration: %s", out)
     return out

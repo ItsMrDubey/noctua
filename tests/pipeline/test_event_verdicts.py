@@ -96,3 +96,21 @@ def test_unlocated_event_refined_only_when_place_is_quoted(tmp_path):
     assert store.get_event(q)["place_name"] == "Kharkiv"
     assert store.get_event(n)["precision"] == "unlocated"
     store.close()
+
+
+def test_stored_type_mismatch_verdicts_migrate_to_unsupported(tmp_path):
+    from osint.pipeline.events import migrate_events
+
+    store, _b, ids = _setup(tmp_path, [
+        _row(1, "Missile strike on Kyiv power plant", fetched=NOW - timedelta(minutes=50)),
+        _row(2, "Missile strike on Kyiv power plant", host="b.example",
+             fetched=NOW - timedelta(minutes=45))])
+    [eid] = ids.values()
+    store.save_verifications([{"event_id": eid, "verdict": "mismatch", "fingerprint": "x",
+                               "reasons": ["type: article is economic, event is political"]}])
+    assert store.list_events(map_default=True, limit=10)
+    migrate_events(store)
+    assert store.verifications([eid])[eid]["verdict"] == "unsupported"
+    assert store.get_event(eid)["confidence"] <= 0.2
+    assert not store.list_events(map_default=True, limit=10)
+    store.close()

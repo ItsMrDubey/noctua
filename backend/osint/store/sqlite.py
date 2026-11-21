@@ -614,6 +614,22 @@ class SqliteStore:
                   json.dumps(r.get("quotes") or [], ensure_ascii=False),
                   r["fingerprint"], now) for r in rows])
 
+    def type_mismatches_to_unsupported(self, cap: float) -> int:
+        """Stored ``mismatch`` verdicts with an event-*type* reason become ``unsupported``
+        (hidden from map_default) and their news event's confidence is capped at ``cap``."""
+        with self._lock, self._db:
+            ids = [r[0] for r in self._db.execute(
+                "SELECT event_id FROM event_verification WHERE verdict = 'mismatch' AND "
+                "EXISTS (SELECT 1 FROM json_each(reasons) WHERE value LIKE 'type:%')")]
+            for i in range(0, len(ids), 900):
+                chunk = ids[i: i + 900]
+                marks = ",".join("?" * len(chunk))
+                self._db.execute(f"UPDATE event_verification SET verdict = 'unsupported' "
+                                 f"WHERE event_id IN ({marks})", chunk)
+                self._db.execute(f"UPDATE events SET confidence = MIN(confidence, ?) "
+                                 f"WHERE origin = 'news' AND id IN ({marks})", (cap, *chunk))
+        return len(ids)
+
     def verifications(self, event_ids: list[str] | None = None) -> dict[str, dict]:
         """event id -> {verdict, reasons, quotes, fingerprint} (all rows when ids is None)."""
         if event_ids is None:
