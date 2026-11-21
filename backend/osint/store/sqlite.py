@@ -97,13 +97,22 @@ EVENT_COLUMNS = (
     "id", "category", "subcategory", "cameo_root", "title", "summary", "actors", "lat", "lon",
     "precision", "place_name", "country", "geo_confidence", "h3_3", "h3_5", "h3_7", "t_start",
     "t_end", "status", "confidence", "version", "mention_count", "source_diversity",
-    "gdelt_ids", "first_seen", "updated_at", "cluster_state",
+    "gdelt_ids", "first_seen", "updated_at", "cluster_state", "origin",
 )
+# Who owns an event row. Only ``news`` events (built by the clusterer from articles) are
+# ever cleared, migrated or rebuilt; ``sensor`` (pipeline.sensor_events) and ``historical``
+# (curated datasets such as UCDP GED) rows are never touched by event maintenance.
+ORIGINS = ("news", "sensor", "historical")
+HISTORICAL_STATUS = "historical"
 _JSON_DEFAULTS: dict[str, object] = {"actors": [], "gdelt_ids": [], "cluster_state": {}}
 _UPSERT_EVENT = (
     f"INSERT INTO events ({', '.join(EVENT_COLUMNS)}) "
     f"VALUES ({','.join('?' * len(EVENT_COLUMNS))}) ON CONFLICT(id) DO UPDATE SET "
-    + ", ".join(f"{c}=excluded.{c}" for c in EVENT_COLUMNS if c not in ("id", "first_seen"))
+    + ", ".join(f"{c}=excluded.{c}" for c in EVENT_COLUMNS
+                if c not in ("id", "first_seen", "origin"))
+    # a writer that does not know the origin (default news) never demotes a sensor or
+    # historical row
+    + ", origin=CASE WHEN events.origin = 'news' THEN excluded.origin ELSE events.origin END"
 )
 _EVENT_DOC_COLUMNS = ("event_id", "doc_id", "source", "url", "title", "published_at",
                       "language", "role", "added_at")
@@ -123,9 +132,24 @@ def _json_col(value: object, column: str) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def event_origin(e: dict) -> str:
+    """Explicit ``origin`` or the one implied by the row (curated dataset -> historical)."""
+    origin = e.get("origin")
+    if origin in ORIGINS:
+        return origin
+    state = e.get("cluster_state") or {}
+    if e.get("status") == HISTORICAL_STATUS or (
+            isinstance(state, dict) and state.get("source") == "ucdp"):
+        return "historical"
+    if isinstance(state, dict) and state.get("sensor"):
+        return "sensor"
+    return "news"
+
+
 def _event_tuple(e: dict) -> tuple:
     return tuple(_json_col(e.get(c), c) if c in _JSON_DEFAULTS
-                 else (e.get(c) or "") if c == "summary" else e.get(c)
+                 else (e.get(c) or "") if c == "summary"
+                 else event_origin(e) if c == "origin" else e.get(c)
                  for c in EVENT_COLUMNS)
 
 
@@ -156,11 +180,29 @@ ON CONFLICT(track_id) DO UPDATE SET
 """
 
 
+# WAL file is truncated back to this size after a checkpoint (it reached 770 MB unbounded)
+JOURNAL_SIZE_LIMIT = 64 * 1024 * 1024
+BUSY_TIMEOUT_S = 30.0
+WRITE_CHUNK = 5000  # bulk writers commit in chunks of this many rows
+
+
+def connect(path: Path | str, *, read_only: bool = False,
+            timeout: float = BUSY_TIMEOUT_S) -> sqlite3.Connection:
+    """A connection with the platform's settings (busy timeout, WAL size cap)."""
+    if read_only:
+        return sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True,
+                               timeout=timeout, check_same_thread=False)
+    db = sqlite3.connect(path, timeout=timeout, check_same_thread=False)
+    db.execute(f"PRAGMA journal_size_limit={JOURNAL_SIZE_LIMIT}")
+    return db
+
+
 class SqliteStore:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
         self._lock = threading.Lock()
-        self._db = sqlite3.connect(path, check_same_thread=False)
+        self._db = connect(path)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
@@ -168,6 +210,34 @@ class SqliteStore:
         self._db.executescript(EVENTS_SCHEMA)
         self._db.executescript(CORROBORATION_SCHEMA)
         self._db.executescript(VERIFICATION_SCHEMA)
+        self._migrate_origin()
+
+    def _migrate_origin(self) -> None:
+        """Add/backfill ``events.origin`` (idempotent; cheap on later starts)."""
+        with self._lock, self._db:
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(events)")}
+            if "origin" not in cols:
+                self._db.execute(
+                    "ALTER TABLE events ADD COLUMN origin TEXT NOT NULL DEFAULT 'news'")
+                self._db.execute(
+                    "UPDATE events SET origin='historical' WHERE status=? OR "
+                    "json_extract(cluster_state, '$.source') = 'ucdp'", (HISTORICAL_STATUS,))
+            else:  # heal rows written by code that did not know the column
+                self._db.execute(
+                    "UPDATE events SET origin='historical' WHERE origin='news' AND "
+                    "(status=? OR id LIKE 'ucdp-%')", (HISTORICAL_STATUS,))
+            self._db.execute(
+                "UPDATE events SET origin='sensor' WHERE origin='news' AND id IN "
+                "(SELECT event_id FROM sensor_events)")
+            self._db.execute("CREATE INDEX IF NOT EXISTS events_origin ON events(origin)")
+
+    def checkpoint(self) -> dict[str, int]:
+        """``wal_checkpoint(TRUNCATE)``: fold the WAL into the database and truncate it
+        (Runtime maintenance runs it hourly). busy=1 when a reader blocked completion."""
+        with self._lock:
+            busy, log_pages, done = self._db.execute(
+                "PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return {"busy": busy, "log": log_pages, "checkpointed": done}
 
     def register_source(self, name: str, domain: str, licence: str, commercial_ok: bool) -> None:
         with self._lock, self._db:
@@ -316,7 +386,7 @@ class SqliteStore:
                     since: datetime | None = None, category: str | None = None,
                     status: str | None = None, min_confidence: float | None = None,
                     limit: int = 1000, slim: bool = True, include_unlocated: bool = True,
-                    map_default: bool = False) -> list[dict]:
+                    map_default: bool = False, origin: str | None = None) -> list[dict]:
         """Events, most recently updated first. bbox = (west, south, east, north); west > east
         wraps the antimeridian. Comma-separated category/status values match any of them.
 
@@ -345,7 +415,7 @@ class SqliteStore:
         if since is not None:
             where.append("updated_at >= ?")
             params.append(iso(since))
-        for col, raw in (("category", category), ("status", status)):
+        for col, raw in (("category", category), ("status", status), ("origin", origin)):
             values = [v.strip() for v in (raw or "").split(",") if v.strip()]
             if values:
                 where.append(f"{col} IN ({','.join('?' * len(values))})")
@@ -363,12 +433,15 @@ class SqliteStore:
             rows = self._db.execute(sql, params).fetchall()
         return [_event_out(r) for r in rows]
 
-    def recent_events(self, since: datetime) -> list[dict]:
-        """Events with t_end >= since, including cluster_state (clusterer warm start)."""
+    def recent_events(self, since: datetime, origins: tuple[str, ...] = ("news",)
+                      ) -> list[dict]:
+        """Events of ``origins`` (default: news only) with t_end >= since, including
+        cluster_state (clusterer warm start)."""
+        marks = ",".join("?" * len(origins))
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM events WHERE t_end >= ? ORDER BY t_end", (iso(since),)
-            ).fetchall()
+                f"SELECT * FROM events WHERE t_end >= ? AND origin IN ({marks}) "
+                f"ORDER BY t_end", (iso(since), *origins)).fetchall()
         return [_event_out(r, keep_state=True) for r in rows]
 
     def event_doc_ids_since(self, since: datetime) -> set[str]:
@@ -417,26 +490,83 @@ class SqliteStore:
         """News events with no article document (only GDELT rows): never valid."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT id FROM events e WHERE NOT EXISTS (SELECT 1 FROM event_documents d "
-                "WHERE d.event_id = e.id AND d.role != 'gdelt') "
-                "AND id NOT IN (SELECT event_id FROM sensor_events)").fetchall()
+                "SELECT id FROM events e WHERE origin = 'news' AND NOT EXISTS "
+                "(SELECT 1 FROM event_documents d WHERE d.event_id = e.id "
+                "AND d.role != 'gdelt') AND id NOT IN (SELECT event_id FROM sensor_events)"
+            ).fetchall()
         return [r[0] for r in rows]
 
     def legacy_event_ids(self, version: int) -> list[str]:
         """News events written by an older clusterer (cluster_state.v < ``version``)."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT id FROM events WHERE COALESCE(json_extract(cluster_state, '$.v'), 0) < ? "
+                "SELECT id FROM events WHERE origin = 'news' AND "
+                "COALESCE(json_extract(cluster_state, '$.v'), 0) < ? "
                 "AND id NOT IN (SELECT event_id FROM sensor_events)", (version,)).fetchall()
         return [r[0] for r in rows]
 
-    def delete_events(self, event_ids: list[str]) -> int:
-        """Delete events with their documents, fields and corroboration rows."""
+    def news_events_before_generation(self, generation: int) -> list[str]:
+        """News events not written by rebuild ``generation`` or later (``$.gen``)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id FROM events WHERE origin = 'news' AND "
+                "COALESCE(json_extract(cluster_state, '$.gen'), 0) < ? "
+                "AND id NOT IN (SELECT event_id FROM sensor_events)", (generation,)
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def news_primary_event_ids(self) -> dict[str, str]:
+        """primary document id -> news event id (event identity across rebuilds)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT d.doc_id, d.event_id FROM event_documents d JOIN events e "
+                "ON e.id = d.event_id WHERE d.role = 'primary' AND e.origin = 'news'"
+            ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def reset_event_links(self, event_ids: list[str]) -> None:
+        """Drop the document links and field provenance of news events about to be
+        re-derived (a rebuild re-creating an event under its old id)."""
+        with self._lock, self._db:
+            for i in range(0, len(event_ids), 900):
+                chunk = event_ids[i: i + 900]
+                marks = ",".join("?" * len(chunk))
+                ids = [r[0] for r in self._db.execute(
+                    f"SELECT id FROM events WHERE origin = 'news' AND id IN ({marks})",
+                    chunk)]
+                if not ids:
+                    continue
+                m = ",".join("?" * len(ids))
+                self._db.execute(f"DELETE FROM event_documents WHERE event_id IN ({m})", ids)
+                self._db.execute(f"DELETE FROM event_fields WHERE event_id IN ({m})", ids)
+
+    def clear_gdelt_decisions(self) -> int:
+        with self._lock, self._db:
+            return self._db.execute("DELETE FROM gdelt_decisions").rowcount
+
+    def doc_event_places(self) -> dict[str, tuple]:
+        """doc_id -> (event title, place_name) for every news event document."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT d.doc_id, e.title, e.place_name FROM events e JOIN event_documents d "
+                "ON d.event_id = e.id WHERE e.origin = 'news'").fetchall()
+        return {r[0]: (r[1], r[2]) for r in rows}
+
+    def delete_events(self, event_ids: list[str], *, origin: str | None = "news") -> int:
+        """Delete events with their documents, fields and corroboration rows. Only events
+        of ``origin`` (default news; None = any) are deleted, other ids are ignored."""
         n = 0
         with self._lock, self._db:
             for i in range(0, len(event_ids), 900):
                 chunk = event_ids[i: i + 900]
                 marks = ",".join("?" * len(chunk))
+                if origin is not None:
+                    chunk = [r[0] for r in self._db.execute(
+                        f"SELECT id FROM events WHERE origin = ? AND id IN ({marks})",
+                        (origin, *chunk))]
+                    if not chunk:
+                        continue
+                    marks = ",".join("?" * len(chunk))
                 for table, col in (("event_documents", "event_id"),
                                    ("event_fields", "event_id"),
                                    ("corroborations", "event_id"),
@@ -457,15 +587,16 @@ class SqliteStore:
                 "(SELECT id FROM events))", (reason,)).rowcount
 
     def clear_news_events(self) -> int:
-        """Remove every news event (not sensor-derived ones) with its documents, fields,
-        corroborations, and all GDELT decisions (a rebuild re-adjudicates them)."""
+        """Remove every news event (origin news: never sensor or historical rows) with its
+        documents, fields, corroborations, and all GDELT decisions."""
+        news = ("(SELECT id FROM events WHERE origin = 'news' AND id NOT IN "
+                "(SELECT event_id FROM sensor_events))")
         with self._lock, self._db:
-            keep = "(SELECT event_id FROM sensor_events)"
             for table in ("event_documents", "event_fields", "corroborations",
                           "event_corroboration", "event_verification"):
-                self._db.execute(f"DELETE FROM {table} WHERE event_id NOT IN {keep}")
+                self._db.execute(f"DELETE FROM {table} WHERE event_id IN {news}")
             self._db.execute("DELETE FROM gdelt_decisions")
-            return self._db.execute(f"DELETE FROM events WHERE id NOT IN {keep}").rowcount
+            return self._db.execute(f"DELETE FROM events WHERE id IN {news}").rowcount
 
     # ------------------------------------------------------------- verification
 
@@ -664,7 +795,20 @@ class SqliteStore:
                 (event["id"], sensor["detector"], sensor["dedupe_key"], sensor["cell"],
                  event["t_start"], event["t_end"],
                  json.dumps(sensor.get("details") or {}, default=str), now, now))
-        return self.save_corroborations(corroborations, events=[event], summaries=[summary])
+        return self.save_corroborations(corroborations, events=[{**event, "origin": "sensor"}],
+                                        summaries=[summary])
+
+    def stale_sensor_event_ids(self, versions: dict[str, int]) -> list[str]:
+        """Sensor events written by an older detector version (``details.detector_version``
+        below ``versions[detector]``; rows without one count as version 1)."""
+        out: list[str] = []
+        with self._lock:
+            for detector, version in versions.items():
+                out += [r[0] for r in self._db.execute(
+                    "SELECT event_id FROM sensor_events WHERE detector = ? AND "
+                    "COALESCE(json_extract(details, '$.detector_version'), 1) < ?",
+                    (detector, int(version)))]
+        return out
 
     def corroboration_stats(self) -> dict:
         with self._lock:

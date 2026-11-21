@@ -143,3 +143,23 @@ def test_snapshot_history_and_cache(env):
     assert svc.store.latest_scorecard("24h")["window"] == "24h"
     assert svc.store.prune(NOW + timedelta(hours=2)) > 0
     svc.store.close()
+
+
+def test_historical_events_are_not_scored(tmp_path):
+    from osint.benchmark.scorecard import _load_events
+    from osint.store.sqlite import SqliteStore, connect, iso
+
+    built = build(tmp_path)
+    built["lake"].close()
+    store = SqliteStore(tmp_path / "osint.sqlite")
+    t = iso(NOW - timedelta(hours=1))
+    store.save_events([{"id": "ucdp-1", "category": "armed_conflict", "title": "u",
+                        "t_start": t, "t_end": t, "status": "historical", "confidence": 0.9,
+                        "version": 1, "mention_count": 1, "source_diversity": 1,
+                        "first_seen": t, "updated_at": t, "precision": "point",
+                        "cluster_state": {"source": "ucdp"}}])
+    store.close()
+    db = connect(tmp_path / "osint.sqlite", read_only=True)
+    ids = {e.id for e in _load_events(db, NOW - timedelta(hours=24))}
+    db.close()
+    assert len(ids) == 6 and "ucdp-1" not in ids

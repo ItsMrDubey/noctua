@@ -553,13 +553,14 @@ FROM events e
 LEFT JOIN sensor_events s ON s.event_id = e.id
 LEFT JOIN event_corroboration c ON c.event_id = e.id
 LEFT JOIN event_verification v ON v.event_id = e.id
-WHERE e.t_end >= ?
+WHERE e.t_end >= ? AND e.origin != 'historical'
 """
 _DOCS_SQL = """
 SELECT d.event_id, SUM(d.role != 'gdelt'),
        MIN(CASE WHEN d.role != 'gdelt' THEN d.published_at END),
        MIN(CASE WHEN d.role = 'gdelt' THEN d.published_at END)
-FROM event_documents d WHERE d.event_id IN (SELECT id FROM events WHERE t_end >= ?)
+FROM event_documents d WHERE d.event_id IN (SELECT id FROM events WHERE t_end >= ?
+                                            AND origin != 'historical')
 GROUP BY d.event_id
 """
 # in-window decisions plus every accepted row of a window event (duplication / geo pairs)
@@ -617,8 +618,8 @@ def collect(src: Sources, start: datetime, now: datetime,
     with src.events_db() as db:
         if db is not None:
             inp.events = _load_events(db, start)
-            row = db.execute("SELECT MIN(first_seen) FROM events WHERE id NOT IN "
-                             "(SELECT event_id FROM sensor_events)").fetchone()
+            row = db.execute("SELECT MIN(first_seen) FROM events WHERE origin = 'news' "
+                             "AND id NOT IN (SELECT event_id FROM sensor_events)").fetchone()
             inp.live_since = parse_ts(row[0]) if row else None
             s = iso_db(start)
             accepted_count: Counter = Counter()

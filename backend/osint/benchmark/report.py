@@ -87,6 +87,7 @@ def find_examples(src: Sources, start: datetime, now: datetime) -> dict[str, dic
                 "MIN(CASE WHEN d.role != 'gdelt' THEN d.published_at END), "
                 "MIN(CASE WHEN d.role = 'gdelt' THEN d.published_at END) FROM events e "
                 "JOIN event_documents d ON d.event_id = e.id WHERE e.t_end >= ? "
+                "AND e.origin = 'news' "
                 "GROUP BY e.id", (s,)):
             fs, fa, fg = parse_ts(fs), parse_ts(fa), parse_ts(fg)
             if fs is None or fa is None or fg is None:
@@ -224,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default="digests/benchmark-<date>.md")
     args = ap.parse_args(argv)
     settings = Settings()
-    lake = Lake(settings.lake_dir, duckdb_memory_limit="512MB", duckdb_threads=2)
+    lake = Lake(settings.lake_dir, duckdb_memory_limit="256MB", duckdb_threads=2)
     src = Sources.from_settings(settings, lake)
     if args.window not in src.cfg.windows:
         ap.error(f"unknown window {args.window!r}; choose from {sorted(src.cfg.windows)}")

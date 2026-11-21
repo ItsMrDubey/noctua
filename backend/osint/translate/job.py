@@ -119,11 +119,14 @@ class TranslateJob:
 
     def _events(self, since: datetime | None) -> list[dict]:
         cfg = self.cfg
-        events = self.event_store.list_events(since=since, limit=cfg.max_events, slim=False)
+        # curated history (UCDP, origin historical) is English already: never scanned
+        events = self.event_store.list_events(since=since, limit=cfg.max_events, slim=False,
+                                              origin="news,sensor")
         skip = set(cfg.skip_statuses or [])
         events = [e for e in events if e.get("status") not in skip]
         visible = {e["id"] for e in self.event_store.list_events(
-            since=since, limit=cfg.max_events, include_unlocated=False, map_default=True)}
+            since=since, limit=cfg.max_events, include_unlocated=False, map_default=True,
+            origin="news,sensor")}
         for e in events:
             e["_map"] = e["id"] in visible
         # stable sort keeps most-recently-updated first within each group

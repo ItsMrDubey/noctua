@@ -16,7 +16,7 @@ class BenchmarkConfig:
     snapshot_interval_s: float = 3600.0
     first_snapshot_delay_s: float = 300.0
     snapshot_retention_days: float = 90.0
-    duckdb_memory_limit: str = "512MB"
+    duckdb_memory_limit: str = "256MB"
     duckdb_threads: int = 2
     decision_join_margin_h: float = 48.0
     city_or_better: tuple[str, ...] = ("point", "city")

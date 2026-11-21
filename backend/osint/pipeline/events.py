@@ -589,11 +589,13 @@ def migrate_events(store: SqliteStore) -> dict[str, int]:
     3. Accepted GDELT decisions whose event is gone become rejected/no_article_backing.
     """
     out = {"gdelt_only": 0, "legacy": 0, "decisions": 0}
-    ids = store.gdelt_only_event_ids()
+    ids = store.gdelt_only_event_ids()  # news events only (origin column)
     if ids:
         out["gdelt_only"] = store.delete_events(ids)
     marker = store.get_cursor(REBUILD_STATE)
-    if marker:
+    if marker and not marker.get("migrated"):
+        # once per rebuild: news events left by an older clusterer (never sensor or
+        # historical rows: legacy_event_ids/delete_events are restricted to origin news)
         legacy = store.legacy_event_ids(CLUSTER_VERSION)
         if legacy:
             out["legacy"] = store.delete_events(legacy)
@@ -602,6 +604,7 @@ def migrate_events(store: SqliteStore) -> dict[str, int]:
                     cur.get("fetched_at_us") or 0) > int(marker["fetched_at_us"]):
                 store.set_cursor(CURSOR_NAME, {k: marker[k] for k in
                                                ("fetched_at_us", "fetched_at") if k in marker})
+        store.set_cursor(REBUILD_STATE, {**marker, "migrated": True})
     out["decisions"] = store.reject_orphan_gdelt_decisions(NO_ARTICLE_BACKING)
     if any(out.values()):
         log.info("events migration: %s", out)

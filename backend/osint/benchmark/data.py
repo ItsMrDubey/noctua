@@ -20,6 +20,7 @@ import pyarrow as pa
 
 from osint.benchmark.config import BenchmarkConfig
 from osint.store.lake import SCHEMAS, Lake
+from osint.store.sqlite import connect
 
 _DIGITS = re.compile(r"^\d{1,4}$")
 _LAKE_ATTEMPTS = 3
@@ -82,8 +83,10 @@ class Sources:
         if not path.is_file():
             yield None
             return
-        db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True,
-                             check_same_thread=False)
+        # read-only, autocommit: each statement holds its read snapshot only while it
+        # runs, so the benchmark never pins the WAL (checkpoint starvation)
+        db = connect(path, read_only=True)
+        db.isolation_level = None
         try:
             yield db
         finally:

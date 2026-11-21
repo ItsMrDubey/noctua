@@ -14,10 +14,11 @@ from osint.benchmark.store import BenchmarkStore, iso
 _STRATA_SQL = """
 SELECT e.status, EXISTS (SELECT 1 FROM gdelt_decisions g WHERE g.event_id = e.id
                          AND g.decision = 'accepted') AS has_gdelt, COUNT(*)
-FROM events e WHERE e.t_end >= ? GROUP BY 1, 2
+FROM events e WHERE e.t_end >= ? AND e.origin != 'historical' GROUP BY 1, 2
 """
 _PICK_SQL = """
 SELECT e.id FROM events e WHERE e.t_end >= ? AND e.status = ?
+  AND e.origin != 'historical'
   AND EXISTS (SELECT 1 FROM gdelt_decisions g WHERE g.event_id = e.id
               AND g.decision = 'accepted') = ?
 ORDER BY e.rowid LIMIT 1 OFFSET ?

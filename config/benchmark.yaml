@@ -10,7 +10,7 @@ first_snapshot_delay_s: 300 # let boot (gazetteer, warm starts) settle first
 snapshot_retention_days: 90
 
 # DuckDB settings for the GDELT lake aggregates (own short-lived connection)
-duckdb_memory_limit: 512MB
+duckdb_memory_limit: 256MB
 duckdb_threads: 2
 # GDELT decisions are joined to their lake rows over [window start - margin, now]
 # (a row is decided up to ~stale_h after its DATEADDED)

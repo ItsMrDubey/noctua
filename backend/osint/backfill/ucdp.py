@@ -152,6 +152,7 @@ def map_row(row: dict[str, str], dataset: str, now: datetime) -> dict[str, Any] 
         "country": country or None, "geo_confidence": geo_conf,
         "h3_3": h3.int_to_str(c3), "h3_5": h3.int_to_str(c5), "h3_7": h3.int_to_str(c7),
         "t_start": _iso(t_start), "t_end": _iso(t_end), "status": STATUS,
+        "origin": "historical",
         "confidence": confidence(where_prec, date_prec), "version": 1,
         "mention_count": max(1, n_sources), "source_diversity": max(1, len(offices)),
         "gdelt_ids": [], "first_seen": _iso(t_end), "updated_at": _iso(t_end),
