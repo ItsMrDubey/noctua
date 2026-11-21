@@ -6,7 +6,7 @@ import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $ } from "/static/js/ui.js";
+import { $, esc } from "/static/js/ui.js";
 import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
 import { BASE_URL } from "/static/js/layers.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
@@ -22,6 +22,8 @@ import { EVENT_CATS, EVENT_STATUS } from "/static/js/symbology.js";
 import { refreshEventStats } from "/static/js/panels/evstats.js";
 import { NuclearLayer, NUC_GROUPS, nuclearDetails } from "/static/js/nuclear.js";
 import { MovementsLayer, MOV_ROLES, MOV_KINDS, movementDetails } from "/static/js/movements.js";
+import { WebcamLayer, renderNearbyCameras } from "/static/js/webcams.js";
+import { CarrierLayer } from "/static/js/naval.js";
 
 const errors = {};
 let lastStatus = null;
@@ -131,8 +133,15 @@ async function main() {
       if (selected && selected.id === id) { detail = d; refreshSelected(); }
     } catch (e) { /* older backend or unknown track: the list item is enough */ }
   }
+  // module-rendered selections (webcam, carrier hypothesis) own timers / labels: release them
+  const mods = { wc: null, naval: null };
+  const releaseModules = () => { if (mods.wc) { mods.wc.closeInspector(); mods.wc.clearSelection(); } };
+  let nearFor = null; // event id whose "cameras nearby" strip is showing
+  const clearNear = () => { nearFor = null; $("dz-extra").innerHTML = ""; };
   function select(kind, id) {
     setFollow(false);
+    releaseModules();
+    if (!(kind === "events" && nearFor === id)) clearNear();
     refSel = null;
     selected = { kind, id };
     inspector.points = null;
@@ -144,9 +153,21 @@ async function main() {
     fx.setTarget(() => (selected ? byKind[selected.kind].positionOf(selected.id) : null), kind);
     trails.clearSelected();
     trailSelected(true);
+    if (kind === "events" && nearFor !== id) showNearbyCameras(id);
+  }
+  // "Cameras near this event": rendered once per selection, outside the 5 s-refreshed dossier
+  function showNearbyCameras(id) {
+    const it = events.items.get(id);
+    if (!it || it.lat == null || it.precision === "country") return; // a country centroid has no meaningful neighbours
+    nearFor = id;
+    const box = $("dz-extra");
+    renderNearbyCameras(it.lat, it.lon, box, { onSelect: (w) => showWebcam(w) })
+      .then((items) => { if (nearFor === id && !items.length) box.innerHTML = '<div class="wc-near-h">Cameras near this event</div><div class="wc-loading">None within 25 km</div>'; })
+      .catch(() => {});
   }
   function clearSelection() {
     setFollow(false); selected = null; refSel = null; detail = null;
+    releaseModules(); clearNear();
     trails.clearSelected(); tracklist.setSelected(null); evList.setSelected(null); fx.setTarget(null);
     inspector.hide();
   }
@@ -158,7 +179,7 @@ async function main() {
   const inspector = new Inspector({
     close: clearSelection,
     fly: () => {
-      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : refSel.kind === "corridor" ? 4e6 : refSel.kind === "surge" ? 2.5e6 : 4e5);
+      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : refSel.kind === "webcam" ? 2.5e4 : refSel.kind === "carrier" ? 2.5e6 : refSel.kind === "corridor" ? 4e6 : refSel.kind === "surge" ? 2.5e6 : 4e5);
       else if (selected) flyToItem(selected.kind, selected.id);
     },
     follow: () => setFollow(!following),
@@ -200,6 +221,9 @@ async function main() {
     try { hits = scene.drillPick(click.position, 8, 14, 14); } catch (e) { hits = []; }
     if (!hits.length) { const p = scene.pick(click.position, 14, 14); if (Cesium.defined(p)) hits = [p]; }
     let best = null, bestD = Infinity, densityHit = null, refHit = null;
+    // carrier hypotheses sit on top of everything else, then public webcams
+    for (const picked of hits) if (picked && picked.id && (picked.id.navalHyp || picked.id.navalIndicator) && mods.naval.pick(picked)) return;
+    for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
     for (const picked of hits) {
       if (!picked || !picked.primitive) continue;
       if (picked.id && picked.id.ref) { refHit = refHit || picked.id; continue; }
@@ -243,6 +267,7 @@ async function main() {
   for (const id of REF_IDS) if ($(id).checked) refLayers.apply(id);
   async function showRef(ref) {
     setFollow(false);
+    releaseModules(); clearNear();
     selected = null; detail = null; trails.clearSelected(); tracklist.setSelected(null); evList.setSelected(null);
     refSel = ref;
     const it = ref.item || {};
@@ -274,6 +299,84 @@ async function main() {
   }));
   $("r-nuc-rings").addEventListener("change", (e) => nuclear.setRings(e.target.checked));
   setTimeout(() => nuclear.ensure().catch(() => {}), 4000); // loaded for event proximity tags even when hidden
+
+  // ---- Module selections (webcam / carrier hypothesis) ----
+  function showModule(kind, item, eyebrow, tint, render) {
+    setFollow(false);
+    if (kind === "webcam") mods.wc.closeInspector(); else releaseModules();
+    clearNear();
+    selected = null; detail = null; trails.clearSelected(); tracklist.setSelected(null); evList.setSelected(null);
+    refSel = { kind, item };
+    if (item.lat != null) { const p = Cesium.Cartesian3.fromDegrees(item.lon, item.lat); fx.setTarget(() => p, "ref"); } else fx.setTarget(null);
+    render(inspector.module(eyebrow, tint));
+    buttons();
+  }
+  function showWebcam(w) {
+    if (!w) return;
+    showModule("webcam", w, "Public webcam · " + (w.source || "open data"), "#5ee3ea", (el) => mods.wc.renderInspector(w, el));
+  }
+
+  // ---- Public webcams (sensors) ----
+  const wc = mods.wc = new WebcamLayer(viewer, { onSelect: (w) => showWebcam(w) });
+  const wcOn = new Set();
+  let wcAll = [];
+  const wcCount = () => {
+    const n = wcAll.filter((s) => wcOn.has(s.id)).reduce((a, s) => a + (s.count || 0), 0);
+    $("c-webcams").textContent = wcAll.length ? n.toLocaleString() : "";
+    $("g-sensors-n").textContent = $("s-webcams").checked ? n.toLocaleString() : "–";
+  };
+  const loadWcSources = () => fetchJson("/api/webcams/sources", 15000).then((j) => {
+    wcAll = (j && j.items) || [];
+    wcOn.clear();
+    for (const s of wcAll) if (s.enabled && s.count) wcOn.add(s.id);
+    $("wc-chips").innerHTML = wcAll.map((s) => {
+      const ok = !!(s.enabled && s.count);
+      const tip = s.name + " · " + (ok ? s.count + " cameras · " + s.licence : s.error || "no cameras");
+      return '<button class="chip' + (ok ? " on" : "") + '" data-k="' + esc(s.id) + '" style="--c:#5ee3ea" title="' + esc(tip) + '"' + (ok ? "" : " disabled") + ">" + esc(s.id) + "</button>";
+    }).join("");
+    wcCount();
+  });
+  $("wc-chips").addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b || b.disabled) return;
+    b.classList.toggle("on");
+    if (b.classList.contains("on")) wcOn.add(b.dataset.k); else wcOn.delete(b.dataset.k);
+    wc.setSources(wcOn.size ? wcOn : ["__none__"]); // an empty set would mean "all sources"
+    wcCount();
+  });
+  $("s-webcams").addEventListener("change", (e) => {
+    wc.setVisible(e.target.checked);
+    if (!e.target.checked && refSel && refSel.kind === "webcam") clearSelection();
+    if (e.target.checked && !wcAll.length) loadWcSources().catch(() => { e.target.closest("label").title = "Webcams not supported by this backend version"; });
+    wcCount();
+  });
+  loadWcSources().catch(() => {});
+  viewer.camera.moveEnd.addEventListener(() => { if (wc.visible) wc.refreshForView().catch(() => {}); });
+
+  // ---- Carrier strike group activity (hypotheses, never positions) ----
+  const naval = mods.naval = new CarrierLayer(viewer, {
+    onSelect: (it) => {
+      if (it && it.indicator) showModule("carrier", it.indicator, "Naval indicator · hypothesis input", "#f2ad3d", (el) => naval.renderInspector(it, el));
+      else if (it) showModule("carrier", it, "Carrier activity · hypothesis", "#5ee3ea", (el) => naval.renderInspector(it, el));
+    },
+  });
+  const navalCounts = () => {
+    const on = $("n-carriers").checked;
+    $("c-carriers").textContent = on ? String(naval.hyps.size) : "";
+    $("c-indicators").textContent = on ? naval.points.size.toLocaleString() : "";
+    $("g-naval-n").textContent = on ? String(naval.hyps.size) : "–";
+  };
+  const navalRefresh = () => naval.refresh().then(() => { $("n-carriers").closest("label").title = ""; navalCounts(); }, (e) => {
+    $("n-carriers").closest("label").title = "Carrier hypotheses unavailable: " + ((e && e.message) || e);
+  });
+  naval.setIndicatorsVisible($("n-indicators").checked); naval.setSurfaceVisible($("n-surface").checked);
+  $("n-carriers").addEventListener("change", (e) => {
+    naval.visible = e.target.checked; naval._apply(); // not setVisible(): its refresh swallows errors
+    if (e.target.checked) navalRefresh(); else { navalCounts(); if (refSel && refSel.kind === "carrier") clearSelection(); }
+  });
+  $("n-indicators").addEventListener("change", (e) => { naval.setIndicatorsVisible(e.target.checked); });
+  $("n-surface").addEventListener("change", (e) => naval.setSurfaceVisible(e.target.checked));
+  setInterval(() => { if (naval.visible) navalRefresh(); }, 10 * 60e3);
 
   // ---- Military movements ----
   const moves = new MovementsLayer(viewer);

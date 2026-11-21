@@ -154,3 +154,12 @@
 .mv-empty { padding: 6px 4px; font: 11px var(--f-body); color: var(--dim); }
 .nucnear { font: 11.5px var(--f-body); color: #ffd24a; border-left: 2px solid #ffd24a; padding: 3px 8px; background: rgba(255, 210, 74, .06); }
 .nucnear b { color: var(--fg); font-weight: 600; }
+/* ---- integration: sensors / naval / module inspectors ---- */
+#wc-chips .chip { cursor: pointer; }
+#wc-chips .chip:disabled { cursor: not-allowed; opacity: .2; }
+.row-note { padding: 0 0 4px 21px; font: 10px/1.4 var(--f-mono); color: var(--dim); }
+.row.field select.mini { height: 20px; font-size: 10.5px; padding: 0 4px; }
+#dz-extra:empty { display: none; }
+#dz-extra { padding: 4px 14px 0; }
+.dz-mod { padding: 10px 14px 0; }
+.dz-mod-head { padding: 12px 40px 0 14px; font: 600 9.5px var(--f-head); letter-spacing: .18em; text-transform: uppercase; color: var(--threat, var(--acc)); }

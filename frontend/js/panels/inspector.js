@@ -142,13 +142,21 @@ export class Inspector {
     this._show(html, threatColor(kind, it));
   }
 
+  // Self-rendering modules (webcams, carrier hypotheses): returns the container they draw into.
+  module(eyebrow, tint) {
+    this.cur = null;
+    this._show('<div class="dz-mod-head">' + esc(eyebrow) + '</div><div class="dz-mod"></div>', tint);
+    this._h = null; // the module mutates the DOM; never skip the next render
+    return this.dz.querySelector(".dz-mod");
+  }
+
   reference(ref, title, bodyHtml) {
     this.cur = null;
     const label = { airport: "Airport", medairport: "Airport", runway: "Runway", port: "Seaport", base: "Military installation", chokepoint: "Maritime chokepoint", boundary: "Boundary",
-      nuclear: "Nuclear site", corridor: "Military movements · corridor", leg: "Military movements · flight leg", surge: "Military movements · surge", naval: "Military movements · naval unit" }[ref.kind] || "Reference";
+      nuclear: "Nuclear site", historical: "Historical conflict · UCDP GED", corridor: "Military movements · corridor", leg: "Military movements · flight leg", surge: "Military movements · surge", naval: "Military movements · naval unit" }[ref.kind] || "Reference";
     const it = ref.item || {};
     const mov = /^(corridor|leg|surge|naval)$/.test(ref.kind);
-    const tint = ref.kind === "nuclear" ? "#ffd24a" : ref.kind === "surge" ? "#f2ad3d" : ref.kind === "naval" ? "#ff4b55" : mov ? "#36c5ff" : "#3ddcc2";
+    const tint = ref.kind === "nuclear" ? "#ffd24a" : ref.kind === "historical" ? "#8f86c9" : ref.kind === "surge" ? "#f2ad3d" : ref.kind === "naval" ? "#ff4b55" : mov ? "#36c5ff" : "#3ddcc2";
     const head = this._head("ref", it, (mov ? "" : "Reference · ") + label, title, it.lat != null ? nf(it.lat, 3) + ", " + nf(it.lon, 3) : "").replace(/--threat:[^;"]*/, "--threat:" + tint);
     const html = head + '<section class="dz-sec">' + bodyHtml + "</section>";
     this._show(html, tint);

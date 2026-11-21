@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="/static/css/shell.css">
 <link rel="stylesheet" href="/static/css/panels.css">
 <link rel="stylesheet" href="/static/css/dock.css">
+<link rel="stylesheet" href="/static/css/webcams.css">
+<link rel="stylesheet" href="/static/css/naval.css">
 <script>window.CESIUM_BASE_URL = "/static/vendor/cesium/";</script>
 <script src="/static/vendor/cesium/Cesium.js"></script>
 </head>
@@ -36,6 +38,8 @@
   <button class="rail-btn" data-g="live" title="Live tracks"><svg viewBox="0 0 20 20"><path d="M10 2.5l1.2 5.3 5.8 3.2-5.8 1-1.2 5.5-1.2-5.5-5.8-1 5.8-3.2z" /></svg><i class="rail-dot"></i></button>
   <button class="rail-btn" data-g="events" title="Events"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.2" /><circle cx="10" cy="10" r="6" /><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3" /></svg></button>
   <button class="rail-btn" data-g="moves" title="Military movements"><svg viewBox="0 0 20 20"><path d="M3 15c3-8 11-8 14 0" /><path d="M14.5 12.5l2.5 2.5-3.3.6" /><circle cx="3" cy="15" r="1.3" /></svg></button>
+  <button class="rail-btn" data-g="naval" title="Naval activity (hypotheses)"><svg viewBox="0 0 20 20"><path d="M3 12h14l-2.5 4h-9z" /><path d="M7 12V8h5l1.5 4" /><path d="M10 8V4" /></svg></button>
+  <button class="rail-btn" data-g="sensors" title="Public webcams"><svg viewBox="0 0 20 20"><rect x="2.5" y="6" width="10" height="8" rx="1.2" /><path d="M12.5 9l4.5-2.5v7L12.5 11" /></svg></button>
   <button class="rail-btn" data-g="ref" title="Reference geography"><svg viewBox="0 0 20 20"><path d="M10 2.5l7 7.5-7 7.5-7-7.5z" /><path d="M3 10h14M10 2.5v15" /></svg></button>
   <button class="rail-btn" data-g="density" title="Density"><svg viewBox="0 0 20 20"><path d="M6 3.5l4 2.3v4.6L6 12.7 2 10.4V5.8zM14 7.3l4 2.3v4.6l-4 2.3-4-2.3V9.6z" /></svg></button>
   <button class="rail-btn" data-g="imagery" title="Imagery"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
@@ -69,6 +73,18 @@
     <div id="mv-roles" class="chips"></div>
     <label class="row" title="Military aircraft per H3 cell vs the trailing 7-day baseline for the same 6 h slot"><input type="checkbox" id="m-surges"><span class="sw hexo" style="--c:#f2ad3d"></span>Surge cells<b id="c-surges" class="num"></b></label>
     <label class="row"><input type="checkbox" id="m-naval"><span class="sw hull" style="--c:#ff4b55"></span>Naval units<b id="c-naval" class="num"></b></label>
+  </section>
+  <section class="grp" data-g="naval">
+    <header><h3>Naval · hypotheses</h3><b id="g-naval-n" class="num">–</b></header>
+    <label class="row" title="Probabilistic carrier strike group activity from public signals; never a confirmed position"><input type="checkbox" id="n-carriers"><span class="sw ring" style="--c:#5ee3ea"></span>Carrier activity<b id="c-carriers" class="num"></b></label>
+    <label class="row sub"><input type="checkbox" id="n-indicators" checked><span class="sw" style="--c:#ff8a3d"></span>Indicators<b id="c-indicators" class="num"></b></label>
+    <label class="row sub"><input type="checkbox" id="n-surface" checked><span class="sw hexo" style="--c:#5ee3ea"></span>Probability surface</label>
+    <div class="row-note">Estimates, not positions · refreshed every 10 min</div>
+  </section>
+  <section class="grp" data-g="sensors">
+    <header><h3>Sensors</h3><b id="g-sensors-n" class="num">–</b></header>
+    <label class="row" title="Only cameras whose operators openly publish them"><input type="checkbox" id="s-webcams"><span class="sw sq" style="--c:#5ee3ea"></span>Public webcams<b id="c-webcams" class="num"></b></label>
+    <div id="wc-chips" class="chips"></div>
   </section>
   <section class="grp" data-g="ref">
     <header><h3>Reference</h3></header>
@@ -112,6 +128,7 @@
   <aside id="right" class="glass hidden" aria-label="Inspector">
     <button id="close-details" class="ghost close" title="Close (Esc)" aria-label="Close inspector">&times;</button>
     <div id="dz"></div>
+    <div id="dz-extra"></div>
     <div class="actions">
       <button id="d-fly" title="Fly the camera to this object">Fly to</button>
       <button id="d-follow" title="Keep the camera on this track">Follow</button>

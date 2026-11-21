@@ -1,17 +1,31 @@
 // Left rail + layer tree: group collapse, rail navigation, throttled count-up layer counts.
 import { $, REDUCED } from "/static/js/ui.js";
 
+const CLOSED_KEY = "noctua.tree.closed";
+const DEFAULT_CLOSED = ["moves", "naval", "sensors", "density", "imagery"];
+
 export class LayerTree {
   constructor() {
     this.pending = {}; this.shown = {}; this.trunc = {};
+    // collapsed sections persist across reloads; first visit keeps the long tail folded
+    let closed;
+    try { closed = JSON.parse(localStorage.getItem(CLOSED_KEY) || "null"); } catch (e) { closed = null; }
+    this.closed = new Set(Array.isArray(closed) ? closed : DEFAULT_CLOSED);
     for (const g of document.querySelectorAll("#left .grp > header")) {
-      g.addEventListener("click", () => g.parentElement.classList.toggle("closed"));
+      const sec = g.parentElement;
+      sec.classList.toggle("closed", this.closed.has(sec.dataset.g));
+      g.addEventListener("click", () => this.setClosed(sec, !sec.classList.contains("closed")));
     }
     for (const b of document.querySelectorAll(".rail-btn[data-g]")) {
       b.addEventListener("click", () => this.focusGroup(b.dataset.g));
     }
     $("rail-toggle").addEventListener("click", () => this.toggleCollapsed());
     setInterval(() => this.flush(), 1000);
+  }
+  setClosed(sec, on) {
+    sec.classList.toggle("closed", on);
+    if (on) this.closed.add(sec.dataset.g); else this.closed.delete(sec.dataset.g);
+    try { localStorage.setItem(CLOSED_KEY, JSON.stringify([...this.closed])); } catch (e) { /* storage full / disabled */ }
   }
   toggleCollapsed(force) {
     const on = force != null ? force : !document.body.classList.contains("left-collapsed");
@@ -21,7 +35,7 @@ export class LayerTree {
     this.toggleCollapsed(false);
     const sec = document.querySelector('#left .grp[data-g="' + g + '"]');
     if (!sec) return;
-    sec.classList.remove("closed");
+    this.setClosed(sec, false);
     sec.scrollIntoView({ block: "start", behavior: REDUCED ? "auto" : "smooth" });
     sec.classList.remove("flash"); void sec.offsetWidth; sec.classList.add("flash");
     for (const b of document.querySelectorAll(".rail-btn[data-g]")) b.classList.toggle("on", b.dataset.g === g);
