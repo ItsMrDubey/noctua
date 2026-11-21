@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Self
 
 import duckdb
 import msgspec
@@ -123,15 +124,124 @@ _COMPACT_PREFIX = "compact-"
 # close() waits this long for in-flight queries before closing the connection anyway
 CLOSE_TIMEOUT_S = 30.0
 _QUERY_ATTEMPTS = 4
+DUCKDB_MEMORY_LIMIT = "512MB"
+DUCKDB_THREADS = 2
+LOCK_NAME = ".lock"
+LOCK_TIMEOUT_S = 300.0
+# a .tmp file older than this is a crashed writer's leftover (never one in progress)
+STALE_TMP_S = 3600.0
+# datasets whose rows are identified by ``id``: on merge the newest file's row wins (a
+# rewritten row and its stale original never both survive a partial delete)
+DEDUPE_BY_ID = frozenset({"documents"})
 
 
 def _remove(path: Path) -> None:
     os.unlink(path)
 
 
+class FileLock:
+    """Exclusive inter-process lock on a file (``msvcrt.locking`` on Windows,
+    ``fcntl.flock`` elsewhere), polled until ``timeout``. The OS releases it when the
+    holder dies, so there are no stale locks. Not re-entrant; pair it with a thread lock."""
+
+    def __init__(self, path: Path, timeout: float = LOCK_TIMEOUT_S) -> None:
+        self.path = path
+        self.timeout = timeout
+        self._f = None
+
+    def acquire(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(self.path, "a+b")  # noqa: SIM115 - held until release()
+        deadline = time.monotonic() + self.timeout
+        delay = 0.005
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self._f = f
+                return
+            except OSError:
+                if time.monotonic() >= deadline:
+                    f.close()
+                    raise TimeoutError(f"lake lock {self.path} busy for {self.timeout:.0f}s")
+                time.sleep(delay)
+                delay = min(0.1, delay * 2)
+
+    def release(self) -> None:
+        f, self._f = self._f, None
+        if f is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        finally:
+            f.close()
+
+    def __enter__(self) -> Self:
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.release()
+
+
+def _tmp_path(dest: Path) -> Path:
+    """Unique temp name next to ``dest`` (pid + random): concurrent writers in different
+    processes never share or delete each other's temp files."""
+    return dest.with_name(f"{dest.name}.{os.getpid()}-{uuid.uuid4().hex[:8]}.tmp")
+
+
 def _compact_name(names: list[str]) -> str:
     digest = hashlib.sha1("\n".join(sorted(names)).encode("utf-8")).hexdigest()[:16]
     return f"{_COMPACT_PREFIX}{digest}.parquet"
+
+
+def merge_files(dataset: str, files: list[Path]) -> pa.Table:
+    """Rows of ``files`` de-duplicated and sorted by the partition field.
+
+    Datasets in DEDUPE_BY_ID keep one row per ``id``: the newest file's (mtime, then
+    name), first occurrence within a file. Others drop exact duplicate rows only."""
+    schema = SCHEMAS[dataset]
+    by_id = dataset in DEDUPE_BY_ID
+
+    def mtime(f: Path) -> float:
+        try:
+            return f.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    ordered = sorted(files, key=lambda f: (mtime(f), f.name), reverse=True)  # newest first
+    tables = []
+    offset = 0
+    for f in ordered:
+        t = pq.ParquetFile(f).read().select(schema.names).cast(schema)
+        if by_id:
+            t = t.append_column("__order", pa.array(range(offset, offset + t.num_rows),
+                                                    pa.int64()))
+            offset += t.num_rows
+        tables.append(t)
+    table = pa.concat_tables(tables)
+    if by_id:
+        # __order is the row's index in ``table``: keep the first row of each id
+        first = table.group_by("id", use_threads=False).aggregate([("__order", "min")])
+        table = table.take(first.column("__order_min")).drop_columns(["__order"])
+    else:
+        table = table.group_by(schema.names, use_threads=False).aggregate([])
+    return table.select(schema.names).cast(schema).sort_by(PARTITION_FIELD.get(dataset, "ts"))
 
 
 def _hour_start(part_dir: Path) -> datetime | None:
@@ -160,14 +270,22 @@ def _table_rows(table: pa.Table) -> list[dict]:
 
 class Lake:
     def __init__(
-        self, root: Path, *, duckdb_memory_limit: str = "1GB", duckdb_threads: int = 4
+        self, root: Path, *, duckdb_memory_limit: str | None = None,
+        duckdb_threads: int | None = None,
     ) -> None:
         self.root = root
-        self.duckdb_memory_limit = duckdb_memory_limit
-        self.duckdb_threads = duckdb_threads
+        # memory-constrained host: 512MB / 2 threads unless configured
+        # (OSINT_DUCKDB_MEMORY_LIMIT, OSINT_DUCKDB_THREADS)
+        self.duckdb_memory_limit = duckdb_memory_limit or os.environ.get(
+            "OSINT_DUCKDB_MEMORY_LIMIT", DUCKDB_MEMORY_LIMIT)
+        self.duckdb_threads = int(duckdb_threads or os.environ.get(
+            "OSINT_DUCKDB_THREADS", DUCKDB_THREADS))
         root.mkdir(parents=True, exist_ok=True)
-        # serialises file creation/removal: Lake.write (ingest flush) vs Lake.compact
-        self.write_lock = threading.Lock()
+        # serialises file creation/removal: Lake.write (ingest flush) vs Lake.compact vs
+        # Lake.rewrite_partition. In-process threads take this lock, then the dataset's
+        # OS file lock (<root>/<dataset>/.lock) excludes other processes (CLI, backfill).
+        self.write_lock = threading.RLock()
+        self.lock_timeout = LOCK_TIMEOUT_S
         # guards the connection and the count of in-flight cursors; close() waits on it
         self._con_cond = threading.Condition()
         self._active = 0
@@ -183,7 +301,7 @@ class Lake:
         for r in rows:
             ts = r[ts_field].astimezone(UTC)  # partitions are always UTC
             groups[(ts.strftime("%Y-%m-%d"), ts.hour)].append(r)
-        with self.write_lock:
+        with self.dataset_lock(dataset):
             for (date, hour), group in groups.items():
                 part_dir = self.root / dataset / f"date={date}" / f"hour={hour:02d}"
                 part_dir.mkdir(parents=True, exist_ok=True)
@@ -191,9 +309,16 @@ class Lake:
                 self._write_atomic(pa.Table.from_pylist(group, schema=schema), part_dir / name)
         return len(groups)
 
+    @contextmanager
+    def dataset_lock(self, dataset: str) -> Iterator[None]:
+        """Thread lock + inter-process file lock of one dataset (writes, compaction and
+        partition rewrites of any process are mutually exclusive)."""
+        with self.write_lock, FileLock(self.root / dataset / LOCK_NAME, self.lock_timeout):
+            yield
+
     @staticmethod
     def _write_atomic(table: pa.Table, dest: Path) -> None:
-        tmp = dest.with_name(f"{dest.name}.tmp")
+        tmp = _tmp_path(dest)
         try:
             pq.write_table(table, tmp, compression="zstd")
             os.replace(tmp, dest)
@@ -343,6 +468,22 @@ class Lake:
             time.sleep(0.02 * (attempt + 1))
         raise AssertionError("unreachable")
 
+    def iter_query(self, sql: str, params: list | None = None, *,
+                   start: datetime | None = None, end: datetime | None = None,
+                   batch: int = 10_000) -> Iterator[list[tuple]]:
+        """Like ``query`` but yields the result in ``batch``-row lists (``fetchmany``), so
+        a large result is never materialised at once. The cursor stays open until the
+        generator is exhausted or closed; a vanished file mid-stream raises."""
+        with self._cursor() as cur:
+            bound: list[tuple[str, bool]] = []
+            try:
+                bound_sql, bound = self._bind(cur, sql, start, end)
+                res = cur.execute(bound_sql, params or [])
+                while rows := res.fetchmany(batch):
+                    yield rows
+            finally:
+                self._unbind(cur, bound)
+
     # --------------------------------------------------------------- compaction
 
     def compact(self, dataset: str, older_than: datetime) -> int:
@@ -357,13 +498,25 @@ class Lake:
         for part_dir, hs in list(self._partition_dirs(dataset, None, older_than)):
             if hs + timedelta(hours=1) > older_than:
                 continue
-            with self.write_lock:  # per partition, so a flush is never held up for long
+            # per partition, so a flush is never held up for long
+            with self.dataset_lock(dataset):
                 n += self._compact_partition(dataset, part_dir)
         return n
 
+    @staticmethod
+    def _remove_stale_tmp(part_dir: Path) -> None:
+        """Delete crashed writers' .tmp leftovers. Only old ones: a fresh .tmp may belong
+        to a writer in another process that does not use the lock (older code)."""
+        cutoff = time.time() - STALE_TMP_S
+        for tmp in part_dir.glob("*.tmp"):
+            try:
+                if tmp.stat().st_mtime < cutoff:
+                    tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def _compact_partition(self, dataset: str, part_dir: Path) -> int:
-        for tmp in part_dir.glob("*.tmp"):  # leftovers of a crashed write (lock is held)
-            tmp.unlink(missing_ok=True)
+        self._remove_stale_tmp(part_dir)
         files = sorted(part_dir.glob("*.parquet"))
         if len(files) <= 1:
             return 0
@@ -373,13 +526,7 @@ class Lake:
                     [x for x in names if x != f.name]) == f.name:
                 self._remove_inputs([x for x in files if x != f])
                 return 1
-        schema = SCHEMAS[dataset]
-        table = pa.concat_tables(
-            [pq.ParquetFile(f).read().select(schema.names).cast(schema) for f in files])
-        table = table.group_by(schema.names, use_threads=False).aggregate([])
-        table = table.select(schema.names).cast(schema).sort_by(
-            PARTITION_FIELD.get(dataset, "ts"))
-        self._write_atomic(table, part_dir / _compact_name(names))
+        self._write_atomic(merge_files(dataset, files), part_dir / _compact_name(names))
         self._remove_inputs(files)
         return 1
 
@@ -426,12 +573,14 @@ class Lake:
         and retry."""
         part_dir = self._hour_dir(dataset, date, hour)
         table = pa.Table.from_pylist(rows, schema=SCHEMAS[dataset])  # may raise: nothing done
-        with self.write_lock:
+        # every writer of this dataset (any process) holds the same lock, so the inputs
+        # cannot vanish between this check and the swap
+        with self.dataset_lock(dataset):
             if any(not f.exists() for f in replaces):
                 return False
-            self._write_atomic(table, part_dir / _compact_name([f.name for f in replaces]))
-            self._remove_inputs([f for f in replaces
-                                 if f.name != _compact_name([x.name for x in replaces])])
+            out = _compact_name([f.name for f in replaces])
+            self._write_atomic(table, part_dir / out)
+            self._remove_inputs([f for f in replaces if f.name != out])
         return True
 
     # ------------------------------------------------------------------ indexes
