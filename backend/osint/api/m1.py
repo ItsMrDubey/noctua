@@ -105,6 +105,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_extraction(app, runtime)
     mount_webcams(app)
     mount_backfill(app, runtime)
+    __import__("osint.api.naval", fromlist=["mount_naval"]).mount_naval(app, runtime)
 
     @app.get("/")
     def index():

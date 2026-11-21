@@ -108,6 +108,7 @@ class Runtime:
             from osint.pipeline.extract.job import start as start_extraction
 
             self._tasks.append(start_extraction(self))  # sets self.extraction_job
+            __import__("osint.naval.job", fromlist=["start"]).start(self)  # sets self.naval_job
             log.info("runtime boot complete")
         except Exception as exc:  # surfaced via /health instead of crashing the app
             self.boot_error = f"{type(exc).__name__}: {exc}"

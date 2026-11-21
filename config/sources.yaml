@@ -90,3 +90,8 @@ rss:
     - {url: "https://www.dailysabah.com/rss/world", name: daily-sabah-world, language: en, country: TR}
     - {url: "https://www3.nhk.or.jp/rss/news/cat6.xml", name: nhk-international, language: ja, country: JP}
     - {url: "https://www.yna.co.kr/rss/news.xml", name: yonhap-ko, language: ko, country: KR}
+nga_msi:
+  enabled: true
+  interval_s: 1800
+  status: A        # active warnings only
+  reemit_days: 30  # re-store a still-active warning after this long
