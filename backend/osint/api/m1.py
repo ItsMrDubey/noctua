@@ -2,12 +2,13 @@
 
 import asyncio
 import os
+from datetime import datetime
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from osint.api import kml, layers
+from osint.api import history, kml, layers, live_ws
 from osint.config import ROOT
 from osint.runtime import Runtime
 
@@ -17,6 +18,15 @@ Hours = Query(24, ge=1, le=168)
 
 def _kml(body: str) -> Response:
     return Response(body, media_type=kml.KML_MEDIA)
+
+
+def _until(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return history.parse_iso(raw)
+    except ValueError:
+        raise HTTPException(422, "invalid until") from None
 
 
 def mount_m1(app: FastAPI, runtime: Runtime) -> None:
@@ -35,13 +45,14 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
             "ships", layers.track_layer_items(runtime, "ships", layers.parse_bbox(bbox)))
 
     @app.get("/api/layers/fires")
-    async def fires(hours: int = Hours) -> dict:
-        return layers.envelope("fires", await asyncio.to_thread(layers.fire_items, runtime, hours))
+    async def fires(hours: int = Hours, until: str | None = None) -> dict:
+        items = await asyncio.to_thread(layers.fire_items, runtime, hours, _until(until))
+        return layers.envelope("fires", items)
 
     @app.get("/api/layers/quakes")
-    async def quakes(hours: int = Hours) -> dict:
-        return layers.envelope(
-            "quakes", await asyncio.to_thread(layers.quake_items, runtime, hours))
+    async def quakes(hours: int = Hours, until: str | None = None) -> dict:
+        items = await asyncio.to_thread(layers.quake_items, runtime, hours, _until(until))
+        return layers.envelope("quakes", items)
 
     @app.get("/api/status")
     def status() -> dict:
@@ -66,6 +77,9 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     @app.get("/kml/quakes.kml")
     async def quakes_kml() -> Response:
         return _kml(kml.quakes_kml(await asyncio.to_thread(layers.quake_items, runtime, 24)))
+
+    history.mount(app, runtime)
+    live_ws.mount(app, runtime)
 
     @app.get("/")
     def index():

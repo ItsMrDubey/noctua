@@ -46,7 +46,12 @@ def track_layer_items(runtime: Runtime, layer: str, bbox: BBox | None = None) ->
         if p.kind == kind and p.ts >= cutoff and _in_bbox(p.lat, p.lon, bbox)
     ]
     positions.sort(key=lambda p: p.ts, reverse=True)
-    tracks = runtime.store.get_tracks([p.track_id for p in positions])
+    return position_items(runtime, positions)
+
+
+def position_items(runtime: Runtime, positions: list, tracks: dict | None = None) -> list[dict]:
+    if tracks is None:
+        tracks = runtime.store.get_tracks([p.track_id for p in positions])
     items = []
     for p in positions:
         t = tracks.get(p.track_id) or {}
@@ -69,25 +74,28 @@ def _attrs(raw: str | None) -> dict:
     return d if isinstance(d, dict) else {}
 
 
-def _obs_rows(runtime: Runtime, typ: str, hours: int, dedupe: bool) -> list[tuple]:
-    since = utcnow() - timedelta(hours=hours)
+def _obs_rows(
+    runtime: Runtime, typ: str, hours: int, dedupe: bool, until: datetime | None = None
+) -> list[tuple]:
+    end = until or utcnow()
+    since = end - timedelta(hours=hours)
     qualify = (
         "QUALIFY row_number() OVER (PARTITION BY id ORDER BY version DESC) = 1 " if dedupe else ""
     )
     sql = (
         "SELECT id, epoch_us(ts), lat, lon, value, attrs FROM observations "
-        f"WHERE type = ? AND ts >= ? {qualify}ORDER BY ts DESC LIMIT {OBS_LIMIT}"
+        f"WHERE type = ? AND ts >= ? AND ts <= ? {qualify}ORDER BY ts DESC LIMIT {OBS_LIMIT}"
     )
-    return runtime.lake.query(sql, [typ, since])
+    return runtime.lake.query(sql, [typ, since, end])
 
 
 def _iso(us: int) -> str:
     return (_EPOCH + timedelta(microseconds=us)).isoformat()
 
 
-def fire_items(runtime: Runtime, hours: int = 24) -> list[dict]:
+def fire_items(runtime: Runtime, hours: int = 24, until: datetime | None = None) -> list[dict]:
     out = []
-    for id_, us, lat, lon, value, attrs in _obs_rows(runtime, "fire", hours, False):
+    for id_, us, lat, lon, value, attrs in _obs_rows(runtime, "fire", hours, False, until):
         a = _attrs(attrs)
         out.append({
             "id": id_, "lat": round(lat, 5), "lon": round(lon, 5), "ts": _iso(us), "frp": value,
@@ -97,9 +105,9 @@ def fire_items(runtime: Runtime, hours: int = 24) -> list[dict]:
     return out
 
 
-def quake_items(runtime: Runtime, hours: int = 24) -> list[dict]:
+def quake_items(runtime: Runtime, hours: int = 24, until: datetime | None = None) -> list[dict]:
     out = []
-    for id_, us, lat, lon, value, attrs in _obs_rows(runtime, "quake", hours, True):
+    for id_, us, lat, lon, value, attrs in _obs_rows(runtime, "quake", hours, True, until):
         a = _attrs(attrs)
         out.append({
             "id": id_, "lat": round(lat, 5), "lon": round(lon, 5), "ts": _iso(us), "mag": value,
