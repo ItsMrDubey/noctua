@@ -222,6 +222,7 @@ function renderCamera(slim, el) {
     el.innerHTML =
       '<div class="wc-insp"><div class="wc-hd">' + esc(rec.name) + "</div>" +
       '<div class="wc-img"><img alt="' + esc(rec.name) + '" src="' + esc(cacheBust(rec.snapshot_url || "")) + '"></div>' +
+      '<div class="wc-credit">' + esc(rec.attribution || rec.licence || "") + "</div>" +
       (playable ? '<video class="wc-video" controls muted playsinline preload="none" src="' + esc(vid) + '"></video>' : "") +
       '<div class="kv">' +
       row("Source", esc(rec.source)) + row("Position", esc(rec.lat.toFixed(4) + ", " + rec.lon.toFixed(4))) +
@@ -273,7 +274,7 @@ export async function renderNearbyCameras(lat, lon, containerEl, { radiusKm = 25
     '<div class="wc-near">' + items.map((w, i) =>
       '<button type="button" class="wc-thumb" data-i="' + i + '" title="' + esc(w.name) + '">' +
       '<img loading="lazy" alt="" src="' + esc(cacheBust(w.snapshot_url || "")) + '"><span>' + esc(w.name) + "</span><em>" + w.distance_km.toFixed(1) + " km</em></button>").join("") +
-    "</div>";
+    "</div>" + '<div class="wc-credit">' + [...new Set(items.map((w) => w.attribution).filter(Boolean))].map(esc).join(" · ") + "</div>";
   containerEl.querySelectorAll(".wc-thumb img").forEach((im) => { im.onerror = () => im.classList.add("wc-bad"); });
   containerEl.querySelectorAll(".wc-thumb").forEach((btn) => btn.addEventListener("click", () => {
     if (onSelect) onSelect(items[Number(btn.dataset.i)]);

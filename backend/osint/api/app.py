@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from osint.api import layers
+from osint.api.licences import mount_licences
 from osint.api.m1 import mount_m1
 from osint.api.security import TokenAuthMiddleware
 from osint.runtime import Runtime
@@ -66,5 +67,6 @@ def create_app(runtime: Runtime) -> FastAPI:
         return {"tracks": layers.live_counts(runtime),
                 "quarantined": runtime.store.quarantine_count()}
 
+    mount_licences(app)
     mount_m1(app, runtime)
     return app

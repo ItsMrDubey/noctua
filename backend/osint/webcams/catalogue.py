@@ -214,7 +214,8 @@ class Catalogue:
             if d <= radius_km:
                 hits.append((d, w))
         hits.sort(key=lambda t: t[0])
-        return [{**w.slim(), "distance_km": round(d, 2), "refresh_s": w.refresh_s} for d, w in hits[:limit]]
+        return [{**w.slim(), "distance_km": round(d, 2), "refresh_s": w.refresh_s,
+                 "attribution": w.attribution, "licence": w.licence} for d, w in hits[:limit]]
 
     def sources_info(self) -> list[dict]:
         out = []

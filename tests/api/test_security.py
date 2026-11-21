@@ -120,3 +120,15 @@ def test_config_ion_token_only_for_loopback_or_authenticated(tmp_path):
     rt2 = _rt(tmp_path, cesium_ion_token="ion-secret", api_token="s3cret")
     c = TestClient(create_app(rt2), base_url=LOCAL)
     assert c.get("/api/config", headers={"Authorization": "Bearer s3cret"}).json()["cesium_ion_token"] == "ion-secret"
+
+
+def test_licences_endpoint_and_kml_attribution(tmp_path):
+    client = TestClient(create_app(_rt(tmp_path)), base_url=LOCAL)
+    j = client.get("/api/sources/licences").json()
+    ids = {s["id"] for s in j["sources"]}
+    assert {"esri", "gibs", "ucdp_ged", "copernicus", "adsb_lol", "webcam:tfl", "alterlab"} <= ids
+    assert all(s["licence"] and s["attribution"] and s["commercial"] in ("ok", "review", "no") for s in j["sources"])
+    assert "Sundberg" in j["ucdp_citation"] and "Davies" in j["ucdp_citation"]
+    root = ET.fromstring(client.get("/kml/master.kml").text)
+    assert "licences" in root.find("k:Document/k:description", NS).text
+    assert root.find("k:Document/k:Snippet", NS) is not None

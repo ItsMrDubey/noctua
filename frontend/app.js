@@ -23,6 +23,8 @@ import { refreshEventStats } from "/static/js/panels/evstats.js";
 import { NuclearLayer, NUC_GROUPS, nuclearDetails } from "/static/js/nuclear.js";
 import { MovementsLayer, MOV_ROLES, MOV_KINDS, movementDetails } from "/static/js/movements.js";
 import { WebcamLayer, renderNearbyCameras } from "/static/js/webcams.js";
+import { renderEventImagery } from "/static/js/imagery.js";
+import { initLicences } from "/static/js/licences.js";
 import { CarrierLayer } from "/static/js/naval.js";
 import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
@@ -35,6 +37,7 @@ async function loadConfig() {
 }
 
 async function main() {
+  initLicences();
   startClock();
   if (typeof Cesium === "undefined") { $("sources").textContent = "CesiumJS failed to load"; return; }
   // base imagery first: warm level 0-2 tiles, build the viewer + base layer before anything
@@ -199,9 +202,13 @@ async function main() {
   // "Cameras near this event": rendered once per selection, outside the 5 s-refreshed dossier
   function showNearbyCameras(id) {
     const it = events.items.get(id);
-    if (!it || it.lat == null || it.precision === "country") return; // a country centroid has no meaningful neighbours
+    if (!it) return;
     nearFor = id;
-    const box = $("dz-extra");
+    const root = $("dz-extra");
+    root.innerHTML = "";
+    const imBox = root.appendChild(document.createElement("div")), box = root.appendChild(document.createElement("div"));
+    renderEventImagery(id, imBox).catch(() => {});
+    if (it.lat == null || it.precision === "country") return; // a country centroid has no meaningful neighbours
     renderNearbyCameras(it.lat, it.lon, box, { onSelect: (w) => showWebcam(w) })
       .then((items) => { if (nearFor === id && !items.length) box.innerHTML = '<div class="wc-near-h">Cameras near this event</div><div class="wc-loading">None within 25 km</div>'; })
       .catch(() => {});

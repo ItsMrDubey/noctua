@@ -62,9 +62,11 @@ def client(rt):
 
 
 def test_config(client, rt):
-    assert client.get("/api/config").json() == {"cesium_ion_token": None}
+    local = TestClient(client.app, client=("127.0.0.1", 50000))
+    assert local.get("/api/config").json() == {"cesium_ion_token": None}
     rt.settings.cesium_ion_token = "tok"
-    assert client.get("/api/config").json() == {"cesium_ion_token": "tok"}
+    assert local.get("/api/config").json() == {"cesium_ion_token": "tok"}
+    assert client.get("/api/config").json() == {"cesium_ion_token": None}  # non-loopback peer, no API token
 
 
 def test_cesium_token_from_env(monkeypatch):
@@ -170,7 +172,7 @@ def test_other_kml(client):
         root = _parse(client.get(f"/kml/{path}.kml"))
         pms = root.findall(".//k:Placemark", NS)
         assert len(pms) == 1 and pms[0].find("k:name", NS).text == name
-    assert "X &amp; &lt;Y&gt;" in root.find(".//k:description", NS).text
+    assert "X &amp; &lt;Y&gt;" in root.find(".//k:Placemark/k:description", NS).text
 
 
 def test_static_fallback_and_frontend(client, monkeypatch, tmp_path):

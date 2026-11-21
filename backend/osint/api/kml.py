@@ -45,8 +45,15 @@ def _placemark(name: str, desc: str, style: str, lon: float, lat: float,
             f"{ts}{style}<Point>{mode}<coordinates>{coords}</coordinates></Point></Placemark>")
 
 
+ATTRIBUTION = ("Data: ADS-B aggregators (adsb.lol ODbL, airplanes.live, adsb.fi), AISStream, NASA FIRMS, USGS, "
+               "GDELT, news via AlterLab, UCDP GED (CC BY 4.0), Copernicus Sentinel. "
+               "Licences and required credits: /api/sources/licences")
+
+
 def _doc(name: str, placemarks: list[str]) -> str:
-    return f"{_NS}<Document><name>{_e(name)}</name>{''.join(placemarks)}</Document></kml>"
+    credit = (f"<Snippet maxLines=\"1\">{_e('Data sources and licences: see description')}</Snippet>"
+              f"<description>{_e(ATTRIBUTION)}</description>")
+    return f"{_NS}<Document><name>{_e(name)}</name>{credit}{''.join(placemarks)}</Document></kml>"
 
 
 def _track_style(item: dict, icon: str, aircraft: bool) -> str:
