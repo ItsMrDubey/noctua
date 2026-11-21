@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 from osint.core.models import Observation, Position
 from osint.store.lake import Lake, observation_row, position_row
@@ -48,3 +49,30 @@ def test_query_works_when_path_contains_apostrophe(tmp_path):
     lake = Lake(tmp_path / "o'brien")
     lake.write("positions", [position_row(_pos(T0))])
     assert lake.query("SELECT count(*) FROM positions") == [(1,)]
+
+
+def test_write_failure_leaves_no_tmp_file(tmp_path, monkeypatch):
+    import pyarrow.parquet as pq
+    import pytest
+
+    lake = Lake(tmp_path)
+
+    def boom(table, where, **kw):
+        Path(where).write_bytes(b"partial")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(pq, "write_table", boom)
+    row = position_row(_pos(datetime(2026, 1, 1, 5, tzinfo=UTC)))
+    with pytest.raises(OSError):
+        lake.write("positions", [row])
+    assert list(tmp_path.rglob("*.tmp")) == []
+
+
+def test_duckdb_connection_is_memory_capped(tmp_path):
+    lake = Lake(tmp_path, duckdb_memory_limit="1GiB", duckdb_threads=2)
+    con = lake._connect()
+    try:
+        assert con.execute("SELECT current_setting('memory_limit')").fetchone()[0] == "1.0 GiB"
+        assert con.execute("SELECT current_setting('threads')").fetchone()[0] == 2
+    finally:
+        con.close()

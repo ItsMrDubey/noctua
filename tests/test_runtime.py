@@ -46,3 +46,22 @@ async def test_stop_flushes_and_closes_even_if_ingestor_task_died(tmp_path, monk
     assert runtime.lake.query("SELECT count(*) FROM positions") == [(1,)]
     assert runtime.http.is_closed
     assert all(t.done() for t in asyncio.all_tasks() if t.get_name() == "maintenance")
+
+
+async def test_maintenance_prunes_off_the_event_loop(tmp_path, monkeypatch):
+    import threading
+
+    runtime = _runtime(tmp_path)
+    runtime.maintenance_interval_s = 0.01
+    threads = []
+
+    def prune(older_than):
+        threads.append(threading.current_thread())
+
+    monkeypatch.setattr(runtime.ingestor, "prune", prune)
+    await runtime.start()
+    try:
+        await eventually(lambda: len(threads) >= 1)
+    finally:
+        await runtime.stop()
+    assert threads[0] is not threading.main_thread()

@@ -33,11 +33,15 @@ class Ingestor:
         flush_interval_s: float = 30.0,
         flush_rows: int = 50_000,
         queue_size: int = 64,
+        max_buffer_rows: int = 500_000,
     ) -> None:
         self.store, self.lake, self.metrics = store, lake, metrics
         self.thin_s = thin_s or DEFAULT_THIN_S
         self.flush_interval_s = flush_interval_s
         self.flush_rows = flush_rows
+        self.max_buffer_rows = max_buffer_rows
+        self.consecutive_flush_failures = 0
+        self._drop_warned = False
         self.queue: asyncio.Queue[Batch] = asyncio.Queue(maxsize=queue_size)
         self.live: dict[str, Position] = {}
         self._buffers: dict[str, list[dict]] = {"positions": [], "observations": []}
@@ -112,11 +116,33 @@ class Ingestor:
                 continue
             self._seen_obs[key] = o.ts
             self._buffers["observations"].append(observation_row(o))
+        self._enforce_cap()
         self.metrics.inc("batches_ingested_total", source=batch.source)
         self.metrics.set("live_tracks", len(self.live))
 
     def _buffered(self) -> int:
         return sum(len(rows) for rows in self._buffers.values())
+
+    def _enforce_cap(self) -> None:
+        """Deliberate, counted drop of the oldest rows to bound memory (caller holds lock)."""
+        excess = self._buffered() - self.max_buffer_rows
+        if excess <= 0:
+            return
+        dataset = max(self._buffers, key=lambda d: len(self._buffers[d]))
+        n = min(excess, len(self._buffers[dataset]))
+        del self._buffers[dataset][:n]
+        self.metrics.inc("rows_dropped_total", n, dataset=dataset)
+        if not self._drop_warned:
+            self._drop_warned = True
+            log.warning("buffer cap %d exceeded: dropping oldest %s rows (flush failing?)",
+                        self.max_buffer_rows, dataset)
+
+    def _flush_delay(self) -> float:
+        """Seconds between flush attempts: interval, doubling per failure, capped at 10x."""
+        if self.consecutive_flush_failures == 0:
+            return self.flush_interval_s
+        return min(self.flush_interval_s * 2 ** (self.consecutive_flush_failures - 1),
+                   10 * self.flush_interval_s)
 
     def flush(self) -> None:
         with self._lock:
@@ -126,9 +152,14 @@ class Ingestor:
                         self.lake.write(dataset, rows)
                         self.metrics.inc("lake_rows_written_total", len(rows), dataset=dataset)
                         self._buffers[dataset] = []
+                self.consecutive_flush_failures = 0
+            except BaseException:
+                # remaining buffers are kept; retries back off exponentially
+                self.consecutive_flush_failures += 1
+                raise
             finally:
-                # on failure the remaining buffers are kept and retried next interval
                 self._last_flush = time.monotonic()
+                self._drop_warned = False
 
     def prune(self, older_than: datetime) -> None:
         with self._lock:
@@ -175,7 +206,7 @@ class Ingestor:
     async def run(self) -> None:
         self._task = asyncio.current_task()
         while True:
-            remaining = self.flush_interval_s - (time.monotonic() - self._last_flush)
+            remaining = self._flush_delay() - (time.monotonic() - self._last_flush)
             try:
                 batch = await asyncio.wait_for(self.queue.get(), timeout=max(remaining, 0.01))
             except TimeoutError:
@@ -183,8 +214,10 @@ class Ingestor:
             if batch is not None:
                 await self._in_thread(self._process_safe, batch)
                 self.metrics.set("ingest_queue_depth", self.queue.qsize())
-            due = time.monotonic() - self._last_flush >= self.flush_interval_s
-            if self._buffered() and (due or self._buffered() >= self.flush_rows):
+            due = time.monotonic() - self._last_flush >= self._flush_delay()
+            size_hit = self._buffered() >= self.flush_rows
+            # after a failure only the backoff timer may trigger a retry, not buffer size
+            if self._buffered() and (due or (size_hit and self.consecutive_flush_failures == 0)):
                 await self._in_thread(self._flush_safe)
             elif due:
                 self._last_flush = time.monotonic()

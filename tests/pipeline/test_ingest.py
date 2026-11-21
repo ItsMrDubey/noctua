@@ -221,3 +221,69 @@ def test_warm_start_keys_survive_prune_until_real_ts_expires(parts):
     second.process(Batch(source="t", observations=[o]))
     second.flush()
     assert lake.query("SELECT count(*) FROM observations") == [(1,)]
+
+
+async def test_persistent_flush_failure_is_backed_off(parts, monkeypatch):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics, flush_interval_s=0.2, flush_rows=1)
+    calls = []
+
+    def failing_write(dataset, rows):
+        calls.append(dataset)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(lake, "write", failing_write)
+    task = asyncio.create_task(ing.run())
+    for i in range(40):
+        await ing.submit(Batch(source="t", positions=[_pos(utcnow(), track=f"air:{i}")]))
+        await asyncio.sleep(0.005)
+    await eventually(lambda: ing.queue.empty())
+    task.cancel()
+    # size trigger fires once, then the batches are held back by the backoff window
+    assert 1 <= len(calls) <= 2
+    assert ing.consecutive_flush_failures == len(calls)
+    await asyncio.gather(task, return_exceptions=True)
+
+
+def test_backoff_doubles_capped_and_resets_on_success(parts, monkeypatch):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics, flush_interval_s=1.0)
+    real_write = lake.write
+    fail = {"on": True}
+
+    def write(dataset, rows):
+        if fail["on"]:
+            raise OSError("disk full")
+        return real_write(dataset, rows)
+
+    monkeypatch.setattr(lake, "write", write)
+    ing.process(Batch(source="t", positions=[_pos(utcnow())]))
+    delays = []
+    for _ in range(8):
+        with pytest.raises(OSError):
+            ing.flush()
+        delays.append(ing._flush_delay())
+    assert delays == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0, 10.0, 10.0]
+    assert ing.consecutive_flush_failures == 8
+    fail["on"] = False
+    ing.flush()
+    assert ing.consecutive_flush_failures == 0
+    assert ing._flush_delay() == 1.0
+    assert real_count(lake) == 1
+
+
+def test_buffer_cap_drops_oldest_and_counts(parts, caplog):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics, max_buffer_rows=5)
+    t0 = utcnow() - timedelta(hours=1)
+    with caplog.at_level("WARNING"):
+        for i in range(3):
+            ing.process(Batch(source="t", positions=[
+                _pos(t0 + timedelta(minutes=i), track=f"air:{2 * i}"),
+                _pos(t0 + timedelta(minutes=i), track=f"air:{2 * i + 1}")]))
+    assert ing._buffered() == 5
+    assert metrics.get("rows_dropped_total", dataset="positions") == 1
+    assert ing._buffers["positions"][0]["track_id"] == "air:1"  # oldest dropped
+    assert sum("dropp" in r.message for r in caplog.records) == 1  # once per flush cycle
+    ing.flush()
+    assert real_count(lake) == 5

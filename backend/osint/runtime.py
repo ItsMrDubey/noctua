@@ -56,7 +56,7 @@ class Runtime:
         while True:
             await asyncio.sleep(self.maintenance_interval_s)
             try:
-                self.ingestor.prune(utcnow() - DEDUPE_WINDOW)
+                await asyncio.to_thread(self.ingestor.prune, utcnow() - DEDUPE_WINDOW)
             except Exception:
                 log.exception("maintenance pass failed")
 

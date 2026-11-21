@@ -57,8 +57,12 @@ def observation_row(o: Observation) -> dict:
 
 
 class Lake:
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self, root: Path, *, duckdb_memory_limit: str = "1GB", duckdb_threads: int = 4
+    ) -> None:
         self.root = root
+        self.duckdb_memory_limit = duckdb_memory_limit
+        self.duckdb_threads = duckdb_threads
         root.mkdir(parents=True, exist_ok=True)
 
     def write(self, dataset: str, rows: list[dict]) -> int:
@@ -72,12 +76,20 @@ class Lake:
             part_dir.mkdir(parents=True, exist_ok=True)
             name = f"part-{time.time_ns()}-{uuid.uuid4().hex[:8]}.parquet"
             tmp = part_dir / f"{name}.tmp"
-            pq.write_table(pa.Table.from_pylist(group, schema=schema), tmp, compression="zstd")
-            os.replace(tmp, part_dir / name)
+            try:
+                pq.write_table(
+                    pa.Table.from_pylist(group, schema=schema), tmp, compression="zstd"
+                )
+                os.replace(tmp, part_dir / name)
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
         return len(groups)
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
-        con = duckdb.connect()
+        con = duckdb.connect(
+            config={"memory_limit": self.duckdb_memory_limit, "threads": self.duckdb_threads}
+        )
         for dataset, schema in SCHEMAS.items():
             ds_dir = self.root / dataset
             if ds_dir.is_dir() and any(ds_dir.rglob("*.parquet")):
