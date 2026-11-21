@@ -134,3 +134,34 @@ def test_kml_skips_unlocated():
     out = events_kml([{"id": "x", "lat": None, "lon": None}])
     assert "<Placemark>" not in out
     ET.fromstring(out)
+
+
+def test_corroboration_fields(client, store):
+    eid = _event(1, lat=0, lon=0)["id"]
+    store.save_corroborations(
+        [{"event_id": eid, "kind": "fire", "ref_id": "fire:1", "rule": "firms_hotspot",
+          "distance_km": 3.2, "dt_minutes": 0.0, "score": 0.6, "details": {"frp_mw": 40}}],
+        summaries=[{"event_id": eid, "score": 0.6, "kinds": ["fire"], "evidence": 1,
+                    "corroborated": True}])
+    sensor = _event(9, lat=33.0, lon=44.0, status="sensor-corroborated", conf=0.8)
+    store.save_sensor_event(sensor, {"detector": "orbit", "dedupe_key": "orbit:x:1",
+                                     "cell": "x"},
+                            [{"event_id": sensor["id"], "kind": "aircraft", "ref_id": "air:1",
+                              "rule": "orbit", "score": 0.7}],
+                            {"event_id": sensor["id"], "score": 0.8, "kinds": ["aircraft"],
+                             "evidence": 1, "corroborated": True})
+    items = {it["id"][-1]: it for it in client.get("/api/events?all=true").json()["items"]}
+    assert items["1"]["corroboration_score"] == 0.6
+    assert items["1"]["corroboration_kinds"] == ["fire"] and items["1"]["source"] == "news"
+    assert items["2"]["corroboration_score"] == 0.0 and items["2"]["corroboration_kinds"] == []
+    assert items["9"]["source"] == "sensor" and items["9"]["detector"] == "orbit"
+    d = client.get(f"/api/events/{eid}").json()
+    [c] = d["corroborations"]
+    assert (c["kind"], c["ref_id"], c["rule"], c["distance_km"], c["dt_minutes"],
+            c["score"], c["details"]) == ("fire", "fire:1", "firms_hotspot", 3.2, 0.0, 0.6,
+                                          {"frp_mw": 40})
+    s = client.get("/api/events/stats").json()
+    assert s["by_status"]["sensor-corroborated"] == 1
+    assert s["sensor"]["corroborations_by_kind"] == {"fire": 1, "aircraft": 1}
+    assert s["sensor"]["news_events_sensor_corroborated"] == 1
+    assert s["sensor"]["sensor_derived"] == {"total": 1, "by_detector": {"orbit": 1}}

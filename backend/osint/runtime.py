@@ -98,6 +98,9 @@ class Runtime:
             self.event_builder = wire_events(self)
             self._tasks.append(
                 asyncio.create_task(self.event_builder.run(), name="event_builder"))
+            from osint.pipeline.sensor_events import wire as wire_sensor  # sets .sensor_events
+
+            self._tasks.append(asyncio.create_task(wire_sensor(self).run(), name="sensor_events"))
             from osint.imagery.job import wire as wire_imagery
 
             self.imagery_job = wire_imagery(self)

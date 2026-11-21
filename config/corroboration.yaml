@@ -57,6 +57,7 @@ scoring:
 # ------------------------------------------------------------------ sensor-derived events
 sensor_events:
   interval_s: 300
+  initial_delay_s: 60         # first pass this long after boot
   orbit:
     lookback_min: 120         # positions read per pass
     window_min: 60            # sliding window for the cumulative heading change

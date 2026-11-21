@@ -77,6 +77,19 @@ def events_kml(items: list[dict]) -> str:
             "</Document></kml>")
 
 
+def add_corroboration(store, items: list[dict]) -> None:
+    """Add ``corroboration_score``, ``corroboration_kinds`` and ``source`` ('sensor' for
+    sensor-derived events, else 'news') to event dicts in place."""
+    summ = store.corroboration_summaries([it["id"] for it in items])
+    for it in items:
+        s = summ.get(it["id"]) or {}
+        it["corroboration_score"] = float(s.get("score") or 0.0)
+        it["corroboration_kinds"] = list(s.get("kinds") or [])
+        it["source"] = "sensor" if s.get("detector") else "news"
+        if s.get("detector"):
+            it["detector"] = s["detector"]
+
+
 def mount_events(app: FastAPI, runtime) -> None:
     store = runtime.store
 
@@ -97,11 +110,21 @@ def mount_events(app: FastAPI, runtime) -> None:
             category=category, status=status, min_confidence=min_confidence, limit=limit,
             include_unlocated=all_ or include_unlocated,
             map_default=not all_ and not status)
+        await asyncio.to_thread(add_corroboration, store, items)
         return _json({"layer": "events", "count": len(items), "items": items})
 
     @app.get("/api/events/stats")
     async def event_stats() -> Response:
         stats = await asyncio.to_thread(store.event_stats)
+        stats["sensor"] = await asyncio.to_thread(store.corroboration_stats)
+        corr = getattr(getattr(runtime, "event_builder", None), "corroborator", None)
+        if corr is not None and corr.last is not None:
+            stats["sensor"]["last_corroboration_pass"] = msgspec.to_builtins(
+                corr.last.__dict__)
+        det = getattr(runtime, "sensor_events", None)
+        if det is not None:
+            stats["sensor"]["detector"] = {"passes": det.passes, "last": det.last,
+                                           "last_error": det.last_error}
         builder = getattr(runtime, "event_builder", None)
         if builder is not None:
             last = builder.last_pass
@@ -116,6 +139,8 @@ def mount_events(app: FastAPI, runtime) -> None:
         ev = await asyncio.to_thread(store.get_event, event_id)
         if ev is None:
             raise HTTPException(404, "unknown event")
+        await asyncio.to_thread(add_corroboration, store, [ev])
+        ev["corroborations"] = await asyncio.to_thread(store.list_corroborations, event_id)
         return _json(ev)
 
     @app.get("/kml/events.kml")
