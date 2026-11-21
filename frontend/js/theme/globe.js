@@ -5,6 +5,69 @@ import { makeImagery } from "/static/js/layers.js";
 
 const C = Cesium;
 
+// WebGL can fail to initialise when the browser has exhausted its GPU contexts (many 3D tabs)
+// or its GPU process crashed. Retry once with the most compatible context settings before
+// giving up with actionable guidance.
+const COMPAT_CONTEXT = {
+  requestWebgl1: true,
+  webgl: { powerPreference: "default", failIfMajorPerformanceCaveat: false, antialias: false },
+};
+
+function constructViewer(opts) {
+  try {
+    return new C.Viewer("globe", opts);
+  } catch (first) {
+    console.warn("Viewer init failed, retrying with compatible WebGL settings:", first);
+    const el = document.getElementById("globe");
+    if (el) el.innerHTML = "";
+    try {
+      return new C.Viewer("globe", { ...opts, contextOptions: COMPAT_CONTEXT });
+    } catch (second) {
+      showGpuHelp(String(second && second.message ? second.message : second));
+      throw second;
+    }
+  }
+}
+
+function showGpuHelp(detail) {
+  const box = document.createElement("div");
+  box.className = "gpu-help";
+  box.style.cssText = "position:fixed;inset:0;display:grid;place-items:center;z-index:9999;" +
+    "background:rgba(3,6,10,.92);color:#cfe8ff;font:14px/1.5 'Segoe UI',sans-serif";
+  const msg = document.createElement("div");
+  msg.style.cssText = "max-width:560px;padding:24px;border:1px solid #1f3a52;border-radius:6px";
+  msg.innerHTML = "<b>3D globe could not start (WebGL)</b><br><br>" +
+    "Usually the browser has run out of GPU contexts or its GPU process crashed.<br>" +
+    "1. Close other tabs showing 3D maps or globes.<br>" +
+    "2. Restart the browser (or open <code>chrome://gpu</code> to check WebGL status).<br>" +
+    "3. Make sure hardware acceleration is enabled in browser settings.<br><br>" +
+    "<span style='opacity:.7'>Detail: </span>";
+  const d = document.createElement("span");
+  d.style.opacity = ".7";
+  d.textContent = detail;  // never innerHTML untrusted text
+  msg.appendChild(d);
+  const btn = document.createElement("button");
+  btn.textContent = "Retry";
+  btn.style.cssText = "margin-top:16px";
+  btn.onclick = () => location.reload();
+  msg.appendChild(document.createElement("br"));
+  msg.appendChild(btn);
+  box.appendChild(msg);
+  document.body.appendChild(box);
+}
+
+// Cesium cannot rebuild its GPU resources after a lost context, so recover by reloading
+// once the browser restores the context (or after a short delay if it never does).
+function watchContextLoss(viewer) {
+  const canvas = viewer.scene.canvas;
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    console.warn("WebGL context lost; reloading when restored");
+    setTimeout(() => location.reload(), 5000);
+  }, false);
+  canvas.addEventListener("webglcontextrestored", () => location.reload(), false);
+}
+
 export function createViewer(cfg) {
   const opts = {
     baseLayer: false, geocoder: false, baseLayerPicker: false, timeline: false, animation: false,
@@ -13,7 +76,8 @@ export function createViewer(cfg) {
   };
   // base imagery must not queue behind the default 6-requests-per-server throttle
   C.RequestScheduler.requestsByServer["server.arcgisonline.com:443"] = 18;
-  const viewer = new C.Viewer("globe", opts);
+  const viewer = constructViewer(opts);
+  watchContextLoss(viewer);
   if (cfg) applyConfig(viewer, cfg);
   const scene = viewer.scene, globe = scene.globe;
   scene.requestRenderMode = true;
