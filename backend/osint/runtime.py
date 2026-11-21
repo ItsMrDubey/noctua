@@ -59,6 +59,7 @@ class Runtime:
         self._ingest_task: asyncio.Task | None = None
         self._boot_task: asyncio.Task | None = None
         self.boot_error: str | None = None
+        self.event_builder = None  # set during boot (osint.pipeline.events.EventBuilder)
         self.maintenance_interval_s = 600.0
 
     @property
@@ -90,6 +91,12 @@ class Runtime:
             self._tasks.append(self._ingest_task)
             self._tasks.append(asyncio.create_task(self._maintenance(), name="maintenance"))
             await self.scheduler.start()
+            # local import: the events pipeline imports Runtime for typing
+            from osint.pipeline.events import wire as wire_events
+
+            self.event_builder = wire_events(self)
+            self._tasks.append(
+                asyncio.create_task(self.event_builder.run(), name="event_builder"))
             log.info("runtime boot complete")
         except Exception as exc:  # surfaced via /health instead of crashing the app
             self.boot_error = f"{type(exc).__name__}: {exc}"

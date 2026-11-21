@@ -27,8 +27,14 @@ off_topic_trigger: 1.0   # off-topic score (strong=1, weak=0.5) that triggers th
 mask:
   - hunger strike*
   - strike a deal
+  - strikes a deal
+  - struck a deal
   - strike a balance
+  - strikes a balance
+  - struck a balance
   - strike a chord
+  - strikes a chord
+  - struck a chord
   - strike the right
   - striking similarity
   - lucky strike
