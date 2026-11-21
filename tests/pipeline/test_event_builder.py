@@ -1,6 +1,8 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from osint.config import ROOT
 from osint.core.metrics import Metrics
 from osint.core.models import Document, PlaceHit, TriageResult
@@ -189,4 +191,74 @@ def test_rebuild_reclusters_lake_and_drops_legacy_events(tmp_path):
         "published_at": legacy["t_start"], "role": "primary", "added_at": legacy["t_start"]}])
     assert migrate_events(store)["legacy"] == 1
     assert {e["id"] for e in store.list_events(limit=10)} == {ev["id"]}
+    store.close()
+
+
+class _FakeVerifier:
+    def __init__(self):
+        self.recs = {}
+
+    def verdicts_since(self, since):
+        return {k: v["verdict"] for k, v in self.recs.items()}
+
+    def get_many(self, ids):
+        return {i: self.recs[i] for i in ids if i in self.recs}
+
+
+def test_extraction_verdicts_merge_into_events(tmp_path):
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    lviv = PlaceHit(name="Lviv", country="UA", lat=49.84, lon=24.03, precision="city",
+                    confidence=0.9, matched="Lviv")
+    odesa = PlaceHit(name="Odesa", country="UA", lat=46.48, lon=30.72, precision="city",
+                     confidence=0.9, matched="Odesa")
+    lake.write("documents", [
+        _row(1, "Missile strike on Kyiv power plant", fetched=NOW - timedelta(minutes=50)),
+        _row(2, "Drone strike hits Lviv depot", fetched=NOW - timedelta(minutes=40),
+             place=lviv),
+        _row(3, "Explosions reported in Odesa port", fetched=NOW - timedelta(minutes=30),
+             place=odesa)])
+    m = Metrics()
+    b = _builder(store, lake, lambda: NOW, m)
+    b.run_once()
+    ids = {e["title"].split()[0]: e["id"] for e in store.list_events(limit=10)}
+    before = {k: store.get_event(v)["confidence"] for k, v in ids.items()}
+    v = _FakeVerifier()
+    v.recs = {
+        ids["Missile"]: {"status": "done", "verdict": "supported", "reasons": [],
+                         "doc_id": "doc:1", "geo": None,
+                         "quotes": [{"field": "casualties", "quote": "two killed",
+                                     "verbatim": True},
+                                    {"field": "where", "quote": "paraphrase",
+                                     "verbatim": False}]},
+        ids["Drone"]: {"status": "done", "verdict": "unsupported",
+                       "reasons": ["article does not report a concrete event"],
+                       "doc_id": "doc:2", "geo": None, "quotes": []},
+        ids["Explosions"]: {"status": "done", "verdict": "mismatch",
+                            "reasons": ["place: Mykolaiv is 110 km from the event's Odesa"],
+                            "doc_id": "doc:3", "quotes": [],
+                            "geo": {"lat": 46.97, "lon": 31.99, "country": "UA",
+                                    "precision": "city"},
+                            "result": {"where": {"place_name": "Mykolaiv"}}},
+    }
+    b.verifier = v
+    s = b.run_once()
+    assert s.verdicts_applied == 3
+    sup, uns, mis = (store.get_event(ids[k]) for k in ("Missile", "Drone", "Explosions"))
+    assert sup["confidence"] == pytest.approx(min(1, before["Missile"] + 0.1), abs=0.02)
+    assert {(f["field"], f["value"]) for f in sup["fields"]} >= {("casualties", "two killed")}
+    assert not any(f["value"] == "paraphrase" for f in sup["fields"])
+    assert uns["confidence"] <= 0.2
+    assert mis["place_name"] == "Mykolaiv" and mis["lat"] == 46.97
+    assert mis["confidence"] < before["Explosions"]
+    assert any(f["field"] == "location_before_extraction" and "Odesa" in f["value"]
+               for f in mis["fields"])
+    shown = {e["id"] for e in store.list_events(map_default=True, limit=10)}
+    assert ids["Drone"] not in shown
+    assert m.get("event_verdicts_applied_total", verdict="mismatch") == 1
+    # unchanged verdicts are not re-applied; a restart keeps them in the scorer
+    assert b.run_once().verdicts_applied == 0
+    b2 = _builder(store, lake, lambda: NOW)
+    b2.warm_start()
+    assert b2.verdicts[ids["Drone"]] == "unsupported"
     store.close()

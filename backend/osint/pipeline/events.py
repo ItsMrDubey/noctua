@@ -19,6 +19,7 @@ Confidence is a weighted sum of components in 0..1, weights in ``config/events.y
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import logging
@@ -30,6 +31,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import h3
 import yaml
 
 from osint.config import ROOT
@@ -97,6 +99,8 @@ class EventsConfig:
     precision_score: dict[str, float] = field(default_factory=lambda: {
         "point": 1.0, "city": 1.0, "admin1": 0.6, "country": 0.2})
     recency_half_life_h: float = 24.0
+    verification: dict[str, float] = field(default_factory=lambda: {
+        "unsupported_cap": 0.2, "mismatch_penalty": 0.25, "supported_bonus": 0.1})
 
     def window_h(self, category: str) -> float:
         return float(self.time_window_h.get(category, self.time_window_h.get("default", 24)))
@@ -154,6 +158,8 @@ class EventsConfig:
                              (conf.get("precision_score") or base.precision_score).items()},
             recency_half_life_h=float(conf.get("recency_half_life_h",
                                                base.recency_half_life_h)),
+            verification={**base.verification, **{
+                str(k): float(v) for k, v in (d.get("verification") or {}).items()}},
         )
 
     @classmethod
@@ -224,12 +230,30 @@ def event_confidence(ev: EventState, cfg: EventsConfig, now: datetime,
     return round(min(1.0, max(0.0, total)), 4)
 
 
-def make_scorer(cfg: EventsConfig, sensor: Callable[[str], float] | None = None
+def apply_verdict(confidence: float, verdict: str | None, cfg: EventsConfig) -> float:
+    """Article-extraction verdict adjustment (config ``verification``): unsupported caps,
+    mismatch subtracts, supported adds."""
+    v = cfg.verification
+    if verdict == "unsupported":
+        confidence = min(confidence, v.get("unsupported_cap", 0.2))
+    elif verdict == "mismatch":
+        confidence -= v.get("mismatch_penalty", 0.25)
+    elif verdict == "supported":
+        confidence += v.get("supported_bonus", 0.1)
+    return round(min(1.0, max(0.0, confidence)), 4)
+
+
+def make_scorer(cfg: EventsConfig, sensor: Callable[[str], float] | None = None,
+                verdict: Callable[[str], str | None] | None = None
                 ) -> Callable[[EventState, datetime], tuple[str, float]]:
-    """``sensor(event_id)`` gives the event's corroboration score (0 when absent)."""
+    """``sensor(event_id)`` gives the event's corroboration score (0 when absent);
+    ``verdict(event_id)`` its extraction verdict (None when not extracted)."""
     def score(ev: EventState, now: datetime) -> tuple[str, float]:
         s = sensor(ev.id) if sensor is not None else 0.0
-        return event_status(ev, cfg), event_confidence(ev, cfg, now, s)
+        conf = event_confidence(ev, cfg, now, s)
+        if verdict is not None:
+            conf = apply_verdict(conf, verdict(ev.id), cfg)
+        return event_status(ev, cfg), conf
     return score
 
 
@@ -285,6 +309,7 @@ class PassStats:
     gdelt_rejected: dict[str, int] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
     corroboration_evaluated: int = 0
+    verdicts_applied: int = 0
     sensor_corroborated: int = 0
     seconds: float = 0.0
 
@@ -306,8 +331,12 @@ class EventBuilder:
         self.corroborator = corroborator
         self.sensor_scores: dict[str, float] = (
             corroborator.scores if corroborator is not None else {})
+        self.verifier: Any = None  # extraction store (pipeline.extract), set by wire()
+        self.verdicts: dict[str, str] = {}  # event id -> applied extraction verdict
+        self._verdict_cursor: datetime | None = None
         self.clusterer = Clusterer(self.cfg, make_scorer(
-            self.cfg, lambda eid: self.sensor_scores.get(eid, 0.0)),
+            self.cfg, lambda eid: self.sensor_scores.get(eid, 0.0),
+            lambda eid: self.verdicts.get(eid)),
                                    cameo_category=cameo_category, embedder=embedder)
         self._seen: dict[str, datetime] = {}  # doc id -> fetched_at (overlap window)
         try:
@@ -344,6 +373,7 @@ class EventBuilder:
                                 if r["id"] not in sensor_ids)
         if self.corroborator is not None:
             self.corroborator.warm_start(now)
+        self.verdicts = {k: v["verdict"] for k, v in self.store.verifications().items()}
         cursor = self._cursor()
         if cursor is not None:
             horizon = cursor - timedelta(minutes=self.cfg.cursor_overlap_min)
@@ -401,6 +431,13 @@ class EventBuilder:
                 "fetched_at": newest.isoformat()})
         for d in fresh:
             self._seen[d.id] = d.fetched_at or now
+        verified = 0
+        if self.verifier is not None:
+            try:
+                verified = self.apply_verdicts(now)
+            except Exception:  # verification must never stop event building
+                self.metrics.inc("verification_errors_total")
+                log.exception("applying extraction verdicts failed")
         cres = None
         if self.corroborator is not None:
             try:
@@ -418,9 +455,87 @@ class EventBuilder:
                           gdelt_rejected=dict(res.gdelt_rejected), skipped=dict(res.skipped),
                           corroboration_evaluated=cres.evaluated if cres else 0,
                           sensor_corroborated=len(cres.newly_corroborated) if cres else 0,
+                          verdicts_applied=verified,
                           seconds=time.perf_counter() - t0)
         self._record(stats)
         return stats
+
+    # ------------------------------------------------------------ verification
+
+    def apply_verdicts(self, now: datetime) -> int:
+        """Merge new extraction verdicts (``verifier.verdicts_since`` cursor) into events:
+
+        * unsupported: confidence capped (and hidden from the map default view)
+        * mismatch: confidence penalised; if the extraction geocoded a city/point place, the
+          event moves there (old place kept as field ``location_before_extraction``)
+        * supported: confidence bonus; verbatim quotes become event_fields
+        Idempotent: a verdict whose fingerprint is unchanged is not re-applied."""
+        since = self._verdict_cursor or now - timedelta(hours=self.cfg.index_window_h)
+        changed = self.verifier.verdicts_since(since - timedelta(minutes=1))
+        self._verdict_cursor = now
+        ids = [e for e in changed if e in self.clusterer.events]
+        if not ids:
+            return 0
+        recs = self.verifier.get_many(ids)
+        known = self.store.verifications(ids)
+        rows, fields, verifs = [], [], []
+        for eid in ids:
+            rec = recs.get(eid) or {}
+            verdict = rec.get("verdict")
+            if rec.get("status") != "done" or verdict not in (
+                    "supported", "unsupported", "mismatch"):
+                continue
+            quotes = [q for q in rec.get("quotes") or [] if isinstance(q, dict)]
+            geo = rec.get("geo") or None
+            fp = json.dumps([verdict, rec.get("reasons"), geo, quotes], sort_keys=True,
+                            default=str)
+            fp = hashlib.sha1(fp.encode("utf-8")).hexdigest()[:16]
+            self.verdicts[eid] = verdict
+            if (known.get(eid) or {}).get("fingerprint") == fp:
+                continue
+            ev = self.clusterer.events[eid]
+            doc_id = rec.get("doc_id") or "extraction"
+            if verdict == "mismatch" and geo and geo.get("precision") in ("city", "point") \
+                    and geo.get("lat") is not None and geo.get("lon") is not None:
+                fields += self._relocate(ev, rec, geo, doc_id)
+            if verdict == "supported":
+                for q in quotes:
+                    if q.get("verbatim") and q.get("quote"):
+                        fields.append({"event_id": eid, "field": str(q.get("field") or "quote"),
+                                       "value": str(q["quote"])[:300], "doc_id": doc_id,
+                                       "quote": str(q["quote"])[:300]})
+            ev.status, ev.confidence = self.clusterer.scorer(ev, now)
+            ev.updated_at = now
+            rows.append(ev.to_row())
+            verifs.append({"event_id": eid, "verdict": verdict,
+                           "reasons": rec.get("reasons") or [], "quotes": quotes,
+                           "fingerprint": fp})
+            self.metrics.inc("event_verdicts_applied_total", verdict=verdict)
+        if verifs:
+            self.store.save_events(rows, fields=fields)
+            self.store.save_verifications(verifs)
+        return len(verifs)
+
+    def _relocate(self, ev: EventState, rec: dict, geo: dict, doc_id: str) -> list[dict]:
+        lat, lon = float(geo["lat"]), float(geo["lon"])
+        if ev.lat is not None and abs(ev.lat - lat) < 1e-6 and abs(ev.lon - lon) < 1e-6:
+            return []
+        where = (rec.get("result") or {}).get("where") or {}
+        name = where.get("place_name") or f"{lat:.2f}, {lon:.2f}"
+        old = (f"{ev.place_name or ''} ({ev.lat}, {ev.lon}, {ev.precision})"
+               if ev.lat is not None else f"{ev.place_name or ''} ({ev.precision})")
+        old_cell = ev.h3_3
+        ev.lat, ev.lon = lat, lon
+        ev.precision, ev.place_name = str(geo["precision"]), name
+        ev.country = geo.get("country") or ev.country
+        ev.geo_confidence = 0.8
+        ev.h3_3, ev.h3_5, ev.h3_7 = (h3.str_to_int(h3.latlng_to_cell(lat, lon, r))
+                                     for r in (3, 5, 7))
+        self.clusterer._index_geo(ev, old_cell)
+        return [{"event_id": ev.id, "field": "location_before_extraction", "value": old[:300],
+                 "doc_id": doc_id, "quote": "moved: extraction place mismatch"},
+                {"event_id": ev.id, "field": "location", "value": name, "doc_id": doc_id,
+                 "quote": f"extraction: {name}"}]
 
     def _record(self, s: PassStats) -> None:
         m = self.metrics
@@ -559,6 +674,12 @@ def wire(runtime: Runtime) -> EventBuilder:
     caller schedules ``builder.run()`` as a background task."""
     builder = EventBuilder.from_settings(runtime.settings, runtime.store, runtime.lake,
                                          runtime.metrics)
+    try:  # article-extraction verdicts (optional stage)
+        from osint.pipeline.extract.job import get_store
+
+        builder.verifier = get_store(runtime)
+    except Exception:
+        log.exception("extraction store unavailable; verdicts not merged")
     runtime.event_builder = builder
     return builder
 

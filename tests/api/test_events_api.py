@@ -165,3 +165,22 @@ def test_corroboration_fields(client, store):
     assert s["sensor"]["corroborations_by_kind"] == {"fire": 1, "aircraft": 1}
     assert s["sensor"]["news_events_sensor_corroborated"] == 1
     assert s["sensor"]["sensor_derived"] == {"total": 1, "by_detector": {"orbit": 1}}
+
+
+def test_verification_fields_and_unsupported_hidden(client, store):
+    e1, e3 = _event(1, lat=0, lon=0)["id"], _event(3, lat=0, lon=0)["id"]
+    store.save_verifications([
+        {"event_id": e1, "verdict": "supported", "reasons": [],
+         "quotes": [{"field": "casualties", "quote": "two killed", "verbatim": True}],
+         "fingerprint": "a"},
+        {"event_id": e3, "verdict": "unsupported", "reasons": ["opinion piece"],
+         "quotes": [], "fingerprint": "b"}])
+    assert ids(client.get("/api/events")) == {"1"}  # unsupported leaves the map view
+    items = {it["id"][-1]: it for it in client.get("/api/events?all=true").json()["items"]}
+    assert items["1"]["verdict"] == "supported" and items["3"]["verdict"] == "unsupported"
+    assert items["2"]["verdict"] is None
+    d = client.get(f"/api/events/{e1}").json()
+    assert d["verification"] == {"verdict": "supported", "reasons": [], "quotes": [
+        {"field": "casualties", "quote": "two killed", "verbatim": True}]}
+    assert client.get(f"/api/events/{_event(2, lat=0, lon=0)['id']}").json()[
+        "verification"] is None

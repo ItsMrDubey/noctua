@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS sensor_events (
   details TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS sensor_events_cell ON sensor_events(detector, cell, t_end);
 """
+# Extraction verdicts merged into events (pipeline.events applies them; source of truth is
+# data_dir/extraction.sqlite). fingerprint makes re-application idempotent.
+VERIFICATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS event_verification (
+  event_id TEXT PRIMARY KEY, verdict TEXT NOT NULL, reasons TEXT NOT NULL DEFAULT '[]',
+  quotes TEXT NOT NULL DEFAULT '[]', fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS event_verification_verdict ON event_verification(verdict);
+"""
 CORROBORATION_KINDS = ("fire", "quake", "aircraft", "ship", "ais_gap", "imagery")
 
 EVENT_COLUMNS = (
@@ -159,6 +167,7 @@ class SqliteStore:
         self._db.executescript(SCHEMA)
         self._db.executescript(EVENTS_SCHEMA)
         self._db.executescript(CORROBORATION_SCHEMA)
+        self._db.executescript(VERIFICATION_SCHEMA)
 
     def register_source(self, name: str, domain: str, licence: str, commercial_ok: bool) -> None:
         with self._lock, self._db:
@@ -322,6 +331,8 @@ class SqliteStore:
             where.append("(status IN ('multi-source', 'sensor-corroborated', 'official') OR "
                          "(status = 'reported' AND precision IN ('city', 'point') "
                          "AND confidence >= 0.5))")
+            where.append("id NOT IN (SELECT event_id FROM event_verification "
+                         "WHERE verdict = 'unsupported')")
         if bbox is not None:
             w, s, e, n = bbox
             where.append("lat IS NOT NULL AND lat BETWEEN ? AND ?")
@@ -430,6 +441,7 @@ class SqliteStore:
                                    ("event_fields", "event_id"),
                                    ("corroborations", "event_id"),
                                    ("event_corroboration", "event_id"),
+                                   ("event_verification", "event_id"),
                                    ("sensor_events", "event_id")):
                     self._db.execute(f"DELETE FROM {table} WHERE {col} IN ({marks})", chunk)
                 n += self._db.execute(f"DELETE FROM events WHERE id IN ({marks})",
@@ -450,10 +462,46 @@ class SqliteStore:
         with self._lock, self._db:
             keep = "(SELECT event_id FROM sensor_events)"
             for table in ("event_documents", "event_fields", "corroborations",
-                          "event_corroboration"):
+                          "event_corroboration", "event_verification"):
                 self._db.execute(f"DELETE FROM {table} WHERE event_id NOT IN {keep}")
             self._db.execute("DELETE FROM gdelt_decisions")
             return self._db.execute(f"DELETE FROM events WHERE id NOT IN {keep}").rowcount
+
+    # ------------------------------------------------------------- verification
+
+    def save_verifications(self, rows: list[dict]) -> None:
+        """Upsert {event_id, verdict, reasons, quotes, fingerprint} rows."""
+        now = iso(utcnow())
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT INTO event_verification VALUES (?,?,?,?,?,?) ON CONFLICT(event_id) "
+                "DO UPDATE SET verdict=excluded.verdict, reasons=excluded.reasons, "
+                "quotes=excluded.quotes, fingerprint=excluded.fingerprint, "
+                "updated_at=excluded.updated_at",
+                [(r["event_id"], r["verdict"],
+                  json.dumps(r.get("reasons") or [], ensure_ascii=False),
+                  json.dumps(r.get("quotes") or [], ensure_ascii=False),
+                  r["fingerprint"], now) for r in rows])
+
+    def verifications(self, event_ids: list[str] | None = None) -> dict[str, dict]:
+        """event id -> {verdict, reasons, quotes, fingerprint} (all rows when ids is None)."""
+        if event_ids is None:
+            with self._lock:
+                rows = self._db.execute("SELECT * FROM event_verification").fetchall()
+        else:
+            rows = []
+            for i in range(0, len(event_ids), 900):
+                chunk = event_ids[i: i + 900]
+                with self._lock:
+                    rows += self._db.execute(
+                        f"SELECT * FROM event_verification WHERE event_id IN "
+                        f"({','.join('?' * len(chunk))})", chunk).fetchall()
+        out = {}
+        for r in rows:
+            d = dict(r)
+            d["reasons"], d["quotes"] = json.loads(d["reasons"]), json.loads(d["quotes"])
+            out[d.pop("event_id")] = d
+        return out
 
     # ------------------------------------------------------------ corroboration
 

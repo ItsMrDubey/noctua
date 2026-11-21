@@ -119,3 +119,12 @@ confidence:
     sensor: 0.15             # corroboration score 0..1 (config/corroboration.yaml)
   precision_score: {point: 1.0, city: 1.0, admin1: 0.6, country: 0.2}
   recency_half_life_h: 24
+
+# Article-extraction verdicts (pipeline.extract) merged into events by the EventBuilder:
+# unsupported -> confidence capped here and hidden from the map default view;
+# mismatch -> confidence minus the penalty and, when the extraction geocoded a city/point
+# place, the event moves there; supported -> bonus, verbatim quotes become event fields.
+verification:
+  unsupported_cap: 0.2
+  mismatch_penalty: 0.25
+  supported_bonus: 0.1

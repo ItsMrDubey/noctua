@@ -80,8 +80,11 @@ def events_kml(items: list[dict]) -> str:
 def add_corroboration(store, items: list[dict]) -> None:
     """Add ``corroboration_score``, ``corroboration_kinds`` and ``source`` ('sensor' for
     sensor-derived events, else 'news') to event dicts in place."""
-    summ = store.corroboration_summaries([it["id"] for it in items])
+    ids = [it["id"] for it in items]
+    summ = store.corroboration_summaries(ids)
+    verdicts = store.verifications(ids)
     for it in items:
+        it["verdict"] = (verdicts.get(it["id"]) or {}).get("verdict")
         s = summ.get(it["id"]) or {}
         it["corroboration_score"] = float(s.get("score") or 0.0)
         it["corroboration_kinds"] = list(s.get("kinds") or [])
@@ -141,6 +144,9 @@ def mount_events(app: FastAPI, runtime) -> None:
             raise HTTPException(404, "unknown event")
         await asyncio.to_thread(add_corroboration, store, [ev])
         ev["corroborations"] = await asyncio.to_thread(store.list_corroborations, event_id)
+        v = (await asyncio.to_thread(store.verifications, [event_id])).get(event_id)
+        ev["verification"] = None if v is None else {
+            "verdict": v["verdict"], "reasons": v["reasons"], "quotes": v["quotes"]}
         return _json(ev)
 
     @app.get("/kml/events.kml")
