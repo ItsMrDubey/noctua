@@ -4,11 +4,14 @@ refresh_hours: 6
 snapshot_ttl_s: 30
 # windy_webcams_key: ""        # or WINDY_WEBCAMS_KEY in .env
 windy_max_pages: 20            # 50 cams per page
+# snapshot_cache_mb: 32        # total-bytes cap of the in-memory snapshot cache (LRU)
+# Per source: allowed_hosts = the only hosts snapshots may be proxied from (https only unless
+# http_only: true). A source with no allowed_hosts has all of its cameras dropped at catalogue build.
 sources:
-  tfl: {enabled: true}
-  caltrans: {enabled: true}
-  nyc: {enabled: false}        # webcams.nyctmc.org unreachable from the dev host when verified; parser unverified
-  digitraffic: {enabled: true}
-  sg: {enabled: true}
-  hk: {enabled: true}
-  windy: {enabled: true}       # still skipped unless a key is set
+  tfl: {enabled: true, allowed_hosts: [s3-eu-west-1.amazonaws.com]}
+  caltrans: {enabled: true, allowed_hosts: [cwwp2.dot.ca.gov]}
+  nyc: {enabled: false, allowed_hosts: [webcams.nyctmc.org]}  # unreachable from the dev host when verified; parser unverified
+  digitraffic: {enabled: true, allowed_hosts: [weathercam.digitraffic.fi]}
+  sg: {enabled: true, allowed_hosts: [images.data.gov.sg]}
+  hk: {enabled: true, allowed_hosts: [tdcctv.data.one.gov.hk]}
+  windy: {enabled: true, allowed_hosts: [images-webcams.windy.com]}  # still skipped unless a key is set

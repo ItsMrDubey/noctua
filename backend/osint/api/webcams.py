@@ -44,6 +44,8 @@ def mount_webcams(app: FastAPI, cat: Catalogue | None = None) -> None:
             raise HTTPException(e.status, e.msg) from None
         return Response(body, media_type=ctype, headers={
             "Cache-Control": "max-age=30", "X-Webcam-Source": cam.source,
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
             "X-Webcam-Attribution": cam.attribution.encode("ascii", "replace").decode(),
             "X-Webcam-Licence": cam.licence.encode("ascii", "replace").decode()})
 

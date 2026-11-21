@@ -6,9 +6,11 @@ import logging
 import math
 import re
 import time
+from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -22,6 +24,9 @@ log = logging.getLogger(__name__)
 
 ID_RE = re.compile(r"^[a-z0-9]+:[A-Za-z0-9_.\-]{1,80}$")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+# SVG (script-capable) and everything else is refused: raster formats only
+ALLOWED_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
+DEFAULT_CACHE_MB = 32
 HEADERS = {"User-Agent": "osint-poc/0.1 (public webcam catalogue)"}
 
 
@@ -56,7 +61,11 @@ class Catalogue:
         self.loaded = False
         self._lock = asyncio.Lock()
         self._bg: asyncio.Task | None = None
-        self._snaps: dict[str, tuple[float, bytes, str]] = {}
+        self.snapshot_cache_bytes = int(float(self.cfg.get("snapshot_cache_mb", DEFAULT_CACHE_MB)) * 1024 * 1024)
+        self._snaps: OrderedDict[str, tuple[float, bytes, str]] = OrderedDict()  # LRU, capped by total bytes
+        self._snap_total = 0
+        self._client: httpx.AsyncClient | None = None
+        self._client_loop: asyncio.AbstractEventLoop | None = None
 
     # ---- persistence -------------------------------------------------
     def load_cache(self) -> None:
@@ -78,6 +87,23 @@ class Catalogue:
             tmp.replace(self.cache_path)
         except OSError:
             log.warning("could not write %s", self.cache_path)
+
+    # ---- image url policy --------------------------------------------
+    def image_allowed(self, w: Webcam) -> bool:
+        """https only (http when the source is configured http_only) and the host must be on the
+        source's allowed_hosts list in config/webcams.yaml; no list means nothing is allowed."""
+        scfg = (self.cfg.get("sources") or {}).get(w.source) or {}
+        hosts = {str(h).lower() for h in scfg.get("allowed_hosts") or []}
+        try:
+            u = urlsplit(w.image_url)
+            host = (u.hostname or "").lower()
+        except ValueError:
+            return False
+        if u.username or u.password:
+            return False
+        if u.scheme != "https" and not (u.scheme == "http" and scfg.get("http_only")):
+            return False
+        return host in hosts
 
     # ---- refresh -----------------------------------------------------
     def _enabled(self, sid: str) -> bool:
@@ -131,6 +157,12 @@ class Catalogue:
                     m["error"] = "skipped: WINDY_WEBCAMS_KEY not set"
                 else:
                     items, err = results[runnable.index(sid)]
+                    parsed = len(items)
+                    items = [w for w in items if self.image_allowed(w)]
+                    if parsed != len(items):
+                        log.warning("webcams %s: dropped %d/%d cameras with disallowed image_url",
+                                    sid, parsed - len(items), parsed)
+                        m["rejected"] = parsed - len(items)
                     if items:
                         for w in items:
                             new[w.id] = w
@@ -195,6 +227,30 @@ class Catalogue:
         return out
 
     # ---- snapshot proxy ----------------------------------------------
+    def _http(self) -> httpx.AsyncClient:
+        """One shared client per event loop (connection reuse); never follows redirects."""
+        loop = asyncio.get_running_loop()
+        if self._client is None or self._client.is_closed or self._client_loop is not loop:
+            self._client, self._client_loop = self.client_factory(), loop
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
+
+    def _cache_put(self, cam_id: str, body: bytes, ctype: str) -> None:
+        old = self._snaps.pop(cam_id, None)
+        if old:
+            self._snap_total -= len(old[1])
+        if len(body) > self.snapshot_cache_bytes:
+            return
+        self._snaps[cam_id] = (time.monotonic(), body, ctype)
+        self._snap_total += len(body)
+        while self._snap_total > self.snapshot_cache_bytes and self._snaps:
+            _, (_, b, _) = self._snaps.popitem(last=False)
+            self._snap_total -= len(b)
+
     async def snapshot(self, cam_id: str) -> tuple[bytes, str, Webcam]:
         if not ID_RE.match(cam_id):
             raise SnapshotError(422, "invalid camera id")
@@ -204,29 +260,28 @@ class Catalogue:
             raise SnapshotError(404, "unknown camera")
         hit = self._snaps.get(cam_id)
         if hit and time.monotonic() - hit[0] < self.snapshot_ttl:
+            self._snaps.move_to_end(cam_id)
             return hit[1], hit[2], cam
+        if not self.image_allowed(cam):
+            raise SnapshotError(502, "image url not allowed")
         headers = dict(REGISTRY[cam.source][0].headers)
         try:
-            async with self.client_factory() as client:
-                async with client.stream("GET", cam.image_url, headers=headers) as r:
-                    if r.status_code != 200:
-                        raise SnapshotError(502, f"upstream status {r.status_code}")
-                    ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
-                    if not ctype.startswith("image/"):
-                        raise SnapshotError(502, "upstream is not an image")
-                    if int(r.headers.get("content-length") or 0) > MAX_IMAGE_BYTES:
+            async with self._http().stream("GET", cam.image_url, headers=headers) as r:
+                if r.status_code != 200:
+                    raise SnapshotError(502, f"upstream status {r.status_code}")
+                ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+                if ctype not in ALLOWED_TYPES:
+                    raise SnapshotError(502, "upstream is not an allowed image type")
+                if int(r.headers.get("content-length") or 0) > MAX_IMAGE_BYTES:
+                    raise SnapshotError(502, "image too large")
+                buf = bytearray()
+                async for chunk in r.aiter_bytes():
+                    buf += chunk
+                    if len(buf) > MAX_IMAGE_BYTES:
                         raise SnapshotError(502, "image too large")
-                    buf = bytearray()
-                    async for chunk in r.aiter_bytes():
-                        buf += chunk
-                        if len(buf) > MAX_IMAGE_BYTES:
-                            raise SnapshotError(502, "image too large")
         except httpx.HTTPError as e:
             raise SnapshotError(502, f"upstream error: {type(e).__name__}") from None
-        self._snaps[cam_id] = (time.monotonic(), bytes(buf), ctype)
-        if len(self._snaps) > 500:
-            for k in sorted(self._snaps, key=lambda k: self._snaps[k][0])[:100]:
-                del self._snaps[k]
+        self._cache_put(cam_id, bytes(buf), ctype)
         return bytes(buf), ctype, cam
 
 

@@ -81,8 +81,15 @@ def _mock_all(router, windy=False):
                                                            httpx.Response(200, json={"webcams": []})])
 
 
+ALLOW = {sid: {"allowed_hosts": ["img.test"]} for sid in ("tfl", "caltrans", "nyc", "digitraffic", "sg", "hk", "windy")}
+ALLOW["digitraffic"] = {"allowed_hosts": ["weathercam.digitraffic.fi"]}
+ALLOW["nyc"] = {"allowed_hosts": ["webcams.nyctmc.org"]}
+
+
 def cat(tmp_path, **cfg):
-    config = {"windy_max_pages": 2, **cfg}
+    over = cfg.pop("sources", {})
+    srcs = {k: {**v, **over.get(k, {})} for k, v in ALLOW.items()}
+    config = {"windy_max_pages": 2, **cfg, "sources": srcs}
     return Catalogue(cache_path=tmp_path / "w.json", config=config, settings=WebcamSettings(WINDY_WEBCAMS_KEY=""))
 
 
@@ -123,7 +130,7 @@ def test_windy_skipped_without_key_and_used_with_key(tmp_path):
         c = cat(tmp_path)
         asyncio.run(c.refresh())
         assert not any(k.startswith("windy:") for k in c.items) and not r.routes[-1].called
-        c2 = Catalogue(cache_path=tmp_path / "w2.json", config={"windy_max_pages": 2},
+        c2 = Catalogue(cache_path=tmp_path / "w2.json", config={"windy_max_pages": 2, "sources": ALLOW},
                        settings=WebcamSettings(WINDY_WEBCAMS_KEY="k"))
         asyncio.run(c2.refresh())
         assert "windy:99" in c2.items
@@ -227,3 +234,44 @@ def test_snapshot_size_cap_and_upstream_error(api):
         assert cl.get("/api/webcams/tfl:00001.1/snapshot").status_code == 502
         r.get("https://img.test/tfl1.jpg").respond(404)
         assert cl.get("/api/webcams/tfl:00001.1/snapshot").status_code == 502
+
+
+def test_snapshot_rejects_svg_and_sets_hardening_headers(api):
+    cl, _ = api
+    with respx.mock(assert_all_called=False) as r:
+        r.get("https://img.test/tfl1.jpg").respond(content=b"<svg onload=alert(1)/>",
+                                                   headers={"content-type": "image/svg+xml"})
+        assert cl.get("/api/webcams/tfl:00001.1/snapshot").status_code == 502
+        r.get("https://img.test/tfl1.jpg").respond(content=b"GIF89a", headers={"content-type": "image/gif"})
+        ok = cl.get("/api/webcams/tfl:00001.1/snapshot")
+        assert ok.status_code == 200
+        assert ok.headers["x-content-type-options"] == "nosniff"
+        assert "sandbox" in ok.headers["content-security-policy"]
+
+
+def test_off_list_host_and_http_rejected_at_build(tmp_path):
+    c = cat(tmp_path, sources={"tfl": {"allowed_hosts": ["other.test"]}})
+    with respx.mock(assert_all_called=False) as r:
+        _mock_all(r)
+        meta = asyncio.run(c.refresh())
+    assert meta["tfl"]["count"] == 0 and meta["tfl"]["rejected"] == 1 and "tfl:00001.1" not in c.items
+    c2 = cat(tmp_path)
+    w = S.parse_tfl(TFL, NOW)[0]
+    assert c2.image_allowed(w)
+    w.image_url = "http://img.test/tfl1.jpg"
+    assert not c2.image_allowed(w)
+    c3 = cat(tmp_path, sources={"tfl": {"http_only": True}})
+    assert c3.image_allowed(w)
+    w.image_url = "https://user@img.test/x.jpg"
+    assert not c2.image_allowed(w)
+    assert not Catalogue(cache_path=tmp_path / "n.json", config={}).image_allowed(w)  # no list: nothing allowed
+
+
+def test_snapshot_cache_capped_by_bytes(tmp_path):
+    c = Catalogue(cache_path=tmp_path / "w.json", config={"snapshot_cache_mb": 1})
+    mb = 1024 * 1024
+    for i in range(3):
+        c._cache_put(f"a:{i}", b"x" * (mb // 2 - 10), "image/png")
+    assert list(c._snaps) == ["a:1", "a:2"] and c._snap_total <= mb
+    c._cache_put("a:big", b"x" * (mb + 1), "image/png")  # larger than the whole cap: not cached
+    assert "a:big" not in c._snaps and c._snap_total <= mb
