@@ -69,6 +69,11 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = ROOT / "config" / "corroboration.yaml"
 DETECTORS = ("orbit", "concentration", "ais_gap", "seismic")
+# bumped when a detector's rules change; on start, events written by an older version are
+# deleted (re-detected under the current rules if the pattern still holds).
+# concentration v2: baseline counts only buckets with collected positions, civil GA types
+# excluded (removes "Military aircraft concentration: 6/7 aircraft" false positives)
+DETECTOR_VERSIONS = {"orbit": 1, "concentration": 2, "ais_gap": 1, "seismic": 1}
 _KTS_KMH = 1.852
 
 
@@ -194,6 +199,8 @@ class SensorEventDetector:
         self._airports, self._bases = airports, bases
         self._sites_cache: tuple[list, list] | None = None
         self._baseline: dict[str, dict[tuple[int, int], dict[int, int]]] = {}
+        # (day, hour, slot) buckets in which any air position was collected at all
+        self._coverage: set[tuple[int, int, int]] = set()
         self._baseline_at: datetime | None = None
         self._stop = asyncio.Event()
         self.passes = 0
@@ -366,16 +373,19 @@ class SensorEventDetector:
         base: dict[str, dict[tuple[int, int], dict[int, int]]] = defaultdict(
             lambda: defaultdict(dict))
         day_us, hour_us = 86_400_000_000, 3_600_000_000
+        coverage: set[tuple[int, int, int]] = set()
         for cell, n, us in rows:
             slot = (us % hour_us) // bucket_us
-            base[h3.int_to_str(cell)][(us // day_us, (us % day_us) // hour_us)][slot] = n
-        self._baseline, self._baseline_at = base, now
+            day, hour = us // day_us, (us % day_us) // hour_us
+            base[h3.int_to_str(cell)][(day, hour)][slot] = n
+            coverage.add((day, hour, slot))
+        self._baseline, self._coverage, self._baseline_at = base, coverage, now
 
     def _baseline_stats(self, disk: set[str], hour: int) -> tuple[float, float, int]:
         """(mean, std, days) of the distinct-aircraft count in ``disk`` per window bucket at
-        this hour of day, over the days on which the area has any baseline data."""
-        c = self.cfg.concentration
-        slots = max(1, int(60 // _g(c, "window_min", 30)))
+        this hour of day, over the days on which the area has any baseline data - counting
+        only buckets in which positions were actually collected (a collector outage is
+        not "zero aircraft", which would deflate the baseline)."""
         days: set[int] = set()
         totals: dict[tuple[int, int], float] = defaultdict(float)  # (day, slot) -> count
         for cell in disk:
@@ -384,12 +394,13 @@ class SensorEventDetector:
                 if hr == hour:
                     for slot, n in per_slot.items():
                         totals[(day, slot)] += n
-        if not days:
+        buckets = sorted((d, s) for d, hr, s in self._coverage if hr == hour and d in days)
+        if not buckets:
             return 0.0, 0.0, 0
-        vals = [totals.get((d, s), 0.0) for d in days for s in range(slots)]
+        vals = [totals.get(b, 0.0) for b in buckets]
         mean = sum(vals) / len(vals)
         var = sum((v - mean) ** 2 for v in vals) / len(vals)
-        return mean, math.sqrt(var), len(days)
+        return mean, math.sqrt(var), len({d for d, _ in buckets})
 
     def detect_concentration(self, now: datetime) -> list[Detection]:
         c = self.cfg.concentration
@@ -625,7 +636,9 @@ class SensorEventDetector:
         new = self.store.save_sensor_event(
             row, {"detector": det.detector, "dedupe_key": key if not existing
                   else existing["dedupe_key"], "cell": cell if not existing
-                  else existing["cell"], "details": det.details},
+                  else existing["cell"], "details": {
+                      **det.details,
+                      "detector_version": DETECTOR_VERSIONS.get(det.detector, 1)}},
             evidence, {"event_id": eid, "score": round(conf, 4), "kinds": kinds,
                        "evidence": n_evidence, "corroborated": True})
         for kind, n in new.items():
@@ -634,8 +647,20 @@ class SensorEventDetector:
 
     # --------------------------------------------------------------- loop
 
+    def purge_stale(self) -> int:
+        """Delete sensor events written by an older detector version (DETECTOR_VERSIONS)."""
+        ids = self.store.stale_sensor_event_ids(DETECTOR_VERSIONS)
+        n = self.store.delete_events(ids, origin="sensor") if ids else 0
+        if n:
+            log.info("sensor events: removed %d events of older detector versions", n)
+        return n
+
     async def run(self) -> None:
         self._stop.clear()
+        try:
+            await asyncio.to_thread(self.purge_stale)
+        except Exception:
+            log.exception("sensor events: purging stale detector versions failed")
         try:  # let boot (ingest warm start, first collector polls) settle first
             await asyncio.wait_for(self._stop.wait(), timeout=self.cfg.initial_delay_s)
         except TimeoutError:

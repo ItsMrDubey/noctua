@@ -380,3 +380,46 @@ def test_concentration_needs_three_days_of_baseline(env):
     _mil(store, "f", 8, "F16")
     lake.write("positions", _fleet(8, NOW - timedelta(minutes=10), "f") + history([BASE], days=2))
     assert det.run_once()["created"] == {}
+
+
+def test_concentration_ignores_light_civil_types(env):
+    lake, store, det, _ = env
+    _mil(store, "c", 9, "P28A")  # flying club Pipers on a base flagged military
+    lake.write("positions", _fleet(9, NOW - timedelta(minutes=10), "c") + history([BASE]))
+    assert det.run_once()["created"] == {}
+
+
+def test_baseline_counts_only_buckets_with_collected_positions(env):
+    lake, _store, det, _ = env
+    rows = history([BASE], days=3, n=3)  # 3 aircraft at 11:xx on days 1-3
+    for d in (4, 5):  # area has data on days 4-5, but collection was down at 11:xx
+        rows.append(apos(f"air:z{d}", BASE, NOW.replace(hour=5) - timedelta(days=d)))
+    lake.write("positions", rows)
+    start = NOW - timedelta(minutes=30)
+    det._refresh_baseline(NOW, start)
+    import h3
+
+    disk = set(h3.grid_disk(h3.latlng_to_cell(*BASE, 3), 1))
+    mean, std, days = det._baseline_stats(disk, 11)
+    assert (mean, std, days) == (3.0, 0.0, 3)  # was 1.8 over 5 "days" (outage = zeros)
+
+
+def test_stale_detector_versions_are_purged_on_start(env):
+    from osint.pipeline.sensor_events import DETECTOR_VERSIONS
+
+    _lake, store, det, _ = env
+    t = "2026-11-21T10:00:00.000+00:00"
+    for eid, detector, details in (("C1", "concentration", {}),
+                                   ("C2", "concentration", {"detector_version": 2}),
+                                   ("O1", "orbit", {})):
+        store.save_sensor_event(
+            {"id": eid, "category": "air_activity", "title": eid, "t_start": t, "t_end": t,
+             "status": "sensor-corroborated", "confidence": 0.6, "version": 1,
+             "mention_count": 1, "source_diversity": 0, "first_seen": t, "updated_at": t},
+            {"detector": detector, "dedupe_key": f"k:{eid}", "cell": "c", "details": details},
+            [], {"event_id": eid, "score": 0.6, "kinds": [], "evidence": 0,
+                 "corroborated": True})
+    assert DETECTOR_VERSIONS["concentration"] == 2
+    assert det.purge_stale() == 1
+    assert {e["id"] for e in store.list_events(limit=10)} == {"C2", "O1"}
+    assert store.sensor_event_ids() == {"C2", "O1"}

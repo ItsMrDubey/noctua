@@ -88,6 +88,10 @@ sensor_events:
     baseline_refresh_min: 60
     min_alt_ft: 500           # airborne only (parked aircraft at bases are ignored)
     merge_gap_h: 1
+    # light civil GA types that registries / hex ranges sometimes flag as military
+    # (flying clubs on bases, civil-registered state aircraft): never counted
+    exclude_types: [C150, C152, C172, C182, C206, P28A, P28B, P28R, PA28, PA32, P32R, SR20,
+                    SR22, DA20, DA40, BE35, BE36, M20P, M20T]
   ais_gap:
     lookback_h: 24
     min_gap_h: 6              # a standalone dark-gap event needs a longer gap than corroboration
