@@ -35,7 +35,6 @@ MIN_SHARE = 0.005
 MIN_DOCS = 20
 MAX_DOCS = 50_000
 LOWER_SHARE = 0.3  # cased scripts: a word if >= this share of its documents use it lower-case
-_COUNTRY_NGRAM = 4
 
 
 def is_latin(token: str) -> bool:
@@ -90,85 +89,66 @@ class CommonTokens:
 
 # ------------------------------------------------------------------ building
 
-def _country_keys(gz: "Gazetteer") -> dict[str, frozenset[str]]:
-    """Name key -> countries it names (country names, aliases, demonyms)."""
-    out: dict[str, set[str]] = defaultdict(set)
-    for key, cands in gz.names.items():
-        for i, _ in cands:
-            p = gz.places[i]
-            if p.precision == "country" and p.country:
-                out[key].add(p.country)
-    return {k: frozenset(v) for k, v in out.items()}
-
-
-def _doc_countries(folded: list[str], country_keys: dict[str, frozenset[str]]) -> set[str]:
-    found: set[str] = set()
-    for n in range(1, _COUNTRY_NGRAM + 1):
-        for i in range(len(folded) - n + 1):
-            ccs = country_keys.get(" ".join(folded[i:i + n]))
-            if ccs:
-                found |= ccs
-    return found
-
-
 def compute_common_tokens(
     rows: list[tuple[str, str, str]], gz: "Gazetteer", *, min_share: float = MIN_SHARE,
     min_docs: int = MIN_DOCS,
 ) -> dict[str, dict[str, Any]]:
     """rows: (language, title, snippet). Returns {language: {"docs": n, "tokens": [...]}}."""
-    from osint.enrich.gazetteer import tokens
+    from osint.enrich.gazetteer import _CJK_RE, Gazetteer, name_key, tokens
 
-    country_keys = _country_keys(gz)
+    plain = Gazetteer(gz.places, gz.names, common=CommonTokens())  # no word filtering
     n_docs: Counter[str] = Counter()
     df: dict[str, Counter[str]] = defaultdict(Counter)
     lower_df: dict[str, Counter[str]] = defaultdict(Counter)
-    base: dict[str, Counter[str]] = defaultdict(Counter)  # lang -> country -> docs
-    docs: list[tuple[str, set[str], set[str]]] = []  # (lang, tokens, countries)
+    # (lang, tokens, {(matched key, country)} of the places the text mentions)
+    docs: list[tuple[str, set[str], set[tuple[str, str]]]] = []
     for lang, title, snippet in rows:
         if not lang:
             continue
-        toks = tokens(f"{title or ''}. {snippet or ''}")
-        folded = [t for t, _ in toks]
-        uniq = set(folded)
+        text = f"{title or ''}. {snippet or ''}"
+        toks = tokens(text)
+        uniq = {t for t, _ in toks}
         lowered = {t for t, o in toks if o != o.upper() and o[:1].islower()}
-        countries = _doc_countries(folded, country_keys)
+        mentions = {(name_key(h.matched), h.country)
+                    for h in plain.match(text, lang, limit=100) if h.country}
         n_docs[lang] += 1
         df[lang].update(uniq)
         lower_df[lang].update(lowered)
-        base[lang].update(countries)
-        docs.append((lang, uniq, countries))
-
-    # frequent gazetteer keys that are not country names, per language
-    frequent: dict[str, set[str]] = {}
-    for lang, counts in df.items():
-        threshold = max(min_docs, min_share * n_docs[lang])
-        frequent[lang] = {t for t, c in counts.items() if c >= threshold and t in gz.names
-                          and t not in country_keys}
-    cand_countries = {t: frozenset(gz.places[i].country for i, _ in gz.names[t])
-                      for ts in frequent.values() for t in ts}
-    co: dict[str, Counter[str]] = defaultdict(Counter)
-    for lang, uniq, countries in docs:
-        for t in frequent[lang] & uniq:
-            if countries & cand_countries[t]:
-                co[lang][t] += 1
+        docs.append((lang, uniq, mentions))
 
     out: dict[str, dict[str, Any]] = {}
-    for lang, ts in frequent.items():
+    for lang, counts in df.items():
+        threshold = max(min_docs, min_share * n_docs[lang])
+        # CJK has no word boundaries (matched by character windows): no word statistics
+        frequent = [t for t, c in counts.items()
+                    if c >= threshold and t in gz.names and not _CJK_RE.search(t)
+                    and not any(gz.places[i].precision == "country" for i, _ in gz.names[t])]
+        lang_docs = [d for d in docs if d[0] == lang]
+        doubtful = set(frequent)  # their own mentions are not evidence for each other
         common = []
-        for t in ts:
-            n = df[lang][t]
-            sample = next(iter(t))
-            if sample.upper() != sample.lower():  # cased script: case says word vs name
-                is_word = lower_df[lang][t] / n >= LOWER_SHARE
-            else:  # uncased: a place co-occurs with its country well above the base rate
-                b = max((base[lang][cc] for cc in cand_countries[t]), default=0) / n_docs[lang]
-                rate = co[lang][t] / n
-                is_word = rate < max(0.15, min(3 * b, b + 0.25))
-            if is_word:
+        for t in frequent:
+            n = counts[t]
+            if t.upper() != t.lower():  # cased script: case tells a word from a name
+                if lower_df[lang][t] / n >= LOWER_SHARE:
+                    common.append(t)
+                continue
+            # uncased script: a place name co-occurs with (other places of) its country
+            # clearly more often than texts without it do; a word does not
+            ccs = {gz.places[i].country for i, _ in gz.names[t]}
+            with_t = without_t = hit_with = hit_without = 0
+            for _, uniq, mentions in lang_docs:
+                hit = any(cc in ccs for k, cc in mentions if k not in doubtful)
+                if t in uniq:
+                    with_t += 1
+                    hit_with += hit
+                else:
+                    without_t += 1
+                    hit_without += hit
+            co = hit_with / with_t if with_t else 0.0
+            base = hit_without / without_t if without_t else 0.0
+            if co < 1.5 * base + 0.05:
                 common.append(t)
         out[lang] = {"docs": n_docs[lang], "tokens": sorted(common)}
-    for lang in n_docs:
-        out.setdefault(lang, {"docs": n_docs[lang], "tokens": []})
     return out
 
 
@@ -183,7 +163,7 @@ def build_common_tokens(lake: Any, out_path: Path, *, gazetteer: "Gazetteer | No
         gazetteer = Gazetteer.load(out_path.parent)
     since = datetime.now(UTC) - timedelta(days=days)
     rows = lake.query(
-        "SELECT language, title, snippet, published_at FROM documents "
+        "SELECT language, title, snippet FROM documents "
         "WHERE published_at >= ? AND kind <> 'gdelt_event' "
         "ORDER BY published_at DESC LIMIT ?", [since, max_docs], start=since)
     languages = compute_common_tokens([(r[0], r[1], r[2]) for r in rows[:max_docs]], gazetteer,

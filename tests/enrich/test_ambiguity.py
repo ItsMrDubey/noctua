@@ -19,8 +19,14 @@ EXTRA_CITIES = [
     (3000001, "Aleppo", "Aleppo", "حلب", 36.20, 37.16, "PPLA", "SY", "09", 1602264),
     (3000002, "Springfield", "Springfield", "", 39.80, -89.64, "PPLA", "US", "IL", 116250),
     (3000003, "Springfield", "Springfield", "", 37.21, -93.29, "PPL", "GB", "ENG", 120000),
+    (703845, "Kryvyy Rih", "Kryvyy Rih", "Кривий Ріг,Кривой Рог", 47.91, 33.39, "PPL", "UA",
+     "04", 603904),
+    (698740, "Odesa", "Odesa", "Одеса,Одесса", 46.48, 30.73, "PPLA", "UA", "17", 907000),
+    (687700, "Zaporizhzhya", "Zaporizhzhya", "Запоріжжя,Запорожье", 47.85, 35.12, "PPLA",
+     "UA", "26", 710052),
+    (524901, "Moscow", "Moscow", "Москва", 55.75, 37.62, "PPLC", "RU", "48", 10381222),
 ]
-EXTRA_COUNTRIES = [("NL", "NLD", "Netherlands"), ("GB", "GBR", "United Kingdom"),
+EXTRA_COUNTRIES = [("RU", "RUS", "Russia"), ("NL", "NLD", "Netherlands"), ("GB", "GBR", "United Kingdom"),
                    ("SY", "SYR", "Syria")]
 
 
@@ -138,3 +144,26 @@ def test_build_common_tokens_from_corpus(gz, tmp_path):
     assert "nice" in en and "kyiv" not in en
     common = CommonTokens.load(out)
     assert common.is_common("كيف", "ar") and not common.is_common("كييف", "ar")
+
+
+def test_common_word_inside_a_capitalised_phrase_is_not_a_place(gz):
+    assert _best(gz, "Soldiers of the 2nd Reading Brigade in England", "en") == "United Kingdom"
+
+
+@pytest.mark.parametrize(("text", "lang", "place"), [
+    ("Вибухи у Києві вночі", "uk", "Kyiv"), ("Взрывы в Киеве ночью", "ru", "Kyiv"),
+    ("Обстріл у Харкові", "uk", "Kharkiv"), ("Удар по Харькове", "ru", "Kharkiv"),
+    ("Атака на Кривому Розі", "uk", "Kryvyy Rih"), ("Взрыв в Кривом Роге", "ru", "Kryvyy Rih"),
+    ("Тривога в Одесі", "uk", "Odesa"), ("Порт Одессы атакован", "ru", "Odesa"),
+    ("Удар по Запоріжжю", "uk", "Zaporizhzhya"), ("Сирены в Запорожье", "ru", "Zaporizhzhya"),
+    ("Митинг в Москве", "ru", "Moscow"), ("Переговори у Москві", "uk", "Moscow"),
+])
+def test_cyrillic_inflected_place_names(gz, text, lang, place):
+    assert _best(gz, text, lang) == place
+
+
+def test_cyrillic_inflection_respects_common_words(gz):
+    common = CommonTokens.seed().merged(CommonTokens({"ru": frozenset({"москва"})}))
+    g2 = Gazetteer(gz.places, gz.names, common=common)
+    assert _best(g2, "Митинг в Москве", "ru") is None  # common after normalisation
+    assert _best(gz, "Москвичи вышли", "ru") is None  # no over-stemming to Moscow

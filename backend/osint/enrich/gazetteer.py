@@ -15,6 +15,7 @@ place in it). A city name shared by similar-sized cities in different countries 
 country co-mention is left unlocated (no hit).
 """
 
+import itertools
 import logging
 import math
 import re
@@ -209,8 +210,49 @@ _ARABIC_FOLD = str.maketrans({
     "ـ": None, "’": "'",
 })
 _AR_CLITICS = ("وال", "بال", "فال", "كال", "لل", "و", "ف", "ب", "ل", "ك")
-_CYR_SUFFIXES = ("ами", "ями", "ого", "ому", "ой", "ом", "ем", "ах", "ях", "ам", "ям",
-                 "а", "у", "е", "и", "і", "ы", "ю", "я")
+# Russian/Ukrainian case endings, as folded ("й" folds to "и": "-ой" is "-ои")
+_CYR_SUFFIXES = ("ами", "ями", "ові", "еві", "ого", "ому", "ими", "ыми", "ои", "еи", "ом",
+                 "ем", "ах", "ях", "ам", "ям", "ою", "ею", "а", "у", "е", "и", "і", "ы",
+                 "ю", "я")
+# nominative endings restored on a stem (nouns; adjectives for multi-word names)
+_CYR_NOUN_ENDS = ("", "а", "ь", "я", "е", "о")
+_CYR_ADJ_ENDS = ("ии", "ои", "ыи", "а", "ая", "ое", "е")
+# Ukrainian alternations in the last syllable: Харкові/Харків, Києві/Київ, Розі/Ріг
+_CYR_VOWEL_ALT = {"о": "і", "е": "і", "є": "і"}
+_CYR_CONS_ALT = {"з": "г", "ц": "к", "с": "х"}
+_CYR_MIN_KEY = 5  # inflection fallbacks only for Cyrillic names at least this long
+
+
+def _is_cyrillic(token: str) -> bool:
+    return bool(token) and all("Ѐ" <= ch <= "ӿ" for ch in token)
+
+
+def _alternate(stem: str) -> list[str]:
+    """Ukrainian last-syllable alternations: харков -> харків, києв -> киів, роз -> ріг."""
+    out = [stem]
+    if stem and stem[-1] in _CYR_CONS_ALT:
+        out.append(stem[:-1] + _CYR_CONS_ALT[stem[-1]])
+    for s in list(out):
+        for i in range(len(s) - 2, max(len(s) - 4, 0), -1):  # vowel before final consonants
+            if s[i] in _CYR_VOWEL_ALT:
+                out.append(s[:i] + _CYR_VOWEL_ALT[s[i]] + s[i + 1:])
+                break
+            if s[i] in "аеєиіїоуыэюяь":
+                break
+    return out
+
+
+def _cyr_forms(tok: str, *, min_stem: int, adjective: bool) -> list[str]:
+    """``tok`` plus candidate nominative forms (suffix stripped, ending restored)."""
+    forms = [tok]
+    ends = _CYR_ADJ_ENDS if adjective else _CYR_NOUN_ENDS
+    for suf in _CYR_SUFFIXES:
+        if tok.endswith(suf) and len(tok) - len(suf) >= min_stem:
+            for stem in _alternate(tok[: -len(suf)]):
+                forms += [stem + e for e in ends]
+    if not adjective:  # consonant-final locatives without an ending change
+        forms += _alternate(tok)[1:]
+    return list(dict.fromkeys(forms))
 
 
 def _is_acronym(token: str) -> bool:
@@ -235,20 +277,29 @@ def tokens(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def _tokens_pos(text: str) -> list[tuple[str, str, bool]]:
-    """(folded token, original token, starts a sentence) triples."""
+def _tokens_pos(text: str) -> list[tuple[str, str, bool, bool]]:
+    """(folded token, original token, starts a sentence, joined to the previous token by
+    whitespace only) tuples."""
     out = []
     prev_end = 0
     for m in _TOKEN_RE.finditer(text):
         orig = m.group(0)
         gap = text[prev_end:m.start()].rstrip(" \t")
         start = (not gap and prev_end == 0) or (bool(gap) and gap[-1] in _SENTENCE_END)
+        joined = prev_end > 0 and not gap
         prev_end = m.end()
         for part in _SPLIT_RE.split(fold(orig)):
             if part:
-                out.append((part, orig, start))
-                start = False
+                out.append((part, orig, start, joined))
+                start, joined = False, True
     return out
+
+
+def _in_title_phrase(toks: list[tuple[str, str, bool, bool]], i: int) -> bool:
+    """Token ``i`` is part of a run of capitalised words ("2nd Mobile Brigade")."""
+    def cap(j: int) -> bool:
+        return 0 <= j < len(toks) and toks[j][1][:1].isupper()
+    return (toks[i][3] and cap(i - 1)) or (i + 1 < len(toks) and toks[i + 1][3] and cap(i + 1))
 
 
 def name_key(name: str) -> str:
@@ -467,12 +518,25 @@ class Gazetteer:
                 if tok.startswith(p) and len(tok) - len(p) >= 3:
                     rest = tok[len(p):]
                     out += [rest, "ال" + rest]
-        elif "Ѐ" <= first <= "ӿ" and len(tok) >= 5:
-            for suf in _CYR_SUFFIXES:
-                if tok.endswith(suf) and len(tok) - len(suf) >= 4:
-                    stem = tok[: -len(suf)]
-                    out += [stem, stem + "а", stem + "ь", stem + "я"]
+        elif _is_cyrillic(tok) and len(tok) >= _CYR_MIN_KEY:
+            out += [f for f in _cyr_forms(tok, min_stem=4, adjective=False) if f != tok]
         return out
+
+    def _cyr_span(self, span_keys: list[str]) -> tuple[str, list[tuple[int, int]]]:
+        """Multi-word Cyrillic names in an oblique case ("Кривому Розі" -> "кривии ріг")."""
+        if not all(_is_cyrillic(k) for k in span_keys) or len(
+                "".join(span_keys)) < _CYR_MIN_KEY:
+            return "", []
+        forms = [_cyr_forms(k, min_stem=3, adjective=j < len(span_keys) - 1)
+                 for j, k in enumerate(span_keys)]
+        if math.prod(len(f) for f in forms) > 2000:
+            return "", []
+        for combo in itertools.product(*forms):
+            key = " ".join(combo)
+            cands = self._lookup(key)
+            if cands:
+                return key, cands
+        return "", []
 
     def match(self, text: str, language: str = "", *, country_hint: str = "",
               limit: int = 8) -> list[PlaceHit]:
@@ -488,7 +552,7 @@ class Gazetteer:
                 span = toks[i:i + n]
                 if span[0][1][:1].islower():  # cased scripts: place names are capitalised
                     continue
-                key = " ".join(t for t, _, _ in span)
+                key = " ".join(t for t, *_ in span)
                 if n == 1 and (key in STOPWORDS or key in AMBIGUOUS_SINGLE):
                     continue
                 cands = self._lookup(key)
@@ -500,21 +564,25 @@ class Gazetteer:
                         if cands:
                             variant, hit_key = True, v
                             break
+                elif not cands:
+                    hit_key, cands = self._cyr_span([t for t, *_ in span])
+                    variant = bool(cands)
                 if cands and n == 1 and _is_acronym(span[0][1]):
                     # "IPO", "NATO": only countries may match an all-caps short token
                     cands = [c for c in cands if self.places[c[0]].precision == "country"]
                 if cands and n == 1 and self.common.is_common(hit_key, language):
                     # a common word in this language: never in non-Latin scripts; in Latin
                     # script only capitalised mid-sentence with a same-country mention
-                    if is_latin(span[0][1]) and not span[0][2]:
+                    if is_latin(span[0][1]) and not span[0][2] and not _in_title_phrase(
+                            toks, i):
                         deferred.append((span[0][1], cands, n, variant))
                     continue
                 if cands:
-                    found.append((" ".join(o for _, o, _ in span), cands, n, variant))
+                    found.append((" ".join(o for _, o, *_ in span), cands, n, variant))
                     for j in range(i, i + n):
                         used[j] = True
         # CJK has no spaces: scan character windows, longest first
-        for tok, _orig, _ in toks:
+        for tok, *_ in toks:
             if not _CJK_RE.search(tok):
                 continue
             i = 0
@@ -567,7 +635,7 @@ class Gazetteer:
                     s += 0.05
                 elif latin:  # Latin alternate names collide with words/surnames
                     s -= 0.1
-                elif n == 1 and p.population < 1_000_000 and p.precision == "city":
+                elif n == 1 and p.population < 500_000 and p.precision == "city":
                     # non-Latin alternate names of smaller towns are often given names
                     s -= 0.2
                 if n > 1:
