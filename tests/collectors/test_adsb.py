@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -76,3 +77,52 @@ async def test_poll_raises_when_all_endpoints_fail():
     async with httpx.AsyncClient() as http:
         with pytest.raises(RuntimeError, match="all ADS-B endpoints failed"):
             await c.poll(SimpleNamespace(http=http))
+
+
+@respx.mock
+async def test_partial_endpoint_failure_is_logged(caplog):
+    respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(200, json={
+        "now": NOW_MS, "ac": [{"hex": "ae1234", "lat": 1.0, "lon": 2.0}]}))
+    respx.get("https://c.test/v2/mil").mock(return_value=httpx.Response(503))
+    c = AdsbCollector({"endpoints": {"a": "https://a.test/v2", "c": "https://c.test/v2"}})
+    c._mil_db = MilDb({})
+    async with httpx.AsyncClient() as http:
+        with caplog.at_level(logging.WARNING, logger="osint.collectors.adsb"):
+            await c.poll(SimpleNamespace(http=http))
+    msgs = [r.getMessage() for r in caplog.records if r.name == "osint.collectors.adsb"]
+    assert len(msgs) == 1 and "c:" in msgs[0] and "503" in msgs[0]
+
+
+@respx.mock
+async def test_bad_aircraft_skipped_and_counted(caplog):
+    respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(200, json={
+        "now": NOW_MS, "ac": [{"hex": "bad001", "lat": "oops", "lon": 2.0},
+                              {"hex": "bad002", "lat": 1.0, "lon": 2.0, "seen_pos": "x"},
+                              {"hex": "ae1234", "lat": 1.0, "lon": 2.0}]}))
+    c = AdsbCollector({"endpoints": {"a": "https://a.test/v2"}})
+    c._mil_db = MilDb({})
+    async with httpx.AsyncClient() as http:
+        with caplog.at_level(logging.WARNING, logger="osint.collectors.adsb"):
+            batch = await c.poll(SimpleNamespace(http=http))
+    assert [p.track_id for p in batch.positions] == ["air:ae1234"]
+    assert len([r for r in caplog.records if "skipped 2" in r.getMessage()]) == 1
+
+
+@respx.mock
+async def test_mildb_loaded_in_thread(tmp_path, monkeypatch):
+    import threading
+    seen = []
+    orig = MilDb.from_csv
+
+    def spy(path):
+        seen.append(threading.current_thread())
+        return orig(path)
+
+    monkeypatch.setattr(MilDb, "from_csv", staticmethod(spy))
+    respx.get("https://a.test/v2/mil").mock(
+        return_value=httpx.Response(200, json={"now": NOW_MS, "ac": []}))
+    c = AdsbCollector({"endpoints": {"a": "https://a.test/v2"}})
+    ctx_settings = SimpleNamespace(reference_dir=tmp_path)
+    async with httpx.AsyncClient() as http:
+        await c.poll(SimpleNamespace(http=http, settings=ctx_settings))
+    assert seen and seen[0] is not threading.main_thread()

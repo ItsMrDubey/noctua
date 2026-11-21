@@ -1,6 +1,7 @@
 """Global military ADS-B from several free readsb-compatible aggregators (/v2/mil)."""
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -8,6 +9,8 @@ from osint.core.collector import CollectorContext, PollCollector, register
 from osint.core.models import Batch, Position, TrackInfo
 from osint.enrich.mil_types import get_mil_category_from_type, is_high_priority
 from osint.enrich.military import MilDb
+
+log = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINTS = {
     "adsb.lol": "https://api.adsb.lol/v2",
@@ -83,32 +86,47 @@ class AdsbCollector(PollCollector):
 
     async def poll(self, ctx: CollectorContext) -> Batch:
         if self._mil_db is None:
-            self._mil_db = MilDb.from_csv(ctx.settings.reference_dir / "plane-alert-mil.csv")
+            self._mil_db = await asyncio.to_thread(
+                MilDb.from_csv, ctx.settings.reference_dir / "plane-alert-mil.csv"
+            )
         endpoints: dict[str, str] = self.cfg.get("endpoints") or DEFAULT_ENDPOINTS
         results = await asyncio.gather(
             *(self._fetch(ctx, url) for url in endpoints.values()), return_exceptions=True
         )
         best: dict[str, tuple[float, dict, float, str]] = {}
         errors = []
+        skipped = 0
         for api, res in zip(endpoints, results, strict=True):
             if isinstance(res, BaseException):
                 errors.append(f"{api}: {type(res).__name__}: {res}")
                 continue
             now_s, aircraft = res
             for ac in aircraft:
-                hex_code = (ac.get("hex") or "").strip().lower()
-                age = float(ac.get("seen_pos", ac.get("seen", 1e9)) or 0)
+                try:
+                    hex_code = (ac.get("hex") or "").strip().lower()
+                    age = float(ac.get("seen_pos", ac.get("seen", 1e9)) or 0)
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    skipped += 1
+                    continue
                 if hex_code and (hex_code not in best or age < best[hex_code][0]):
                     best[hex_code] = (age, ac, now_s, api)
         if len(errors) == len(endpoints):
             raise RuntimeError("all ADS-B endpoints failed: " + "; ".join(errors))
+        for err in errors:
+            log.warning("ADS-B endpoint failed: %s", err)
         batch = Batch(source=self.name)
         for _, ac, now_s, api in best.values():
-            parsed = parse_aircraft(ac, now_s, self._mil_db, f"adsb:{api}")
+            try:
+                parsed = parse_aircraft(ac, now_s, self._mil_db, f"adsb:{api}")
+            except (ValueError, TypeError, KeyError):
+                skipped += 1
+                continue
             if parsed is None:
                 continue
             pos, track = parsed
             batch.tracks.append(track)
             if pos is not None:
                 batch.positions.append(pos)
+        if skipped:
+            log.warning("ADS-B: skipped %d malformed aircraft record(s)", skipped)
         return batch
