@@ -59,6 +59,7 @@ class Runtime:
         self._ingest_task: asyncio.Task | None = None
         self._boot_task: asyncio.Task | None = None
         self.boot_error: str | None = None
+        self.imagery_job = None  # set during boot (osint.imagery.job.ImageryJob)
         self.event_builder = None  # set during boot (osint.pipeline.events.EventBuilder)
         self.maintenance_interval_s = 600.0
 
@@ -97,6 +98,10 @@ class Runtime:
             self.event_builder = wire_events(self)
             self._tasks.append(
                 asyncio.create_task(self.event_builder.run(), name="event_builder"))
+            from osint.imagery.job import wire as wire_imagery
+
+            self.imagery_job = wire_imagery(self)
+            self._tasks.append(asyncio.create_task(self.imagery_job.run(), name="imagery"))
             log.info("runtime boot complete")
         except Exception as exc:  # surfaced via /health instead of crashing the app
             self.boot_error = f"{type(exc).__name__}: {exc}"

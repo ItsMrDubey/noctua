@@ -1,0 +1,21 @@
+# Before/after satellite imagery (M3b). Read by osint.imagery.config.ImageryConfig.
+interval_s: 900            # ImageryJob pass interval
+max_per_run: 5             # events processed per pass
+concurrency: 3             # events processed in parallel
+event_age_days: 7          # only events updated in this window
+min_confidence: 0.0
+statuses: [multi-source, sensor-corroborated, official]
+precisions: [city, point]
+
+stac_url: https://earth-search.aws.element84.com/v1
+# Landsat (landsat-c2-l2) is searchable, but Earth Search serves its assets from a
+# requester-pays s3:// bucket that cannot be read over anonymous HTTP, so scenes without
+# https assets are skipped. Add it here once credentials/mirror are available.
+collections: [sentinel-2-l2a]
+max_cloud_pct: 30
+lookback_days: 60          # "before" scene must be within this many days of the event
+window_km: 5               # crop is window_km x window_km around the event
+retry_after_h: 24          # re-check for an "after" scene / retry failures
+max_attempts: 3
+connect_timeout_s: 10
+read_timeout_s: 45
