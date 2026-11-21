@@ -1,10 +1,20 @@
-"""Append-only Parquet lake partitioned by hour, queried with DuckDB."""
+"""Append-only Parquet lake partitioned by hour, queried with DuckDB.
+
+Layout: ``<root>/<dataset>/date=YYYY-MM-DD/hour=HH/*.parquet`` (UTC, by PARTITION_FIELD).
+Each flush adds one small ``part-*`` file per (dataset, hour); ``Lake.compact`` later
+merges every closed hour into a single ``compact-<hash>.parquet``. Queries given a time
+window only open the files of the overlapping hours (partition pruning).
+"""
 
 import hashlib
+import logging
 import os
+import re
+import threading
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -15,6 +25,8 @@ import pyarrow.parquet as pq
 
 from osint.core.geo import h3_cells
 from osint.core.models import Document, Observation, Position, TriageResult
+
+log = logging.getLogger(__name__)
 
 _TS = pa.timestamp("us", tz="UTC")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -102,6 +114,31 @@ def document_row(d: Document, t: TriageResult | None = None) -> dict:
     }
 
 
+_DATASET_RE = re.compile(r"\b(" + "|".join(SCHEMAS) + r")\b")
+# hive partition columns exposed by every dataset view (also on the empty placeholder)
+# (hour stays VARCHAR: DuckDB does not autocast the zero-padded "05")
+_HIVE_FIELDS = [("date", pa.date32()), ("hour", pa.string())]
+_COMPACT_PREFIX = "compact-"
+
+
+def _remove(path: Path) -> None:
+    os.unlink(path)
+
+
+def _compact_name(names: list[str]) -> str:
+    digest = hashlib.sha1("\n".join(sorted(names)).encode("utf-8")).hexdigest()[:16]
+    return f"{_COMPACT_PREFIX}{digest}.parquet"
+
+
+def _hour_start(part_dir: Path) -> datetime | None:
+    try:
+        date = part_dir.parent.name.removeprefix("date=")
+        hour = int(part_dir.name.removeprefix("hour="))
+        return datetime.strptime(date, "%Y-%m-%d").replace(hour=hour, tzinfo=UTC)
+    except ValueError:
+        return None
+
+
 class Lake:
     def __init__(
         self, root: Path, *, duckdb_memory_limit: str = "1GB", duckdb_threads: int = 4
@@ -110,6 +147,12 @@ class Lake:
         self.duckdb_memory_limit = duckdb_memory_limit
         self.duckdb_threads = duckdb_threads
         root.mkdir(parents=True, exist_ok=True)
+        # serialises file creation/removal: Lake.write (ingest flush) vs Lake.compact
+        self.write_lock = threading.Lock()
+        self._con_lock = threading.Lock()
+        self._con: duckdb.DuckDBPyConnection | None = None
+
+    # ------------------------------------------------------------------ writing
 
     def write(self, dataset: str, rows: list[dict]) -> int:
         schema = SCHEMAS[dataset]
@@ -118,58 +161,184 @@ class Lake:
         for r in rows:
             ts = r[ts_field].astimezone(UTC)  # partitions are always UTC
             groups[(ts.strftime("%Y-%m-%d"), ts.hour)].append(r)
-        for (date, hour), group in groups.items():
-            part_dir = self.root / dataset / f"date={date}" / f"hour={hour:02d}"
-            part_dir.mkdir(parents=True, exist_ok=True)
-            name = f"part-{time.time_ns()}-{uuid.uuid4().hex[:8]}.parquet"
-            tmp = part_dir / f"{name}.tmp"
-            try:
-                pq.write_table(
-                    pa.Table.from_pylist(group, schema=schema), tmp, compression="zstd"
-                )
-                os.replace(tmp, part_dir / name)
-            except BaseException:
-                tmp.unlink(missing_ok=True)
-                raise
+        with self.write_lock:
+            for (date, hour), group in groups.items():
+                part_dir = self.root / dataset / f"date={date}" / f"hour={hour:02d}"
+                part_dir.mkdir(parents=True, exist_ok=True)
+                name = f"part-{time.time_ns()}-{uuid.uuid4().hex[:8]}.parquet"
+                self._write_atomic(pa.Table.from_pylist(group, schema=schema), part_dir / name)
         return len(groups)
 
+    @staticmethod
+    def _write_atomic(table: pa.Table, dest: Path) -> None:
+        tmp = dest.with_name(f"{dest.name}.tmp")
+        try:
+            pq.write_table(table, tmp, compression="zstd")
+            os.replace(tmp, dest)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+
+    # --------------------------------------------------------------- partitions
+
+    def _partition_dirs(
+        self, dataset: str, start: datetime | None = None, end: datetime | None = None
+    ) -> Iterator[tuple[Path, datetime]]:
+        """(hour dir, hour start) for every partition overlapping [start, end]."""
+        ds_dir = self.root / dataset
+        if not ds_dir.is_dir():
+            return
+        lo = start.astimezone(UTC).replace(minute=0, second=0, microsecond=0) if start else None
+        hi = end.astimezone(UTC) if end else None
+        lo_day = lo.strftime("%Y-%m-%d") if lo else None
+        hi_day = hi.strftime("%Y-%m-%d") if hi else None
+        for date_dir in sorted(ds_dir.glob("date=*")):
+            day = date_dir.name.removeprefix("date=")
+            if (lo_day is not None and day < lo_day) or (hi_day is not None and day > hi_day):
+                continue
+            for hour_dir in sorted(date_dir.glob("hour=*")):
+                hs = _hour_start(hour_dir)
+                if hs is None or (lo is not None and hs < lo) or (hi is not None and hs > hi):
+                    continue
+                yield hour_dir, hs
+
+    def partition_files(
+        self, dataset: str, start: datetime | None = None, end: datetime | None = None
+    ) -> list[Path]:
+        """Parquet files of the hourly partitions overlapping [start, end] (None = open).
+
+        The window is on the dataset's PARTITION_FIELD (``ts``; ``published_at`` for
+        documents)."""
+        return [f for d, _ in self._partition_dirs(dataset, start, end)
+                for f in sorted(d.glob("*.parquet"))]
+
+    # ------------------------------------------------------------------ queries
+
     def _connect(self) -> duckdb.DuckDBPyConnection:
-        con = duckdb.connect(
-            config={"memory_limit": self.duckdb_memory_limit, "threads": self.duckdb_threads}
-        )
-        for dataset, schema in SCHEMAS.items():
-            ds_dir = self.root / dataset
-            if ds_dir.is_dir() and any(ds_dir.rglob("*.parquet")):
-                pattern = (ds_dir / "**" / "*.parquet").as_posix().replace("'", "''")
-                con.execute(
-                    f"CREATE VIEW {dataset} AS SELECT * FROM read_parquet('{pattern}', "
-                    "hive_partitioning=true, union_by_name=true)"
-                )
-            else:
-                con.register(dataset, schema.empty_table())
+        con = duckdb.connect(config={
+            "memory_limit": self.duckdb_memory_limit, "threads": self.duckdb_threads})
+        # DuckDB 2.x name for the old enable_object_cache: keep parquet footers cached
+        # across queries on this long-lived connection
+        con.execute("SET parquet_metadata_cache = true")
         return con
 
-    def query(self, sql: str, params: list | None = None) -> list[tuple]:
-        con = self._connect()
-        try:
-            return con.execute(sql, params or []).fetchall()
-        finally:
-            con.close()
+    def _cursor(self) -> duckdb.DuckDBPyConnection:
+        """A per-call cursor on the one long-lived connection (a cursor is never shared
+        between threads; temp views are cursor-local, caches are database-wide)."""
+        with self._con_lock:
+            if self._con is None:
+                self._con = self._connect()
+            return self._con.cursor()
+
+    def close(self) -> None:
+        with self._con_lock:
+            if self._con is not None:
+                self._con.close()
+                self._con = None
+
+    def _bind(self, cur: duckdb.DuckDBPyConnection, sql: str,
+              start: datetime | None, end: datetime | None) -> None:
+        for dataset in set(_DATASET_RE.findall(sql)):
+            files = self.partition_files(dataset, start, end)
+            if files:
+                # schemas are fixed per dataset (no union_by_name: it reads every footer)
+                rel = cur.read_parquet([f.as_posix() for f in files], hive_partitioning=True)
+                rel.create_view(dataset, replace=True)
+            else:
+                cur.register(dataset, pa.schema(
+                    [*SCHEMAS[dataset], *_HIVE_FIELDS]).empty_table())
+
+    def query(self, sql: str, params: list | None = None, *,
+              start: datetime | None = None, end: datetime | None = None) -> list[tuple]:
+        """Run ``sql`` over the datasets it names.
+
+        With ``start``/``end`` only the hourly partitions overlapping that window (on each
+        dataset's PARTITION_FIELD) are read, so the SQL must not need rows outside it;
+        without them the whole dataset is scanned (generic fallback)."""
+        for attempt in range(2):
+            cur = self._cursor()
+            try:
+                self._bind(cur, sql, start, end)
+                return cur.execute(sql, params or []).fetchall()
+            except duckdb.IOException:
+                if attempt:  # a file vanished under us (compaction): relist once
+                    raise
+            finally:
+                cur.close()
+        raise AssertionError("unreachable")
+
+    # --------------------------------------------------------------- compaction
+
+    def compact(self, dataset: str, older_than: datetime) -> int:
+        """Merge each closed hourly partition (hour end <= ``older_than``) holding more
+        than one file into one de-duplicated ``compact-<hash>.parquet``.
+
+        Crash-safe: the merged file is written to .tmp and os.replace'd before the inputs
+        are deleted; its name hashes the input names, so a rerun that finds it next to
+        exactly its inputs just deletes them. Any other mix is merged again with exact
+        duplicate removal, which cannot double rows. Returns partitions compacted."""
+        n = 0
+        for part_dir, hs in list(self._partition_dirs(dataset, None, older_than)):
+            if hs + timedelta(hours=1) > older_than:
+                continue
+            with self.write_lock:  # per partition, so a flush is never held up for long
+                n += self._compact_partition(dataset, part_dir)
+        return n
+
+    def _compact_partition(self, dataset: str, part_dir: Path) -> int:
+        for tmp in part_dir.glob("*.tmp"):  # leftovers of a crashed write (lock is held)
+            tmp.unlink(missing_ok=True)
+        files = sorted(part_dir.glob("*.parquet"))
+        if len(files) <= 1:
+            return 0
+        names = [f.name for f in files]
+        for f in files:  # crash recovery: a merged file already covers all the others
+            if f.name.startswith(_COMPACT_PREFIX) and _compact_name(
+                    [x for x in names if x != f.name]) == f.name:
+                self._remove_inputs([x for x in files if x != f])
+                return 1
+        schema = SCHEMAS[dataset]
+        table = pa.concat_tables(
+            [pq.ParquetFile(f).read().select(schema.names).cast(schema) for f in files])
+        table = table.group_by(schema.names, use_threads=False).aggregate([])
+        table = table.select(schema.names).cast(schema).sort_by(
+            PARTITION_FIELD.get(dataset, "ts"))
+        self._write_atomic(table, part_dir / _compact_name(names))
+        self._remove_inputs(files)
+        return 1
+
+    @staticmethod
+    def _remove_inputs(files: list[Path]) -> None:
+        for f in files:
+            try:
+                _remove(f)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:  # e.g. Windows: held open by a concurrent reader
+                log.warning("compaction could not remove %s (%s); retried next pass", f, exc)
+
+    # ------------------------------------------------------------------ indexes
 
     def recent_observation_index(self, since: datetime) -> dict[tuple[str, str], datetime]:
         """Latest observation ts per (id, version) seen since ``since``."""
         rows = self.query(
             "SELECT id, version, max(epoch_us(ts)) FROM observations WHERE ts >= ? "
             "GROUP BY id, version",
-            [since],
+            [since], start=since,
         )
         return {(r[0], r[1]): _EPOCH + timedelta(microseconds=r[2]) for r in rows}
 
-    def recent_document_index(self, since: datetime) -> dict[str, datetime]:
-        """fetched_at per document id fetched since ``since`` (dedupe warm start)."""
+    def recent_document_index(
+        self, since: datetime, max_age: timedelta = timedelta(hours=48)
+    ) -> dict[str, datetime]:
+        """fetched_at per document id fetched since ``since`` (dedupe warm start).
+
+        Documents are partitioned by published_at and ingest skips any published more
+        than ``max_age`` (DOC_MAX_AGE) before it is seen, so partitions older than
+        ``since - max_age`` cannot hold a match and are not read."""
         rows = self.query(
             "SELECT id, max(epoch_us(fetched_at)) FROM documents WHERE fetched_at >= ? "
             "GROUP BY id",
-            [since],
+            [since], start=since - max_age,
         )
         return {r[0]: _EPOCH + timedelta(microseconds=r[1]) for r in rows}

@@ -31,7 +31,7 @@ def track_points(runtime: Runtime, track_id: str, hours: int) -> list[dict]:
     since = utcnow() - timedelta(hours=hours)
     rows = runtime.lake.query(
         "SELECT epoch_us(ts), lat, lon, alt_ft, speed_kts, heading_deg FROM positions "
-        "WHERE track_id = ? AND ts >= ? ORDER BY ts", [track_id, since])
+        "WHERE track_id = ? AND ts >= ? ORDER BY ts", [track_id, since], start=since)
     pts = [{"ts": layers._iso(r[0]), "lat": r[1], "lon": r[2], "alt_ft": r[3],
             "speed_kts": r[4], "heading_deg": r[5]} for r in rows]
     live = runtime.ingestor.live.get(track_id)
@@ -46,7 +46,7 @@ def multi_tracks(runtime: Runtime, kind: str, hours: int, mil_only: bool) -> dic
     since = utcnow() - timedelta(hours=hours)
     rows = runtime.lake.query(
         "SELECT track_id, epoch_us(ts), lon, lat, alt_ft FROM positions "
-        "WHERE kind = ? AND ts >= ? ORDER BY track_id, ts", [kind, since])
+        "WHERE kind = ? AND ts >= ? ORDER BY track_id, ts", [kind, since], start=since)
     by: dict[str, list] = {}
     for tid, us, lon, lat, alt in rows:
         by.setdefault(tid, []).append([lon, lat, alt, us / 1e6])
@@ -59,11 +59,12 @@ def multi_tracks(runtime: Runtime, kind: str, hours: int, mil_only: bool) -> dic
 def snapshot_positions(
     runtime: Runtime, at: datetime, kind: str, window_min: int
 ) -> list[Position]:
+    since = at - timedelta(minutes=window_min)
     rows = runtime.lake.query(
         "SELECT track_id, kind, epoch_us(ts), lat, lon, alt_ft, speed_kts, heading_deg, source "
         "FROM positions WHERE kind = ? AND ts >= ? AND ts <= ? "
         "QUALIFY row_number() OVER (PARTITION BY track_id ORDER BY ts DESC) = 1",
-        [kind, at - timedelta(minutes=window_min), at])
+        [kind, since, at], start=since, end=at)
     return [Position(track_id=r[0], kind=r[1], ts=datetime.fromtimestamp(r[2] / 1e6, UTC),
                      lat=r[3], lon=r[4], alt_ft=r[5], speed_kts=r[6], heading_deg=r[7],
                      source=r[8]) for r in rows]
@@ -79,7 +80,7 @@ def density(runtime: Runtime, layer: str, res: int, hours: int) -> dict:
         sql = f"SELECT {col}, count(*) FROM positions WHERE kind = ? AND ts >= ? GROUP BY 1"
         params = [layers.LAYER_KIND[layer], since]
     counts: dict[str, int] = {}
-    for cell, n in runtime.lake.query(sql, params):
+    for cell, n in runtime.lake.query(sql, params, start=since):
         key = h3.int_to_str(cell)
         if res == 4:
             key = h3.cell_to_parent(key, 4)

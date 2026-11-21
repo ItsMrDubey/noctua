@@ -58,5 +58,8 @@ def test_recent_document_index_uses_fetched_at(tmp_path):
     old_fetch = _doc("doc:old-fetch", published=T0 - timedelta(days=5),
                      fetched=T0 - timedelta(days=4))
     lake.write("documents", [document_row(old_pub), document_row(old_fetch)])
-    index = lake.recent_document_index(T0 - timedelta(days=1))
+    index = lake.recent_document_index(T0 - timedelta(days=1), max_age=timedelta(days=6))
     assert index == {"doc:old-pub": T0}
+    # by default partitions published more than 48 h before ``since`` are pruned (ingest
+    # never stores documents that stale)
+    assert lake.recent_document_index(T0 - timedelta(days=1)) == {}

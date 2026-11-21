@@ -244,7 +244,7 @@ def _obs_rows(
         "SELECT id, epoch_us(ts), lat, lon, value, attrs FROM observations "
         f"WHERE type = ? AND ts >= ? AND ts <= ? {qualify}ORDER BY ts DESC LIMIT {int(limit)}"
     )
-    return runtime.lake.query(sql, [typ, since, end])
+    return runtime.lake.query(sql, [typ, since, end], start=since, end=end)
 
 
 def _iso(us: int) -> str:
