@@ -4,7 +4,7 @@ import os
 import time
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -16,6 +16,7 @@ from osint.core.geo import h3_cells
 from osint.core.models import Observation, Position
 
 _TS = pa.timestamp("us", tz="UTC")
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _H3 = [("h3_3", pa.uint64()), ("h3_5", pa.uint64()), ("h3_7", pa.uint64())]
 
 SCHEMAS: dict[str, pa.Schema] = {
@@ -95,6 +96,11 @@ class Lake:
         finally:
             con.close()
 
-    def recent_observation_keys(self, since: datetime) -> set[tuple[str, str]]:
-        rows = self.query("SELECT id, version FROM observations WHERE ts >= ?", [since])
-        return {(r[0], r[1]) for r in rows}
+    def recent_observation_index(self, since: datetime) -> dict[tuple[str, str], datetime]:
+        """Latest observation ts per (id, version) seen since ``since``."""
+        rows = self.query(
+            "SELECT id, version, max(epoch_us(ts)) FROM observations WHERE ts >= ? "
+            "GROUP BY id, version",
+            [since],
+        )
+        return {(r[0], r[1]): _EPOCH + timedelta(microseconds=r[2]) for r in rows}

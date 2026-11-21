@@ -3,7 +3,9 @@
 import asyncio
 import contextlib
 import logging
+import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import msgspec
@@ -43,25 +45,44 @@ class Ingestor:
         self._seen_obs: dict[tuple[str, str], datetime] = {}
         self._last_flush = time.monotonic()
         self._task: asyncio.Task | None = None
+        self._inflight: asyncio.Future | None = None
+        # serialises all mutation of ingestor state (worker thread vs loop thread)
+        self._lock = threading.Lock()
+        self.errors = 0
 
     async def submit(self, batch: Batch) -> None:
         await self.queue.put(batch)
         self.metrics.set("ingest_queue_depth", self.queue.qsize())
 
     def warm_start(self, since: datetime) -> None:
-        for key in self.lake.recent_observation_keys(since):
-            self._seen_obs[key] = since
+        index = self.lake.recent_observation_index(since)
+        with self._lock:
+            for key, ts in index.items():
+                current = self._seen_obs.get(key)
+                if current is None or ts > current:
+                    self._seen_obs[key] = ts
 
     def _bad(self, batch: Batch, record_type: str, record: object, reason: str) -> None:
         self.store.quarantine(batch.source, record_type, reason, msgspec.to_builtins(record))
         self.metrics.inc("records_quarantined_total", source=batch.source, type=record_type)
 
+    @staticmethod
+    def _naive(ts: datetime) -> bool:
+        return ts.tzinfo is None or ts.utcoffset() is None
+
     def process(self, batch: Batch) -> None:
+        with self._lock:
+            self._process(batch)
+
+    def _process(self, batch: Batch) -> None:
         now = utcnow()
         self.store.upsert_tracks(batch.tracks, now)
         for p in batch.positions:
             if not valid_coord(p.lat, p.lon):
                 self._bad(batch, "position", p, "invalid coordinates")
+                continue
+            if self._naive(p.ts):
+                self._bad(batch, "position", p, "naive timestamp")
                 continue
             if p.ts > now + _MAX_FUTURE:
                 self._bad(batch, "position", p, "timestamp in the future")
@@ -79,6 +100,9 @@ class Ingestor:
             if not valid_coord(o.lat, o.lon):
                 self._bad(batch, "observation", o, "invalid coordinates")
                 continue
+            if self._naive(o.ts):
+                self._bad(batch, "observation", o, "naive timestamp")
+                continue
             if o.ts > now + _MAX_FUTURE:
                 self._bad(batch, "observation", o, "timestamp in the future")
                 continue
@@ -95,17 +119,58 @@ class Ingestor:
         return sum(len(rows) for rows in self._buffers.values())
 
     def flush(self) -> None:
-        for dataset, rows in self._buffers.items():
-            if rows:
-                self.lake.write(dataset, rows)
-                self.metrics.inc("lake_rows_written_total", len(rows), dataset=dataset)
-                self._buffers[dataset] = []
-        self._last_flush = time.monotonic()
+        with self._lock:
+            try:
+                for dataset, rows in self._buffers.items():
+                    if rows:
+                        self.lake.write(dataset, rows)
+                        self.metrics.inc("lake_rows_written_total", len(rows), dataset=dataset)
+                        self._buffers[dataset] = []
+            finally:
+                # on failure the remaining buffers are kept and retried next interval
+                self._last_flush = time.monotonic()
 
     def prune(self, older_than: datetime) -> None:
-        self._seen_obs = {k: ts for k, ts in self._seen_obs.items() if ts >= older_than}
-        self._last_written = {k: ts for k, ts in self._last_written.items() if ts >= older_than}
-        self.live = {k: p for k, p in self.live.items() if p.ts >= older_than}
+        with self._lock:
+            self._seen_obs = {k: ts for k, ts in self._seen_obs.items() if ts >= older_than}
+            self._last_written = {
+                k: ts for k, ts in self._last_written.items() if ts >= older_than
+            }
+            self.live = {k: p for k, p in self.live.items() if p.ts >= older_than}
+
+    def _error(self, what: str, exc: BaseException) -> str:
+        with self._lock:
+            self.errors += 1
+        self.metrics.inc("ingest_errors_total")
+        msg = f"{type(exc).__name__}: {exc}"[:300]
+        log.error("ingest %s failed: %s", what, msg, exc_info=exc)
+        return msg
+
+    def _process_safe(self, batch: Batch) -> None:
+        try:
+            self.process(batch)
+        except Exception as exc:  # noqa: BLE001 — one bad batch must not stop ingestion
+            msg = self._error(f"of batch from {batch.source}", exc)
+            try:
+                self.store.quarantine(batch.source, "batch", f"batch processing failed: {msg}",
+                                      {"size": batch.size(), "error": msg})
+                self.metrics.inc("records_quarantined_total", source=batch.source, type="batch")
+            except Exception:
+                log.exception("could not quarantine failed batch from %s", batch.source)
+
+    def _flush_safe(self) -> None:
+        try:
+            self.flush()
+        except Exception as exc:  # noqa: BLE001 — buffers are kept for the next attempt
+            self._error(f"flush ({self._buffered()} rows kept for retry)", exc)
+
+    async def _in_thread(self, fn: Callable[..., None], *args: object) -> None:
+        """Run ``fn`` in a worker thread. If this task is cancelled the call keeps running,
+        so it is tracked in ``self._inflight`` and ``stop()`` waits for it."""
+        fut = asyncio.ensure_future(asyncio.to_thread(fn, *args))
+        self._inflight = fut
+        await asyncio.shield(fut)
+        self._inflight = None
 
     async def run(self) -> None:
         self._task = asyncio.current_task()
@@ -116,19 +181,29 @@ class Ingestor:
             except TimeoutError:
                 batch = None
             if batch is not None:
-                await asyncio.to_thread(self.process, batch)
+                await self._in_thread(self._process_safe, batch)
                 self.metrics.set("ingest_queue_depth", self.queue.qsize())
             due = time.monotonic() - self._last_flush >= self.flush_interval_s
             if self._buffered() and (due or self._buffered() >= self.flush_rows):
-                await asyncio.to_thread(self.flush)
+                await self._in_thread(self._flush_safe)
             elif due:
                 self._last_flush = time.monotonic()
 
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                log.exception("ingestor task had died")
+        if self._inflight is not None:  # let a worker-thread call finish before draining
+            with contextlib.suppress(Exception):
+                await self._inflight
+            self._inflight = None
         while not self.queue.empty():
-            self.process(self.queue.get_nowait())
-        self.flush()
+            self._process_safe(self.queue.get_nowait())
+        self._flush_safe()
+        if self._buffered():
+            log.error("ingestor stopped with %d unflushed rows", self._buffered())

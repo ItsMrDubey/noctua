@@ -1,5 +1,7 @@
 import asyncio
-from datetime import timedelta
+import json
+import threading
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -9,6 +11,7 @@ from osint.core.models import Batch, Observation, Position, TrackInfo
 from osint.pipeline.ingest import Ingestor
 from osint.store.lake import Lake
 from osint.store.sqlite import SqliteStore
+from tests.util import eventually
 
 
 @pytest.fixture
@@ -87,3 +90,134 @@ async def test_run_and_stop_flush_everything(parts):
     await ing.stop()
     assert task.done()
     assert lake.query("SELECT count(*) FROM positions") == [(1,)]
+
+
+def _quarantine_rows(store):
+    with store._lock:
+        return [tuple(r) for r in store._db.execute(
+            "SELECT source, record_type, reason, payload FROM quarantine ORDER BY id").fetchall()]
+
+
+async def test_stop_waits_for_in_flight_process(parts, monkeypatch):
+    """stop() must not drain/flush while a worker thread is still inside process()."""
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics, flush_interval_s=60)
+    entered, release = threading.Event(), threading.Event()
+    real_upsert = store.upsert_tracks
+
+    def slow_upsert(tracks, seen):
+        entered.set()
+        release.wait(5)
+        real_upsert(tracks, seen)
+
+    monkeypatch.setattr(store, "upsert_tracks", slow_upsert)
+    task = asyncio.create_task(ing.run())
+    await ing.submit(Batch(source="t", positions=[_pos(utcnow())]))
+    await eventually(entered.is_set)
+    asyncio.get_running_loop().call_later(0.2, release.set)
+    await ing.stop()
+    assert task.done()
+    assert lake.query("SELECT count(*) FROM positions") == [(1,)]
+
+
+async def test_prune_is_serialised_with_process(parts, monkeypatch):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics)
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_upsert(tracks, seen):
+        entered.set()
+        release.wait(5)
+
+    monkeypatch.setattr(store, "upsert_tracks", slow_upsert)
+    proc = asyncio.create_task(asyncio.to_thread(
+        ing.process, Batch(source="t", positions=[_pos(utcnow())])))
+    await eventually(entered.is_set)
+    pruned = asyncio.create_task(asyncio.to_thread(ing.prune, utcnow() - timedelta(hours=1)))
+    await asyncio.sleep(0.1)
+    assert not pruned.done()  # blocked behind the in-flight process()
+    release.set()
+    await asyncio.wait_for(asyncio.gather(proc, pruned), timeout=5)
+    assert "air:a" in ing.live
+
+
+def test_naive_timestamps_quarantined(parts):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics)
+    naive = datetime(2026, 11, 21, 12, 0)
+    ing.process(Batch(source="t", positions=[_pos(naive)],
+                      observations=[Observation(id="x", type="fire", ts=naive, lat=1, lon=1,
+                                                source="t")]))
+    ing.flush()
+    rows = _quarantine_rows(store)
+    assert [(r[1], r[2]) for r in rows] == [("position", "naive timestamp"),
+                                           ("observation", "naive timestamp")]
+    assert lake.query("SELECT count(*) FROM positions") == [(0,)]
+
+
+async def test_run_survives_process_error(parts, monkeypatch):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics, flush_interval_s=60)
+    real_upsert = store.upsert_tracks
+
+    def flaky_upsert(tracks, seen):
+        if tracks:
+            raise RuntimeError("db exploded")
+        real_upsert(tracks, seen)
+
+    monkeypatch.setattr(store, "upsert_tracks", flaky_upsert)
+    task = asyncio.create_task(ing.run())
+    await ing.submit(Batch(source="bad", tracks=[TrackInfo(track_id="sea:1", kind="sea",
+                                                           ident="1")]))
+    await eventually(lambda: metrics.get("ingest_errors_total") == 1)
+    await ing.submit(Batch(source="t", positions=[_pos(utcnow())]))
+    await eventually(lambda: metrics.get("batches_ingested_total", source="t") == 1)
+    assert not task.done()
+    assert ing.errors == 1
+    await ing.stop()
+    assert lake.query("SELECT count(*) FROM positions") == [(1,)]
+    [(source, record_type, reason, payload)] = _quarantine_rows(store)
+    assert (source, record_type) == ("bad", "batch")
+    assert "db exploded" in reason
+    assert json.loads(payload) == {"size": 1, "error": "RuntimeError: db exploded"}
+
+
+async def test_run_keeps_buffers_and_retries_failed_flush(parts, monkeypatch):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics, flush_interval_s=0.05)
+    real_write = lake.write
+    calls = []
+
+    def flaky_write(dataset, rows):
+        calls.append(dataset)
+        if len(calls) == 1:
+            raise OSError("disk full")
+        return real_write(dataset, rows)
+
+    monkeypatch.setattr(lake, "write", flaky_write)
+    task = asyncio.create_task(ing.run())
+    await ing.submit(Batch(source="t", positions=[_pos(utcnow())]))
+    await eventually(lambda: real_count(lake) == 1)
+    assert not task.done()
+    assert metrics.get("ingest_errors_total") == 1
+    await ing.stop()
+    assert real_count(lake) == 1
+
+
+def real_count(lake):
+    return lake.query("SELECT count(*) FROM positions")[0][0]
+
+
+def test_warm_start_keys_survive_prune_until_real_ts_expires(parts):
+    store, lake, metrics = parts
+    o = Observation(id="fire:1", type="fire", ts=utcnow() - timedelta(minutes=5), lat=1, lon=1,
+                    source="t")
+    first = Ingestor(store, lake, metrics)
+    first.process(Batch(source="t", observations=[o]))
+    first.flush()
+    second = Ingestor(store, lake, metrics)
+    second.warm_start(utcnow() - timedelta(hours=48))
+    second.prune(utcnow() - timedelta(hours=47))  # a maintenance pass some time later
+    second.process(Batch(source="t", observations=[o]))
+    second.flush()
+    assert lake.query("SELECT count(*) FROM observations") == [(1,)]
