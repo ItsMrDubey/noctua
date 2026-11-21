@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 from osint.core.models import Observation, Position
 from osint.store.lake import Lake, observation_row, position_row
@@ -34,3 +34,17 @@ def test_recent_observation_index(tmp_path):
     assert index == {("quake:2", "v9"): T0}
     assert index[("quake:2", "v9")].tzinfo is not None
     assert lake.query("SELECT attrs FROM observations WHERE id='quake:2'") == [('{"place":"x"}',)]
+
+
+def test_partition_uses_utc_for_offset_timestamps(tmp_path):
+    lake = Lake(tmp_path)
+    ts = datetime(2026, 11, 21, 2, 30, tzinfo=timezone(timedelta(hours=5)))  # 20th 21:30 UTC
+    lake.write("positions", [position_row(_pos(ts))])
+    assert (tmp_path / "positions" / "date=2026-11-20" / "hour=21").is_dir()
+    assert lake.query("SELECT count(*) FROM positions") == [(1,)]
+
+
+def test_query_works_when_path_contains_apostrophe(tmp_path):
+    lake = Lake(tmp_path / "o'brien")
+    lake.write("positions", [position_row(_pos(T0))])
+    assert lake.query("SELECT count(*) FROM positions") == [(1,)]

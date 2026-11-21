@@ -65,7 +65,8 @@ class Lake:
         schema = SCHEMAS[dataset]
         groups: dict[tuple[str, int], list[dict]] = defaultdict(list)
         for r in rows:
-            groups[(r["ts"].strftime("%Y-%m-%d"), r["ts"].hour)].append(r)
+            ts = r["ts"].astimezone(UTC)  # partitions are always UTC
+            groups[(ts.strftime("%Y-%m-%d"), ts.hour)].append(r)
         for (date, hour), group in groups.items():
             part_dir = self.root / dataset / f"date={date}" / f"hour={hour:02d}"
             part_dir.mkdir(parents=True, exist_ok=True)
@@ -80,7 +81,7 @@ class Lake:
         for dataset, schema in SCHEMAS.items():
             ds_dir = self.root / dataset
             if ds_dir.is_dir() and any(ds_dir.rglob("*.parquet")):
-                pattern = (ds_dir / "**" / "*.parquet").as_posix()
+                pattern = (ds_dir / "**" / "*.parquet").as_posix().replace("'", "''")
                 con.execute(
                     f"CREATE VIEW {dataset} AS SELECT * FROM read_parquet('{pattern}', "
                     "hive_partitioning=true, union_by_name=true)"
