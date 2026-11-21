@@ -90,13 +90,15 @@ export class Inspector {
   }
 
   // news event: `it` is the slim list item, `detail` is GET /api/events/{id} (or null while loading)
-  event(it, detail) {
+  // nearNuc: {site, km} of the closest known nuclear site within 50 km (client-side), or null
+  event(it, detail, nearNuc) {
     this.cur = null;
     const d = detail || it;
     const cat = eventCat(it.category), conf = Math.min(1, Math.max(0, +it.confidence || 0));
     const span = (a, b) => { const x = String(a || "").replace("T", " ").slice(0, 16), y = String(b || "").replace("T", " ").slice(0, 16); return esc(x) + (x === y || !y ? "" : " → " + esc(y)) + " UTC"; };
     const tags = '<span class="pill st-' + esc(String(it.status).replace(/[^a-z-]/g, "")) + '">' + esc(EVENT_STATUS[it.status] || it.status) + "</span>" +
-      '<span class="tag">' + esc(cat[0]) + "</span>" + (d.gdelt_ids && d.gdelt_ids.length ? '<span class="tag" title="' + esc(d.gdelt_ids.join(", ")) + '">GDELT · ' + d.gdelt_ids.length + " id" + (d.gdelt_ids.length === 1 ? "" : "s") + "</span>" : "");
+      '<span class="tag">' + esc(cat[0]) + "</span>" + (d.gdelt_ids && d.gdelt_ids.length ? '<span class="tag" title="' + esc(d.gdelt_ids.join(", ")) + '">GDELT · ' + d.gdelt_ids.length + " id" + (d.gdelt_ids.length === 1 ? "" : "s") + "</span>" : "") +
+      (nearNuc ? '<span class="tag nuc" title="Within 50 km of a known nuclear site">Near nuclear facility</span>' : "");
     const place = [d.place_name, d.country].filter(Boolean).join(", ");
     const facts = kv([["Confidence", '<div class="cbar" title="' + conf.toFixed(2) + '"><i style="width:' + Math.round(conf * 100) + '%"></i></div><b class="cnum">' + conf.toFixed(2) + "</b>"],
       ["Time span", span(it.t_start, it.t_end)], ["Place", esc(place) || "–"], ["Precision", esc(it.precision) + (d.geo_confidence != null ? " · geo " + nf(d.geo_confidence, 2) : "")],
@@ -116,6 +118,7 @@ export class Inspector {
     }
     const html = this._head("events", it, "News event · " + cat[0], it.title || it.id, place || it.precision || "") + '<div class="dz-tags">' + tags + "</div>" +
       (d.summary ? '<section class="dz-sec"><div class="evsum">' + esc(d.summary) + "</div></section>" : "") +
+      (nearNuc ? '<section class="dz-sec"><div class="nucnear">Near nuclear facility: <b>' + esc(nearNuc.site.name) + "</b> (" + nf(nearNuc.km, 1) + " km)</div></section>" : "") +
       '<section class="dz-sec"><h3>Assessment</h3>' + facts + "</section>" +
       '<section class="dz-sec"><h3>Sources<small>' + (docs ? docs.length : "…") + "</small></h3>" + src + "</section>" + fields +
       '<section class="dz-sec"><h3>Corroboration</h3><div class="dz-empty">Sensor corroboration arrives in M3.</div></section>' +
@@ -141,9 +144,13 @@ export class Inspector {
 
   reference(ref, title, bodyHtml) {
     this.cur = null;
-    const label = { airport: "Airport", medairport: "Airport", runway: "Runway", port: "Seaport", base: "Military installation", chokepoint: "Maritime chokepoint", boundary: "Boundary" }[ref.kind] || "Reference";
+    const label = { airport: "Airport", medairport: "Airport", runway: "Runway", port: "Seaport", base: "Military installation", chokepoint: "Maritime chokepoint", boundary: "Boundary",
+      nuclear: "Nuclear site", corridor: "Military movements · corridor", leg: "Military movements · flight leg", surge: "Military movements · surge", naval: "Military movements · naval unit" }[ref.kind] || "Reference";
     const it = ref.item || {};
-    const html = this._head("ref", it, "Reference · " + label, title, it.lat != null ? nf(it.lat, 3) + ", " + nf(it.lon, 3) : "") + '<section class="dz-sec">' + bodyHtml + "</section>";
-    this._show(html, "#3ddcc2");
+    const mov = /^(corridor|leg|surge|naval)$/.test(ref.kind);
+    const tint = ref.kind === "nuclear" ? "#ffd24a" : ref.kind === "surge" ? "#f2ad3d" : ref.kind === "naval" ? "#ff4b55" : mov ? "#36c5ff" : "#3ddcc2";
+    const head = this._head("ref", it, (mov ? "" : "Reference · ") + label, title, it.lat != null ? nf(it.lat, 3) + ", " + nf(it.lon, 3) : "").replace(/--threat:[^;"]*/, "--threat:" + tint);
+    const html = head + '<section class="dz-sec">' + bodyHtml + "</section>";
+    this._show(html, tint);
   }
 }

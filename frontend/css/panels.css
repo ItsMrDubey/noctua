@@ -130,3 +130,27 @@
 .fld span { font: 600 9.5px var(--f-head); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-right: 8px; }
 .fld b { font: 500 11.5px var(--f-mono); color: var(--fg); word-break: break-word; }
 .fld blockquote { margin: 3px 0 0; padding: 0 0 0 8px; border-left: 2px solid var(--line-2); font: italic 11px/1.45 var(--f-body); color: var(--fg-2); }
+
+/* ---- nuclear sites + movements ---- */
+.sw.tre { border-radius: 50%; background: transparent; box-shadow: none; border: 1.3px dashed var(--c); }
+.sw.ln.flow { border-top-style: dotted; border-top-width: 2px; }
+.sw.hexo { border-radius: 0; box-shadow: none; background: var(--c); opacity: .75; clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%); }
+#nuc-chips .chip, #mv-roles .chip { cursor: pointer; }
+.nst { font: 10.5px var(--f-mono); text-transform: uppercase; letter-spacing: .06em; }
+.nst-solid { color: var(--green); }
+.nst-dim { color: var(--dim); }
+.nst-dash { color: var(--amber); }
+.tag.nuc { border-color: rgba(255, 210, 74, .45); color: #ffd24a; }
+#moves-pane { padding: 4px 10px 10px; }
+.mv-h { margin: 10px 0 4px; font: 600 10px var(--f-head); letter-spacing: .18em; text-transform: uppercase; color: var(--fg-2); display: flex; justify-content: space-between; align-items: baseline; }
+.mv-h small { font: 10px var(--f-mono); letter-spacing: 0; color: var(--dim); text-transform: none; }
+.mv-row { display: grid; grid-template-columns: 10px 1fr auto auto; gap: 8px; align-items: center; padding: 4px 4px; border-bottom: 1px solid rgba(255, 255, 255, .035); cursor: pointer; font: 11.5px var(--f-mono); color: var(--fg); }
+.mv-row:hover { background: rgba(var(--acc-rgb), .08); }
+.mv-row i { width: 8px; height: 8px; background: var(--c); box-shadow: 0 0 5px var(--c); }
+.mv-row i.hx { background: transparent; border: 1.4px solid var(--c); box-shadow: none; clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%); }
+.mv-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-row em { font-style: normal; font-size: 9.5px; color: var(--dim); text-transform: uppercase; }
+.mv-row b { font-weight: 500; color: var(--amber); }
+.mv-empty { padding: 6px 4px; font: 11px var(--f-body); color: var(--dim); }
+.nucnear { font: 11.5px var(--f-body); color: #ffd24a; border-left: 2px solid #ffd24a; padding: 3px 8px; background: rgba(255, 210, 74, .06); }
+.nucnear b { color: var(--fg); font-weight: 600; }

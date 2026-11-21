@@ -20,6 +20,8 @@ import { EventLayer, EventFeed, STATUSES } from "/static/js/events.js";
 import { EventList } from "/static/js/eventlist.js";
 import { EVENT_CATS, EVENT_STATUS } from "/static/js/symbology.js";
 import { refreshEventStats } from "/static/js/panels/evstats.js";
+import { NuclearLayer, NUC_GROUPS, nuclearDetails } from "/static/js/nuclear.js";
+import { MovementsLayer, MOV_ROLES, MOV_KINDS, movementDetails } from "/static/js/movements.js";
 
 const errors = {};
 let lastStatus = null;
@@ -87,6 +89,7 @@ async function main() {
   };
 
   // ---- Selection / inspector ----
+  const hooks = { nearNuclear: () => null }; // filled once the nuclear layer exists
   let selected = null, following = false, detail = null, trailOn = true, refSel = null;
   const pins = new Set(JSON.parse(localStorage.getItem("noctua.pins") || "[]"));
   const savePins = () => localStorage.setItem("noctua.pins", JSON.stringify([...pins]));
@@ -113,7 +116,7 @@ async function main() {
     const it = byKind[selected.kind].items.get(selected.id);
     if (!it) return;
     if (isTrack(selected.kind)) { inspector.track(selected.kind, it, detail && detail.id === selected.id ? detail : null); alerts.squawk(withExtra(it)); }
-    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null);
+    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null, hooks.nearNuclear(it));
     else inspector.observation(selected.kind, it);
     if (following) {
       const p = byKind[selected.kind].positionOf(selected.id);
@@ -155,7 +158,7 @@ async function main() {
   const inspector = new Inspector({
     close: clearSelection,
     fly: () => {
-      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : 4e5);
+      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : refSel.kind === "corridor" ? 4e6 : refSel.kind === "surge" ? 2.5e6 : 4e5);
       else if (selected) flyToItem(selected.kind, selected.id);
     },
     follow: () => setFollow(!following),
@@ -185,7 +188,7 @@ async function main() {
   statusBar.onTransition = (n, from, to, s) => alerts.source(n, from, to, s);
 
   const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); }, {
-    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); },
+    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); if (p === "moves") { moves.ensurePanel(); renderMoves(); } },
   });
   const evList = new EventList(events, (id) => { select("events", id); flyToItem("events", id); }, () => tracklist.pane === "events" && tracklist.open && !$("tracks").classList.contains("hidden"));
   tracklist.render(true);
@@ -244,7 +247,7 @@ async function main() {
     refSel = ref;
     const it = ref.item || {};
     if (it.lat != null) { const p = Cesium.Cartesian3.fromDegrees(it.lon, it.lat); fx.setTarget(() => p, "ref"); } else fx.setTarget(null);
-    const [title, body] = refDetails(ref);
+    const [title, body] = ref.kind === "nuclear" ? nuclearDetails(it) : MOV_KINDS[ref.kind] ? movementDetails(ref) : refDetails(ref);
     inspector.reference(ref, title, body);
     buttons();
     if (ref.kind === "airport" || ref.kind === "medairport") {
@@ -252,6 +255,58 @@ async function main() {
       if (refSel === ref && rw) { const [, b2] = refDetails(ref, rw); inspector.reference(ref, title, b2); }
     }
   }
+
+  // ---- Nuclear sites (reference) ----
+  const nuclear = new NuclearLayer(viewer);
+  hooks.nearNuclear = (it) => nuclear.near(it.lat, it.lon, 50);
+  const nucOn = new Set(Object.keys(NUC_GROUPS));
+  $("nuc-chips").innerHTML = Object.entries(NUC_GROUPS).map(([k, [l, c]]) => '<button class="chip on" data-k="' + k + '" style="--c:' + c + '">' + l + "</button>").join("");
+  $("nuc-chips").addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b) return;
+    b.classList.toggle("on");
+    if (b.classList.contains("on")) nucOn.add(b.dataset.k); else nucOn.delete(b.dataset.k);
+    nuclear.setGroups(nucOn);
+  });
+  nuclear.onLoad = (items) => { $("c-nuclear").textContent = items.length.toLocaleString(); if (selected && selected.kind === "events") refreshSelected(); };
+  $("r-nuclear").addEventListener("change", (e) => nuclear.setOn(e.target.checked).then(() => {
+    if (nuclear.unavailable) { e.target.checked = false; e.target.closest("label").title = "Nuclear sites not supported by this backend version"; }
+  }));
+  $("r-nuc-rings").addEventListener("change", (e) => nuclear.setRings(e.target.checked));
+  setTimeout(() => nuclear.ensure().catch(() => {}), 4000); // loaded for event proximity tags even when hidden
+
+  // ---- Military movements ----
+  const moves = new MovementsLayer(viewer);
+  const roleOn = new Set(Object.keys(MOV_ROLES));
+  $("mv-roles").innerHTML = Object.entries(MOV_ROLES).map(([k, [l, c]]) => '<button class="chip on" data-k="' + k + '" style="--c:' + c + '">' + l + "</button>").join("");
+  $("mv-roles").addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b) return;
+    b.classList.toggle("on");
+    if (b.classList.contains("on")) roleOn.add(b.dataset.k); else roleOn.delete(b.dataset.k);
+    moves.setRoles(roleOn);
+  });
+  const renderMoves = () => {
+    const d = moves.data;
+    for (const k of ["corridors", "legs", "surges", "naval"]) { const el = $("c-" + k); if (el) el.textContent = moves.sig[k] ? d[k].length.toLocaleString() : ""; }
+    const g = $("g-moves-n"); if (g) g.textContent = moves.sig.corridors || moves.sig.surges ? (d.corridors.length + d.surges.length).toLocaleString() : "–";
+    const mc = $("moves-count"), t = d.surges.length ? String(d.surges.length) : "";
+    if (mc.textContent !== t) { mc.textContent = t; mc.classList.toggle("hot", !!d.surges.length); }
+    if (tracklist.pane === "moves") $("moves-pane").innerHTML = moves.panelHtml();
+  };
+  moves.onData = renderMoves;
+  for (const k of ["corridors", "legs", "surges", "naval"]) $("m-" + k).addEventListener("change", (e) => moves.set(k, e.target.checked));
+  $("moves-pane").addEventListener("click", (e) => {
+    const r = e.target.closest(".mv-row");
+    if (!r) return;
+    const ref = moves.pick(r.dataset.k, +r.dataset.i);
+    if (!ref) return;
+    const it = ref.item;
+    if (ref.kind === "corridor" && it.path) { const m = it.path[it.path.length >> 1]; it.lon = m[0]; it.lat = m[1]; }
+    showRef(ref);
+    if (it.lat != null) flyTo(it.lat, it.lon, ref.kind === "corridor" ? 4e6 : ref.kind === "surge" ? 2.5e6 : 6e5);
+  });
+  setTimeout(() => { moves.load("surges"); }, 8000); // tab badge for active surges
 
   // ---- News events: filters, feed, alerts ----
   const catLabel = (k) => EVENT_CATS[k][0].replace(/ \/ /, "/");
@@ -342,7 +397,7 @@ async function main() {
   });
 
   // ---- Keyboard ----
-  const ctx = { viewer, scene, air, ships, byKind, refLayers, tree, timeline, hud, fps, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
+  const ctx = { viewer, scene, air, ships, byKind, refLayers, nuclear, moves, tree, timeline, hud, fps, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
   document.addEventListener("keydown", (e) => {
     const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (ctx.palette.isOpen) ctx.palette.close(); else ctx.palette.open(); return; }
