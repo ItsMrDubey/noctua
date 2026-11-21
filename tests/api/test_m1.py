@@ -144,12 +144,13 @@ def _parse(resp):
 def test_master_kml(client):
     root = _parse(client.get("/kml/master.kml"))
     links = root.findall(".//k:NetworkLink", NS)
-    assert len(links) == 4
+    assert len(links) == 5
     hrefs = [link.find("k:Link/k:href", NS).text for link in links]
     assert hrefs[0] == "http://testserver/kml/aircraft.kml"
+    assert hrefs[-1] == "http://testserver/kml/events.kml"
     assert all("token" not in h for h in hrefs)
     assert [link.find("k:Link/k:refreshInterval", NS).text for link in links] == [
-        "30", "60", "600", "120"]
+        "30", "60", "600", "120", "120"]
 
 
 def test_aircraft_kml_escaping_and_style(client):
