@@ -58,6 +58,7 @@ DEFAULT_CONFIG = ROOT / "config" / "events.yaml"
 CURSOR_NAME = "event_builder"
 REBUILD_STATE = "event_rebuild"
 REBUILD_LOCK = ".event_rebuild.lock"
+VERDICT_RULES = 2  # bump when apply_verdict_records semantics change
 NO_ARTICLE_BACKING = "no_article_backing"
 STATUS_LEVELS = ("reported", "multi-source", "sensor-corroborated", "official")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -541,7 +542,9 @@ class EventBuilder:
             verdict = effective_verdict(raw, reasons)
             quotes = [q for q in rec.get("quotes") or [] if isinstance(q, dict)]
             geo = rec.get("geo") or None
-            fp = json.dumps([verdict, reasons, geo, quotes], sort_keys=True, default=str)
+            # VERDICT_RULES in the fingerprint: a rule change re-applies stored verdicts
+            fp = json.dumps([VERDICT_RULES, verdict, reasons, geo, quotes], sort_keys=True,
+                            default=str)
             fp = hashlib.sha1(fp.encode("utf-8")).hexdigest()[:16]
             self.verdicts[eid] = verdict
             if not force and (known.get(eid) or {}).get("fingerprint") == fp:
