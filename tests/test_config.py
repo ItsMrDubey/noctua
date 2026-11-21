@@ -26,5 +26,6 @@ def test_load_sources_normalises_empty_blocks(tmp_path: Path):
     assert load_sources(tmp_path) == {"usgs": {"interval_s": 120}, "ais": {}}
 
 
-def test_repo_sources_yaml_lists_m0_collectors():
-    assert set(load_sources(ROOT / "config")) == {"adsb", "ais", "firms", "usgs"}
+def test_repo_sources_yaml_lists_collectors():
+    assert set(load_sources(ROOT / "config")) == {
+        "adsb", "ais", "firms", "usgs", "gdelt", "rss", "news_alterlab"}

@@ -17,3 +17,76 @@ firms:
 usgs:
   enabled: true
   interval_s: 120
+gdelt:
+  enabled: true
+  interval_s: 900
+news_alterlab:
+  enabled: true
+  interval_s: 900
+  categories: [world, general, business, technology, science]
+  limit: 100
+rss:
+  enabled: true
+  interval_s: 600
+  concurrency: 8
+  # Verified with curl on 2026-11-21 (HTTP 200 + RSS/RDF/Atom root). Metadata + links only.
+  feeds:
+    # --- English: world
+    - {url: "https://feeds.bbci.co.uk/news/world/rss.xml", name: bbc-world, language: en, country: GB}
+    - {url: "https://www.aljazeera.com/xml/rss/all.xml", name: aljazeera-en, language: en, country: QA}
+    - {url: "https://rss.dw.com/rdf/rss-en-world", name: dw-world, language: en, country: DE}
+    - {url: "https://www.france24.com/en/rss", name: france24-en, language: en, country: FR}
+    - {url: "https://www.theguardian.com/world/rss", name: guardian-world, language: en, country: GB}
+    - {url: "https://feeds.npr.org/1004/rss.xml", name: npr-world, language: en, country: US}
+    - {url: "https://www.scmp.com/rss/91/feed", name: scmp-asia, language: en, country: HK}
+    - {url: "https://tass.com/rss/v2.xml", name: tass-en, language: en, country: RU}
+    - {url: "https://www.rferl.org/api/", name: rferl, language: en, country: CZ}
+    - {url: "https://www.voanews.com/api/zq$omekvi_", name: voa-world, language: en, country: US}
+    # --- English: regional conflict desks
+    - {url: "https://kyivindependent.com/news-archive/rss/", name: kyiv-independent, language: en, country: UA}
+    - {url: "https://www.ukrinform.net/rss/block-lastnews", name: ukrinform-en, language: en, country: UA}
+    - {url: "https://www.timesofisrael.com/feed/", name: times-of-israel, language: en, country: IL}
+    - {url: "https://www.longwarjournal.org/feed", name: long-war-journal, language: en, country: US}
+    - {url: "https://www.crisisgroup.org/rss.xml", name: crisis-group, language: en, country: BE}
+    # --- English: defence / aviation / maritime
+    - {url: "https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml", name: defense-news, language: en, country: US}
+    - {url: "https://www.militarytimes.com/arc/outboundfeeds/rss/?outputType=xml", name: military-times, language: en, country: US}
+    - {url: "https://www.twz.com/feed", name: the-war-zone, language: en, country: US}
+    - {url: "https://breakingdefense.com/feed/", name: breaking-defense, language: en, country: US}
+    - {url: "https://theaviationist.com/feed/", name: the-aviationist, language: en, country: IT}
+    - {url: "https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=945&max=10", name: us-dod-news, language: en, country: US}
+    - {url: "https://gcaptain.com/feed/", name: gcaptain, language: en, country: US}
+    - {url: "https://maritime-executive.com/articles.rss", name: maritime-executive, language: en, country: US}
+    # --- Arabic
+    - {url: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9", name: aljazeera-ar, language: ar, country: QA}
+    - {url: "https://feeds.bbci.co.uk/arabic/rss.xml", name: bbc-arabic, language: ar, country: GB}
+    - {url: "https://www.france24.com/ar/rss", name: france24-ar, language: ar, country: FR}
+    - {url: "https://rss.dw.com/rdf/rss-ar-all", name: dw-arabic, language: ar, country: DE}
+    # --- Farsi
+    - {url: "https://feeds.bbci.co.uk/persian/rss.xml", name: bbc-persian, language: fa, country: GB}
+    - {url: "https://www.iranintl.com/fa/feed", name: iranintl-fa, language: fa, country: GB}
+    - {url: "https://www.radiofarda.com/api/", name: radio-farda, language: fa, country: CZ}
+    - {url: "https://rss.dw.com/rdf/rss-per-all", name: dw-persian, language: fa, country: DE}
+    # --- Russian
+    - {url: "https://feeds.bbci.co.uk/russian/rss.xml", name: bbc-russian, language: ru, country: GB}
+    - {url: "https://meduza.io/rss/all", name: meduza, language: ru, country: LV}
+    - {url: "https://rss.dw.com/rdf/rss-ru-all", name: dw-russian, language: ru, country: DE}
+    # --- Ukrainian
+    - {url: "https://feeds.bbci.co.uk/ukrainian/rss.xml", name: bbc-ukrainian, language: uk, country: GB}
+    - {url: "https://www.ukrinform.ua/rss/block-lastnews", name: ukrinform-ua, language: uk, country: UA}
+    - {url: "https://rss.dw.com/rdf/rss-ukr-all", name: dw-ukrainian, language: uk, country: DE}
+    # --- Spanish / French / German
+    - {url: "https://feeds.bbci.co.uk/mundo/rss.xml", name: bbc-mundo, language: es, country: GB}
+    - {url: "https://www.france24.com/es/rss", name: france24-es, language: es, country: FR}
+    - {url: "https://elpais.com/rss/internacional/portada.xml", name: elpais-internacional, language: es, country: ES}
+    - {url: "https://www.france24.com/fr/rss", name: france24-fr, language: fr, country: FR}
+    - {url: "https://www.lemonde.fr/international/rss_full.xml", name: lemonde-international, language: fr, country: FR}
+    - {url: "https://rss.dw.com/rdf/rss-de-all", name: dw-deutsch, language: de, country: DE}
+    # --- Chinese / Turkish / Japanese / Korean
+    - {url: "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", name: bbc-zhongwen, language: zh, country: GB}
+    - {url: "https://rss.dw.com/rdf/rss-chi-all", name: dw-chinese, language: zh, country: DE}
+    - {url: "https://feeds.bbci.co.uk/turkce/rss.xml", name: bbc-turkce, language: tr, country: GB}
+    - {url: "https://rss.dw.com/rdf/rss-tur-all", name: dw-turkish, language: tr, country: DE}
+    - {url: "https://www.dailysabah.com/rss/world", name: daily-sabah-world, language: en, country: TR}
+    - {url: "https://www3.nhk.or.jp/rss/news/cat6.xml", name: nhk-international, language: ja, country: JP}
+    - {url: "https://www.yna.co.kr/rss/news.xml", name: yonhap-ko, language: ko, country: KR}
