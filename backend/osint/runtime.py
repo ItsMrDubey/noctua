@@ -57,22 +57,43 @@ class Runtime:
             self.store.register_source(c.name, c.domain, c.licence, c.commercial_ok)
         self._tasks: list[asyncio.Task] = []
         self._ingest_task: asyncio.Task | None = None
+        self._boot_task: asyncio.Task | None = None
+        self.boot_error: str | None = None
         self.maintenance_interval_s = 600.0
 
     @property
     def ingestor_alive(self) -> bool:
         return self._ingest_task is not None and not self._ingest_task.done()
 
+    @property
+    def booting(self) -> bool:
+        return self._boot_task is not None and not self._boot_task.done()
+
     async def start(self) -> None:
-        # gazetteer load (~30 s) must not happen inside the first document batch
-        await asyncio.gather(
-            asyncio.to_thread(self.ingestor.warm_start, utcnow() - DEDUPE_WINDOW),
-            asyncio.to_thread(self.triage.preload),
-        )
-        self._ingest_task = asyncio.create_task(self.ingestor.run(), name="ingestor")
-        self._tasks.append(self._ingest_task)
-        self._tasks.append(asyncio.create_task(self._maintenance(), name="maintenance"))
-        await self.scheduler.start()
+        # Boot in the background so the API (and the globe) is reachable immediately;
+        # the gazetteer load (~30 s) must still finish before the first document batch.
+        self._boot_task = asyncio.create_task(self._boot(), name="boot")
+        self._tasks.append(self._boot_task)
+
+    async def wait_booted(self) -> None:
+        """Wait until background boot has finished (successfully or not)."""
+        if self._boot_task is not None:
+            await asyncio.wait({self._boot_task})
+
+    async def _boot(self) -> None:
+        try:
+            await asyncio.gather(
+                asyncio.to_thread(self.ingestor.warm_start, utcnow() - DEDUPE_WINDOW),
+                asyncio.to_thread(self.triage.preload),
+            )
+            self._ingest_task = asyncio.create_task(self.ingestor.run(), name="ingestor")
+            self._tasks.append(self._ingest_task)
+            self._tasks.append(asyncio.create_task(self._maintenance(), name="maintenance"))
+            await self.scheduler.start()
+            log.info("runtime boot complete")
+        except Exception as exc:  # surfaced via /health instead of crashing the app
+            self.boot_error = f"{type(exc).__name__}: {exc}"
+            log.exception("runtime boot failed")
 
     async def _maintenance(self) -> None:
         while True:
@@ -90,13 +111,16 @@ class Runtime:
 
     async def stop(self) -> None:
         try:
+            if self._boot_task is not None and not self._boot_task.done():
+                self._boot_task.cancel()
+                await asyncio.wait({self._boot_task})  # never raises; boot logs its own errors
             try:
                 await self.scheduler.stop()
             except Exception:
                 log.exception("scheduler stop failed")
-            for t in self._tasks:
+            for t in list(self._tasks):
                 t.cancel()
-            for t in self._tasks:
+            for t in list(self._tasks):
                 try:
                     await t
                 except asyncio.CancelledError:

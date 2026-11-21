@@ -1,7 +1,6 @@
 import time
 from datetime import timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 
 from osint.api.app import create_app
@@ -83,7 +82,8 @@ def test_health_degraded_when_ingestor_dead(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runtime.ingestor, "run", dying_run)
     with TestClient(create_app(runtime), base_url="http://127.0.0.1") as client:
-        health = _wait(client, lambda h: h.get("ingestor", {}).get("alive") is False)
+        health = _wait(client, lambda h: h["status"] != "starting"
+                       and h.get("ingestor", {}).get("alive") is False)
         assert health["status"] == "degraded"
 
 
@@ -97,9 +97,12 @@ def test_health_degraded_when_all_sources_down(tmp_path):
         assert health["ingestor"]["alive"] is True
 
 
-def test_lifespan_stops_runtime_when_start_fails(tmp_path):
+def test_failed_boot_reported_and_runtime_stopped(tmp_path):
+    # boot runs in the background so the API is reachable immediately; a boot failure
+    # is surfaced via /health and shutdown still cleans everything up
     runtime = Runtime(Settings(_env_file=None, data_dir=tmp_path), [NotACollector({})])
-    with pytest.raises(TypeError, match="weird"), TestClient(create_app(runtime), base_url="http://127.0.0.1"):
-        pass
+    with TestClient(create_app(runtime), base_url="http://127.0.0.1") as client:
+        health = _wait(client, lambda h: h["status"] == "failed")
+        assert "weird" in health["boot_error"]
     assert runtime.http.is_closed
     assert not runtime.ingestor_alive

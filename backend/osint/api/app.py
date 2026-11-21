@@ -43,6 +43,11 @@ def create_app(runtime: Runtime) -> FastAPI:
                 runtime.ingestor, "consecutive_flush_failures", 0
             ),
         }
+        if runtime.booting:
+            return {"status": "starting", "sources": sources, "ingestor": ingestor}
+        if runtime.boot_error:
+            return {"status": "failed", "boot_error": runtime.boot_error,
+                    "sources": sources, "ingestor": ingestor}
         all_down = bool(sources) and all(s["status"] == "down" for s in sources.values())
         status = "ok" if ingestor["alive"] and not all_down else "degraded"
         return {"status": status, "sources": sources, "ingestor": ingestor}

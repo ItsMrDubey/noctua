@@ -122,6 +122,7 @@ async def test_start_preloads_triage_in_a_thread(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime.ingestor._triage, "preload",
                         lambda: threads.append(threading.current_thread()))
     await runtime.start()
+    await runtime.wait_booted()
     try:
         assert len(threads) == 1 and threads[0] is not threading.main_thread()
     finally:
