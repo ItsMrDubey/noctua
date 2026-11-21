@@ -76,6 +76,21 @@ def read_late_docs(lake: Lake, builder: EventBuilder, w: Window) -> list[Any]:
     return out
 
 
+_LATE_ARTICLE_SQL = """
+SELECT count(*) FROM documents
+WHERE published_at >= ? AND published_at < ? AND kind <> 'gdelt_event'
+  AND relevance >= ? AND epoch_us(fetched_at) - epoch_us(published_at) > ?
+"""
+
+
+def has_late_articles(lake: Lake, builder: EventBuilder, w: Window) -> bool:
+    """True if the window holds late (never live-clustered) non-GDELT documents. GDELT
+    rows cannot create events, so a GDELT-only window has nothing to cluster."""
+    rows = lake.query(_LATE_ARTICLE_SQL, [w.start, w.end, builder.cfg.min_relevance,
+                                          late_lag_us(builder)], start=w.start, end=w.end)
+    return bool(rows and rows[0][0])
+
+
 def run_cluster(settings: Any, store: SqliteStore, lake: Lake, window: Window, *,
                 dry_run: bool = False, now: datetime | None = None,
                 builder: EventBuilder | None = None,
@@ -90,6 +105,10 @@ def run_cluster(settings: Any, store: SqliteStore, lake: Lake, window: Window, *
     end = min(window.end, limit)
     if end <= window.start:
         summary.message = "window is inside the live builder's horizon; nothing to replay"
+        return summary
+    if not has_late_articles(lake, builder, Window(window.start, end)):
+        summary.message = ("GDELT-only window (no late article documents): GDELT rows "
+                           "cannot create events, cluster step skipped")
         return summary
     cursor = store.get_cursor(CURSOR) or {}
     done_until = cursor.get("until")

@@ -27,7 +27,7 @@ from osint.store.lake import Lake
 
 log = logging.getLogger("osint.backfill")
 
-DEFAULT_DAYS = {"gdelt": 30, "usgs": 365, "firms": 365, "ucdp": 0, "adsb_history": 7}
+DEFAULT_DAYS = {"gdelt": 7, "usgs": 365, "firms": 365, "ucdp": 0, "adsb_history": 7}
 DEFAULT_SINCE = {"ucdp": date(1989, 1, 1)}
 
 

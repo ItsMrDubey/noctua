@@ -3,12 +3,14 @@
 # skips them. Safe to run while `osint run` is serving (append-only lake, SQLite WAL).
 
 gdelt:
-  default_days: 30
+  default_days: 7           # 30 days is ~3.1M rows (~400 MB lake) and ~70 min
   concurrency: 4            # parallel downloads of 15-minute export files
   min_interval_s: 0.25      # polite spacing between request starts
   base_url: https://data.gdeltproject.org/gdeltv2
   max_missing_fraction: 0.5 # a day with more failed files than this is not checkpointed
-  cluster: true             # afterwards, replay late documents through the clusterer
+  cluster: true             # afterwards, replay late *article* documents through the
+                            # clusterer; skipped for GDELT-only windows (GDELT rows
+                            # cannot create events without article backing)
   persist_rejected: false   # also store rejected GDELT decisions (millions of rows)
 
 usgs:

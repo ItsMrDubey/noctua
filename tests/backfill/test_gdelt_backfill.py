@@ -102,25 +102,21 @@ async def test_gdelt_dry_run_writes_nothing(make_ctx):
     assert ctx.store.get_cursor("backfill:gdelt") is None
 
 
-async def test_cluster_replays_late_documents_into_events(make_ctx):
+async def test_cluster_skips_gdelt_only_window(make_ctx):
     w = Window(DAY, DAY + timedelta(minutes=45))
     with respx.mock(assert_all_called=False) as router:
         _mock_day(router, DAY)
         ctx = make_ctx("gdelt", {"min_interval_s": 0})
         await gdelt.run(ctx, w)
     s = run_cluster(ctx.settings, ctx.store, ctx.lake, w)
-    assert s.rows["documents_read"] == 3
-    # every row is adjudicated; only accepted decisions are persisted (persist_rejected
-    # off), so GDELT rows without article backing leave no rows behind
-    accepted = s.extra["gdelt_accepted"]
-    assert accepted + sum(s.extra["gdelt_rejected"].values()) == 3
-    assert len(ctx.store.event_doc_ids_since(DAY - timedelta(days=1))) == accepted
-    assert all(e["t_end"] < (utcnow() - timedelta(hours=72)).isoformat()
-               for e in ctx.store.list_events(limit=10))
-    assert ctx.store.get_cursor(CURSOR)["state"] == "finished"
-    # resumable: a second run replays nothing
-    s2 = run_cluster(ctx.settings, ctx.store, ctx.lake, w)
-    assert s2.units_done == 0 and s2.units_skipped >= 1
+    assert s.units_total == 0 and "GDELT-only" in (s.message or "")
+    assert ctx.store.get_cursor(CURSOR) is None
+
+
+def test_default_gdelt_window_is_seven_days():
+    from osint.backfill.runner import Options, plan_window
+    w = plan_window(Options(source="gdelt"), {})
+    assert w.end - w.start == timedelta(days=7)
 
 
 async def test_cluster_leaves_recent_documents_to_live_builder(make_ctx):
