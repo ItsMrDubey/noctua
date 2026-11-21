@@ -150,6 +150,10 @@ def judge(event: dict, ext: dict, *, geocode: Geocoder | None = None,
                 if distance > mismatch_km:
                     reasons.append(f"place: {place} is {distance:.0f} km from the event's "
                                    f"{event.get('place_name') or 'point'}")
+            elif not ex_country and country and ev_country and country != ev_country:
+                # no stated country (e.g. "Gulf of Finland"): fall back to the geocoded one
+                reasons.append(f"country: article place {place} geocodes to {country}, "
+                               f"event {ev_country}")
     return Verdict("mismatch" if reasons else "supported", reasons, distance, geo)
 
 

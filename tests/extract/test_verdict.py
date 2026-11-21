@@ -91,3 +91,13 @@ def test_gazetteer_geocoder(tmp_path):
     ext = normalise(raw(where={"place_name": "Kyiv", "admin1": None, "country": "UA",
                                "precision": "city"}), TEXT)
     assert judge(EVENT, ext, geocode=geo).verdict == "mismatch"
+
+
+def test_country_inferred_from_geocoded_place_when_not_stated():
+    ext = normalise(raw(where={"place_name": "Gulf of Finland", "admin1": None, "country": None,
+                               "precision": "admin1"}), TEXT)
+    kal = {**EVENT, "country": "RU", "place_name": "Kaliningrad", "lat": 54.7, "lon": 20.5}
+    v = judge(kal, ext, geocode=lambda p, a, c: (60.8, 24.9, "FI", "country"))
+    assert v.verdict == "mismatch" and "geocodes to FI" in v.reasons[0]
+    assert judge({**kal, "country": "FI"}, ext,
+                 geocode=lambda p, a, c: (60.8, 24.9, "FI", "country")).verdict == "supported"
