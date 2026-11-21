@@ -120,3 +120,15 @@ async def test_partial_failure_logged_without_key(caplog):
     assert len(batch.observations) == 1
     msgs = [r.getMessage() for r in caplog.records if r.name == "osint.collectors.firms"]
     assert any("P2" in m for m in msgs) and not any(key in m for m in msgs)
+
+
+@respx.mock
+async def test_key_redacted_before_truncation():
+    key = "SECRETKEY123"
+    body = "x" * 195 + key  # key straddles the 200-char cut
+    respx.get(url__startswith="https://firms.modaps.eosdis.nasa.gov/").mock(
+        return_value=httpx.Response(200, text=body))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(RuntimeError) as exc:
+            await FirmsCollector({"products": ["P1"]}).poll(_ctx(http, key=key))
+    assert "SECR" not in str(exc.value)

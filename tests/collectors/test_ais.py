@@ -156,3 +156,17 @@ async def test_stream_survives_bad_records(caplog):
     await gen.aclose()
     assert len(batch.positions) == 1
     assert len([r for r in caplog.records if "skipped 2" in r.getMessage()]) == 1
+
+
+async def test_stream_skips_non_dict_json_and_counts_once(caplog):
+    bad_lat = _pos(Latitude="x")
+    ws = FakeWS(["null", "5", json.dumps(bad_lat), json.dumps(POS_MSG)])
+    c = AisCollector({"batch_seconds": 5, "batch_max": 4})
+    c._connect = lambda *a, **k: ws
+    gen = c.stream(SimpleNamespace(settings=SimpleNamespace(aisstream_api_key="k")))
+    with caplog.at_level(logging.WARNING, logger="osint.collectors.ais"):
+        # batch_max=4 must flush after exactly 4 messages (no double count)
+        batch = await asyncio.wait_for(gen.__anext__(), timeout=2)
+    await gen.aclose()
+    assert len(batch.positions) == 1
+    assert len([r for r in caplog.records if "skipped 3" in r.getMessage()]) == 1

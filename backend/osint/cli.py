@@ -11,6 +11,14 @@ from osint.core.collector import build_collectors
 from osint.runtime import Runtime
 
 
+def configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx logs full request URLs at INFO, which would leak API keys (e.g. FIRMS)
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="osint")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -18,8 +26,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.cmd == "run":
-        logging.basicConfig(level=logging.INFO,
-                            format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        configure_logging()
         settings = Settings()
         collectors = build_collectors(load_sources(settings.config_dir))
         app = create_app(Runtime(settings, collectors))

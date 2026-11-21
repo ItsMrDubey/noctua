@@ -128,13 +128,14 @@ class AisCollector(StreamCollector):
                         msg = json.loads(raw)
                     except ValueError:
                         continue
-                    if "error" in msg:
+                    if isinstance(msg, dict) and "error" in msg:
                         raise RuntimeError(f"AISStream error: {msg['error']}")
                     try:
+                        if not isinstance(msg, dict):
+                            raise TypeError("non-object message")
                         pos, track = parse_message(msg)
                     except (ValueError, TypeError, KeyError, AttributeError):
                         skipped += 1
-                        count += 1
                         pos = track = None
                     if pos is not None:
                         batch.positions.append(pos)

@@ -98,7 +98,7 @@ class FirmsCollector(PollCollector):
             raise RuntimeError(f"FIRMS {product}: {type(e).__name__}") from None
         text = r.text
         if not text.startswith("latitude"):
-            raise RuntimeError(f"FIRMS {product}: {text[:200].strip().replace(key, '***')}")
+            raise RuntimeError(f"FIRMS {product}: {text.replace(key, '***')[:200].strip()}")
         return await asyncio.to_thread(parse_csv, text, product)
 
     async def poll(self, ctx: CollectorContext) -> Batch:
