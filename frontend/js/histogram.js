@@ -82,6 +82,7 @@ export class Histogram {
   // must not zero the others. Timestamps carry offsets / microseconds; parse via tsMs.
   async loadObs() {
     const g = ++this.gen;
+    this.loading = true; this.draw();
     const now = Date.now(), t0 = now - this.spanMs, n = this.n, bin = this.binMs;
     const long = this.span > 48 * 60;
     const obs = (layer) => long
@@ -94,6 +95,7 @@ export class Histogram {
       fetchJson("/api/events?status=historical&limit=10000&since=" + since, 30000),
     ]);
     if (g !== this.gen) return; // range changed meanwhile
+    this.loading = false;
     this.t0 = t0;
     if (f.status === "fulfilled") { this.fires = binItems(f.value.items, "ts", t0, bin, n); this.truncF = !!f.value.truncated; }
     if (q.status === "fulfilled") { this.quakes = binItems(q.value.items, "ts", t0, bin, n); this.truncQ = !!q.value.truncated; }
@@ -139,7 +141,7 @@ export class Histogram {
       (nh ? '<span title="UCDP historical conflict events (first 10,000 in range)"><i style="--c:' + COL.hist + '"></i>UCDP <em>' + nh.toLocaleString() + "</em></span>" : "") +
       '<span title="Sampled every ' + every + ' from replay snapshots"><i class="l" style="--c:' + COL.air + '"></i>Aircraft' + (lastAir != null ? " <em>" + lastAir + "</em>" : "") + "</span>" +
       '<span title="Sampled every ' + every + ' from replay snapshots"><i class="l d" style="--c:' + COL.sea + '"></i>Ships</span>' +
-      '<span class="dk-unit">per ' + (this.binMs === HOUR ? "hour" : "day") + " · " + this.rangeLabel + "</span>";
+      '<span class="dk-unit">' + (this.loading ? "loading… · " : "") + "per " + (this.binMs === HOUR ? "hour" : "day") + " · " + this.rangeLabel + "</span>";
   }
   // grid ticks: [time, label|null, major]
   _ticks() {

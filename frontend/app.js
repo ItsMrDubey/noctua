@@ -578,7 +578,7 @@ async function main() {
   });
 
   // ---- Keyboard ----
-  const ctx = { viewer, scene, air, ships, byKind, refLayers, nuclear, moves, tree, timeline, hud, fps, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
+  const ctx = { viewer, scene, air, ships, byKind, refLayers, nuclear, moves, tree, timeline, hud, fps, mods, models, leaders, histLayer, showWebcam, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
   document.addEventListener("keydown", (e) => {
     const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (ctx.palette.isOpen) ctx.palette.close(); else ctx.palette.open(); return; }
