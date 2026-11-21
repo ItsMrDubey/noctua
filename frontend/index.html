@@ -27,6 +27,7 @@
     <kbd>Ctrl K</kbd>
   </label>
   <div id="sources" class="sources" aria-label="Source health"></div>
+  <div id="ev-score" class="src evs hidden" tabindex="0" aria-label="GDELT scorecard"></div>
   <div id="mode-pill" class="mode-pill" role="status"><i></i><span id="mode-text">LIVE</span></div>
   <div class="clocks"><div id="clock" class="num">--:--:--<small>UTC</small></div><div id="clock-local" class="num">--:--<small>LCL</small></div></div>
 </header>
@@ -53,9 +54,12 @@
     <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw ln" style="--c:#9ff3ff"></span>Trails, all mil aircraft 1 h</label>
   </section>
   <section class="grp" data-g="events">
-    <header><h3>Events</h3><b class="num tag">soon</b></header>
-    <label class="row" title="Fused news events arrive with the event-fusion milestone"><input type="checkbox" disabled><span class="sw" style="--c:#a99bff"></span>News events</label>
-    <label class="row" title="Cause → consequence arcs arrive with the event-fusion milestone"><input type="checkbox" disabled><span class="sw ln" style="--c:#a99bff"></span>Event chains</label>
+    <header><h3>Events</h3><b id="g-events-n" class="num">–</b></header>
+    <label class="row"><input type="checkbox" id="t-events" checked><span class="sw ring" style="--c:#a99bff"></span>News events<b id="c-events" class="num">–</b></label>
+    <div id="ev-cats" class="chips"></div>
+    <div id="ev-status" class="chips"></div>
+    <label class="row field" title="Hide events below this confidence">Min confidence <input type="range" id="ev-conf" min="0" max="1" step="0.05" value="0"><output id="ev-conf-v" class="num">0.00</output></label>
+    <label class="row" title="Cause → consequence arcs arrive with the event-chain milestone"><input type="checkbox" disabled><span class="sw ln" style="--c:#a99bff"></span>Event chains <small>soon</small></label>
   </section>
   <section class="grp" data-g="ref">
     <header><h3>Reference</h3></header>
@@ -107,7 +111,7 @@
   <aside id="tracks" class="glass">
     <div class="tk-head" role="tablist">
       <button class="ptab on" data-p="tracks" role="tab">Tracks<sup id="tracks-count"></sup></button>
-      <button class="ptab" data-p="events" role="tab">Events</button>
+      <button class="ptab" data-p="events" role="tab">Events<sup id="events-count"></sup></button>
       <button class="ptab" data-p="alerts" role="tab">Alerts<sup id="alerts-count"></sup></button>
       <span class="grow"></span>
       <button id="tl-collapse" class="ghost" title="Collapse">–</button>
@@ -117,7 +121,11 @@
       <input id="tk-filter" type="search" placeholder="Filter callsign, type, reg…" autocomplete="off" spellcheck="false" aria-label="Filter tracks">
     </div>
     <div class="tk-body" data-pane="tracks" aria-label="Track list (arrow keys to move, Enter to select)"></div>
-    <div class="tk-body hidden" data-pane="events"><div class="empty"><b>Event fusion not connected</b>Fused news events (GDELT, RSS, web) with confidence and status levels will list here once the event API ships. Live tracks, fires and quakes are on the globe now.</div></div>
+    <div class="tk-tools hidden" data-pane="events">
+      <input id="ev-filter" type="search" placeholder="Filter title, category, status…" autocomplete="off" spellcheck="false" aria-label="Filter events">
+      <span id="ev-count" class="num"></span>
+    </div>
+    <div class="tk-body hidden" data-pane="events" aria-label="Event list (arrow keys to move, Enter to select)"></div>
     <div class="tk-body hidden" data-pane="alerts" id="alerts-pane"></div>
   </aside>
 </div>

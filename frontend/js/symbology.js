@@ -94,6 +94,44 @@ const REF_P = '<path d="M16 3l13 13-13 13L3 16z"/><circle cx="16" cy="16" r="2.4
 export const FIRE_GLYPH = wrap(FIRE_P), QUAKE_GLYPH = wrap(QUAKE_P), REF_GLYPH = wrap(REF_P);
 UI.fire = plain(FIRE_P); UI.quake = plain(QUAKE_P); UI.ref = plain(REF_P);
 
+// ---- news events: one outline glyph per category ----
+export const EVENT_CATS = {
+  armed_conflict: ["Armed conflict", "#ff4b55", '<path d="M16 3l2.6 7 6.6-3.4-3.4 6.6 7.2 2.6-7.2 2.6 3.4 6.6-6.6-3.4L16 29l-2.6-7-6.6 3.4 3.4-6.6L3 16l7.2-2.6-3.4-6.6 6.6 3.4z"/>'],
+  air_activity: ["Air activity", "#9ff3ff", '<path d="M16 3l9 25-9-5.5L7 28z"/>'],
+  maritime_security: ["Maritime security", "#7fa8ff", '<circle cx="16" cy="7" r="2.8"/><path d="M16 10v18M11 14h10M6 18c1 5 5 9 10 9s9-4 10-9"/>'],
+  civil_unrest: ["Civil unrest", "#ffb020", '<circle cx="16" cy="9" r="3"/><circle cx="7.5" cy="12" r="2.4"/><circle cx="24.5" cy="12" r="2.4"/><path d="M10.5 26v-6a5.5 5.5 0 0 1 11 0v6zM3 25v-4.5a4 4 0 0 1 5-3.8M29 25v-4.5a4 4 0 0 0-5-3.8"/>'],
+  disaster: ["Disaster", "#ff6a1a", '<path d="M16 4L29 27H3z"/><path d="M16 12v8M16 23.2v.6"/>'],
+  infrastructure: ["Infrastructure", "#d9b27c", '<path d="M5 28V13l11-7 11 7v15z"/><path d="M12 28v-8h8v8"/>'],
+  political: ["Political", "#a99bff", '<path d="M8 4v25M8 6h16l-4 5 4 5H8"/>'],
+  economic: ["Economic", "#4fdf8c", '<circle cx="16" cy="16" r="12"/><path d="M16 8.5v15M19.6 12c-1-1-2.3-1.5-3.6-1.5-2 0-3.5 1-3.5 2.6 0 3.6 7.2 1.8 7.2 5.2 0 1.6-1.6 2.6-3.7 2.6-1.4 0-2.7-.6-3.7-1.6"/>'],
+  cyber_outage: ["Cyber / outage", "#e86bff", '<path d="M18.5 3L7 18h8l-2 11 12-16h-8z"/>'],
+};
+const EVENT_FALLBACK = ["Event", "#a99bff", '<circle cx="16" cy="16" r="8"/>'];
+export const eventCat = (c) => EVENT_CATS[c] || EVENT_FALLBACK;
+export const EVENT_STATUS = {
+  "reported": "Reported", "multi-source": "Multi-source", "sensor-corroborated": "Sensor-corroborated", "official": "Official",
+};
+// map glyph: white strokes (tinted by billboard colour) inside a status ring; country-level = hollow
+const ringSvg = (cat, status, hollow) => {
+  const inner = '<g transform="translate(20 20) scale(.5) translate(-16 -16)" fill="' + (hollow ? "none" : "#fff") + '" fill-opacity=".25" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' + eventCat(cat)[2] + "</g>";
+  const halo = '<g fill="none" stroke="#000" stroke-opacity=".55" stroke-width="3.4">';
+  const dbl = status === "sensor-corroborated" || status === "official";
+  const dash = status === "reported" ? ' stroke-dasharray="2.4 3"' : "";
+  const w = status === "reported" ? 1.1 : 1.7;
+  const rings = '<circle cx="20" cy="20" r="18"/>' + (dbl ? '<circle cx="20" cy="20" r="15"/>' : "");
+  return "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">' +
+    halo + rings + "</g>" + '<g fill="none" stroke="#fff" stroke-width="' + w + '"' + dash + ">" + rings + "</g>" + inner + "</svg>");
+};
+const EVENT_IMG = new Map();
+export function eventGlyph(cat, status, hollow) {
+  const k = cat + "|" + status + "|" + (hollow ? 1 : 0);
+  let v = EVENT_IMG.get(k);
+  if (!v) { v = ringSvg(cat, status, hollow); EVENT_IMG.set(k, v); }
+  return v;
+}
+for (const [k, v] of Object.entries(EVENT_CATS)) UI["e:" + k] = plain(v[2]);
+UI["e:"] = plain(EVENT_FALLBACK[2]);
+
 // palette (CSS) for map + legend
 export const COLORS = { air: "#9ff3ff", airCiv: "#c8d4de", hp: "#ff4b55", ship: "#7fa8ff", shipMil: "#ff4b55", fire: "#ff6a1a", quake: "#ffd24a" };
 export function threatColor(kind, it) {
@@ -101,6 +139,7 @@ export function threatColor(kind, it) {
   if (kind === "ships") return it && it.is_mil ? COLORS.shipMil : COLORS.ship;
   if (kind === "fires") return COLORS.fire;
   if (kind === "quakes") return (it && it.mag >= 5) ? COLORS.hp : COLORS.quake;
+  if (kind === "events") return eventCat(it && it.category)[1];
   return "#3ddcc2";
 }
 export function glyphFor(kind, it) {
@@ -108,11 +147,12 @@ export function glyphFor(kind, it) {
   if (kind === "ships") return shipGlyph(shipClass(it));
   if (kind === "fires") return FIRE_GLYPH;
   if (kind === "quakes") return QUAKE_GLYPH;
+  if (kind === "events") return eventGlyph(it && it.category, it && it.status, false);
   return REF_GLYPH;
 }
 
 // CSS-mask glyph for UI chrome: <i class="gi" style="--g:url(..)">, coloured by background
 export function uiGlyph(kind, it) {
-  const k = kind === "aircraft" ? "a:" + aircraftRole(it) : kind === "ships" ? "s:" + shipClass(it) : kind === "fires" ? "fire" : kind === "quakes" ? "quake" : "ref";
+  const k = kind === "aircraft" ? "a:" + aircraftRole(it) : kind === "ships" ? "s:" + shipClass(it) : kind === "fires" ? "fire" : kind === "quakes" ? "quake" : kind === "events" ? "e:" + (EVENT_CATS[it && it.category] ? it.category : "") : "ref";
   return '<i class="gi" style="--g:url(&quot;' + UI[k] + '&quot;)"></i>';
 }

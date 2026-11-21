@@ -15,6 +15,10 @@ import { Inspector } from "/static/js/panels/inspector.js";
 import { AlertCenter } from "/static/js/panels/alerts.js";
 import { Palette } from "/static/js/palette.js";
 import { Reticle } from "/static/js/reticle.js";
+import { EventLayer, EventFeed, STATUSES } from "/static/js/events.js";
+import { EventList } from "/static/js/eventlist.js";
+import { EVENT_CATS, EVENT_STATUS } from "/static/js/symbology.js";
+import { refreshEventStats } from "/static/js/panels/evstats.js";
 
 const errors = {};
 let lastStatus = null;
@@ -37,17 +41,17 @@ async function main() {
   const statusBar = new StatusBar();
 
   // ---- Data layers ----
-  const air = new AircraftLayer(scene), ships = new ShipLayer(scene), fires = new FireLayer(scene), quakes = new QuakeLayer(scene);
-  const all = [air, ships, fires, quakes];
+  const air = new AircraftLayer(scene), ships = new ShipLayer(scene), fires = new FireLayer(scene), quakes = new QuakeLayer(scene), events = new EventLayer(scene);
+  const all = [air, ships, fires, quakes, events];
   for (const l of all) l.onChange = redraw;
-  const byKind = { aircraft: air, ships, fires, quakes };
+  const byKind = { aircraft: air, ships, fires, quakes, events };
   const applyFilters = () => {
     air.filter = (it) => !$("t-aircraft-hp").checked || !!(it && it.high_priority);
     ships.filter = (it) => !$("t-ships-mil").checked || !!(it && it.is_mil);
     air.refilter(); ships.refilter();
   };
   applyFilters();
-  for (const k of ["aircraft", "ships", "fires", "quakes"]) $("t-" + k).addEventListener("change", (e) => { byKind[k].show = e.target.checked; });
+  for (const k of ["aircraft", "ships", "fires", "quakes", "events"]) $("t-" + k).addEventListener("change", (e) => { byKind[k].show = e.target.checked; });
   $("t-aircraft-hp").addEventListener("change", applyFilters);
   $("t-ships-mil").addEventListener("change", applyFilters);
 
@@ -105,6 +109,7 @@ async function main() {
     const it = byKind[selected.kind].items.get(selected.id);
     if (!it) return;
     if (isTrack(selected.kind)) { inspector.track(selected.kind, it, detail && detail.id === selected.id ? detail : null); alerts.squawk(withExtra(it)); }
+    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null);
     else inspector.observation(selected.kind, it);
     if (following) {
       const p = byKind[selected.kind].positionOf(selected.id);
@@ -113,9 +118,9 @@ async function main() {
   }
   async function loadDetail(kind, id) {
     detail = null;
-    if (!isTrack(kind)) return;
+    if (!isTrack(kind) && kind !== "events") return;
     try {
-      const d = await fetchJson("/api/track/" + encodeURIComponent(id), 8000);
+      const d = await fetchJson((kind === "events" ? "/api/events/" : "/api/track/") + encodeURIComponent(id), 8000);
       if (selected && selected.id === id) { detail = d; refreshSelected(); }
     } catch (e) { /* older backend or unknown track: the list item is enough */ }
   }
@@ -128,19 +133,20 @@ async function main() {
     buttons();
     loadDetail(kind, id);
     tracklist.setSelected(id);
+    evList.setSelected(kind === "events" ? id : null);
     fx.setTarget(() => (selected ? byKind[selected.kind].positionOf(selected.id) : null), kind);
     trails.clearSelected();
     trailSelected(true);
   }
   function clearSelection() {
     setFollow(false); selected = null; refSel = null; detail = null;
-    trails.clearSelected(); tracklist.setSelected(null); fx.setTarget(null);
+    trails.clearSelected(); tracklist.setSelected(null); evList.setSelected(null); fx.setTarget(null);
     inspector.hide();
   }
   const flyTo = (lat, lon, alt) => viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt), duration: 1.6 });
   function flyToItem(kind, id) {
     const it = byKind[kind].items.get(id);
-    if (it) flyTo(it.lat, it.lon, kind === "aircraft" ? 4e5 : kind === "ships" ? 2e5 : 1.5e6);
+    if (it) flyTo(it.lat, it.lon, kind === "aircraft" ? 4e5 : kind === "ships" ? 2e5 : kind === "events" ? (it.precision === "country" ? 3e6 : it.precision === "admin1" ? 1.2e6 : 4e5) : 1.5e6);
   }
   const inspector = new Inspector({
     close: clearSelection,
@@ -175,8 +181,9 @@ async function main() {
   statusBar.onTransition = (n, from, to, s) => alerts.source(n, from, to, s);
 
   const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); }, {
-    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } },
+    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); },
   });
+  const evList = new EventList(events, (id) => { select("events", id); flyToItem("events", id); }, () => tracklist.pane === "events" && tracklist.open && !$("tracks").classList.contains("hidden"));
   tracklist.render(true);
 
   // ---- Picking ----
@@ -229,7 +236,7 @@ async function main() {
   for (const id of REF_IDS) if ($(id).checked) refLayers.apply(id);
   async function showRef(ref) {
     setFollow(false);
-    selected = null; detail = null; trails.clearSelected(); tracklist.setSelected(null);
+    selected = null; detail = null; trails.clearSelected(); tracklist.setSelected(null); evList.setSelected(null);
     refSel = ref;
     const it = ref.item || {};
     if (it.lat != null) { const p = Cesium.Cartesian3.fromDegrees(it.lon, it.lat); fx.setTarget(() => p, "ref"); } else fx.setTarget(null);
@@ -241,6 +248,27 @@ async function main() {
       if (refSel === ref && rw) { const [, b2] = refDetails(ref, rw); inspector.reference(ref, title, b2); }
     }
   }
+
+  // ---- News events: filters, feed, alerts ----
+  const catLabel = (k) => EVENT_CATS[k][0].replace(/ \/ /, "/");
+  $("ev-cats").innerHTML = Object.keys(EVENT_CATS).map((k) => '<button class="chip on" data-k="' + k + '" style="--c:' + EVENT_CATS[k][1] + '" title="' + EVENT_CATS[k][0] + '">' + catLabel(k) + "</button>").join("");
+  $("ev-status").innerHTML = STATUSES.map((k) => '<button class="chip on" data-k="' + k + '">' + EVENT_STATUS[k] + "</button>").join("");
+  const chipSet = (box, set) => $(box).addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b) return;
+    b.classList.toggle("on");
+    if (b.classList.contains("on")) set.add(b.dataset.k); else set.delete(b.dataset.k);
+    events.refilter(); tick_ev_count();
+  });
+  chipSet("ev-cats", events.cats); chipSet("ev-status", events.statuses);
+  $("ev-conf").addEventListener("input", (e) => { events.minConf = +e.target.value; $("ev-conf-v").textContent = events.minConf.toFixed(2); events.refilter(); tick_ev_count(); });
+  function tick_ev_count() {
+    const n = events.visibleItems().length;
+    setCount("events", n);
+    const c = $("events-count"), t = n ? String(n > 999 ? "999+" : n) : "";
+    if (c.textContent !== t) c.textContent = t;
+  }
+  const evFeed = new EventFeed(events, (items) => { tick_ev_count(); if (!replayAt) alerts.events([...events.items.values()]); if (selected && selected.kind === "events") refreshSelected(); });
 
   // ---- Search field opens the command palette ----
   const sIn = $("search");
@@ -290,6 +318,7 @@ async function main() {
   }
   const timeline = new Timeline((at) => {
     replayAt = at;
+    events.setReplay(at); tick_ev_count();
     if (at) renderReplay(at);
     else { replayPending = null; ticks.forEach((t) => t(true).catch(() => {})); }
   }, (playing) => viewer.setContinuous("replay", playing));
@@ -328,6 +357,8 @@ async function main() {
     feed("aircraft", "/api/layers/aircraft", air), feed("ships", "/api/layers/ships", ships),
     feed("fires", "/api/layers/fires?hours=24", fires), feed("quakes", "/api/layers/quakes?hours=24", quakes),
   ];
+  poll("events", 60000, () => evFeed.tick(), onErr);
+  poll("events-stats", 60000, () => refreshEventStats(), onErr);
   poll("status", 5000, async () => { lastStatus = await fetchJson("/api/status", 8000); }, onErr);
   poll("aircraft", 10000, ticks[0], onErr);
   poll("ships", 30000, ticks[1], onErr);

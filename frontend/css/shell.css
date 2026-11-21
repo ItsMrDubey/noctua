@@ -147,3 +147,27 @@ input:disabled + .sw { opacity: .3; }
 .pl-foot { display: flex; gap: 16px; padding: 7px 14px; border-top: 1px solid var(--line); font: 10.5px var(--f-body); color: var(--dim); }
 .pl-foot kbd { margin-right: 3px; }
 .pl-in input:focus-visible { outline: none; }
+
+/* ---- events: layer filters, scorecard chip ---- */
+#ev-cats .chip, #ev-status .chip { cursor: pointer; }
+#ev-status { padding-top: 0; }
+#ev-status .chip { --c: var(--fg-2); }
+.row.field input[type=range] { flex: 1; min-width: 0; margin: 0 6px; padding: 0; height: 14px; background: transparent; border: 0; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.row.field input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-2); }
+.row.field input[type=range]::-moz-range-track { height: 2px; background: var(--line-2); }
+.row.field input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 12px; margin-top: -5px; background: var(--acc); border: 0; border-radius: 0; box-shadow: 0 0 6px var(--acc); }
+.row.field input[type=range]::-moz-range-thumb { width: 8px; height: 12px; background: var(--acc); border: 0; border-radius: 0; }
+.row.field output { min-width: 2.6em; text-align: right; font-size: 11px; color: var(--fg); }
+.evs { position: relative; flex: none; cursor: default; }
+.evs .sc { font: 10.5px var(--f-mono); letter-spacing: 0; text-transform: none; color: var(--fg-2); }
+.evs-pop { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 250px; padding: 10px 12px; z-index: 30; background: #08101a; border: 1px solid var(--line-2); box-shadow: 0 12px 32px rgba(0, 0, 0, .5); text-transform: none; letter-spacing: 0; white-space: normal; }
+.evs:hover .evs-pop, .evs:focus .evs-pop, .evs:focus-within .evs-pop { display: block; }
+.evs-pop h4 { margin: 0 0 6px; font: 600 11px var(--f-head); letter-spacing: .18em; text-transform: uppercase; color: var(--fg); display: flex; justify-content: space-between; align-items: baseline; }
+.evs-pop h4 small { font: 10px var(--f-mono); letter-spacing: 0; color: var(--acc); text-transform: none; }
+.evs-pop h5 { margin: 8px 0 3px; font: 600 9.5px var(--f-head); letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+.evs-pop div { display: flex; justify-content: space-between; gap: 10px; font: 10.5px var(--f-mono); color: var(--fg-2); padding: 1.5px 0; }
+.evs-pop div b { font-weight: 500; color: var(--fg); }
+.evs-pop .none { color: var(--dim); }
+.evs-pop .err { color: var(--amber); display: block; margin-top: 6px; }
+.sev-event { --sev: var(--violet); }
+@media (max-width: 1500px) { .evs .sc { display: none; } }

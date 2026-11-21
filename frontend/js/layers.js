@@ -23,7 +23,7 @@ const FIRE_RAMP = Array.from({ length: 11 }, (_, i) => C.Color.fromHsl(0.09 * (1
 function pos(lat, lon, altM) { return C.Cartesian3.fromDegrees(lon, lat, altM || 0); }
 
 // Generic incremental sync keyed by id. Subclasses implement make() and apply().
-class Layer {
+export class Layer {
   constructor(scene, collection) {
     this.col = scene.primitives.add(collection);
     this.map = new Map();

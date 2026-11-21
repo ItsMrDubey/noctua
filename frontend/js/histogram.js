@@ -5,7 +5,7 @@ import { $, esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
 
 const H = 48;
-const COL = { fires: "#ff6a1a", quakes: "#ffd24a", air: "#5ee3ea", sea: "#7fa8ff" };
+const COL = { fires: "#ff6a1a", quakes: "#ffd24a", events: "#a99bff", air: "#5ee3ea", sea: "#7fa8ff" };
 const SAMPLE_EVERY_H = 4;
 
 export class Histogram {
@@ -13,7 +13,7 @@ export class Histogram {
     this.span = spanMin;
     this.cv = $("tl-hist");
     this.ctx = this.cv.getContext("2d");
-    this.fires = new Array(H).fill(0); this.quakes = new Array(H).fill(0);
+    this.fires = new Array(H).fill(0); this.quakes = new Array(H).fill(0); this.events = new Array(H).fill(0);
     this.air = []; this.sea = []; this.cursor = null; this.t0 = Date.now() - H * 3600e3;
     this.ok = { obs: false };
     new ResizeObserver(() => this.draw()).observe(this.cv);
@@ -38,6 +38,14 @@ export class Histogram {
       this.ok.obs = true;
       this.draw();
     } catch (e) { /* keep previous */ }
+    try {
+      const t0 = Date.now() - H * 3600e3;
+      const d = await fetchJson("/api/events?limit=10000&since=" + encodeURIComponent(new Date(t0).toISOString()), 30000);
+      const b = new Array(H).fill(0);
+      for (const it of d.items || []) { const i = Math.floor((Date.parse(it.t_start) - t0) / 3600e3); if (i >= 0 && i < H) b[i]++; }
+      this.events = b;
+      this.draw();
+    } catch (e) { /* events API optional */ }
   }
   async loadSamples() {
     const now = Date.now();
@@ -65,6 +73,7 @@ export class Histogram {
     $("dk-legend").innerHTML =
       '<span><i style="--c:' + COL.fires + '"></i>Fires <em>' + sum(this.fires).toLocaleString() + (this.trunc ? "+" : "") + "</em></span>" +
       '<span><i style="--c:' + COL.quakes + '"></i>Quakes <em>' + sum(this.quakes).toLocaleString() + "</em></span>" +
+      '<span title="News events by first-report hour"><i style="--c:' + COL.events + '"></i>Events <em>' + sum(this.events).toLocaleString() + "</em></span>" +
       '<span title="Sampled every ' + SAMPLE_EVERY_H + ' h from replay snapshots"><i class="l" style="--c:' + COL.air + '"></i>Aircraft' + (lastAir != null ? " <em>" + lastAir + "</em>" : "") + "</span>" +
       '<span title="Sampled every ' + SAMPLE_EVERY_H + ' h from replay snapshots"><i class="l d" style="--c:' + COL.sea + '"></i>Ships</span>' +
       '<span class="dk-unit">per hour · 48 h</span>';
@@ -92,13 +101,15 @@ export class Histogram {
       c.fillText(t.getUTCHours() === 0 ? t.toISOString().slice(5, 10) : String(t.getUTCHours()).padStart(2, "0") + "Z", x + 3, h - 2);
     }
     // stacked bars
-    const tot = this.fires.map((f, i) => f + this.quakes[i]);
+    const tot = this.fires.map((f, i) => f + this.quakes[i] + this.events[i]);
     const max = Math.max(1, ...tot);
     const sc = (v) => Math.sqrt(v / max) * ph; // sqrt keeps quiet hours visible next to fire spikes
     for (let i = 0; i < H; i++) {
       const x = i * bw + 1, bwid = Math.max(1, bw - 2);
-      const hq = sc(this.quakes[i]), ht = sc(tot[i]);
-      if (ht <= 0) continue;
+      const hq = sc(this.quakes[i]), ht = sc(this.fires[i] + this.quakes[i]), hv = sc(tot[i]);
+      if (hv <= 0) continue;
+      c.fillStyle = COL.events; c.globalAlpha = 0.7;
+      c.fillRect(x, base - hv, bwid, hv - ht);
       c.fillStyle = COL.fires; c.globalAlpha = 0.55;
       c.fillRect(x, base - ht, bwid, ht - hq);
       c.fillStyle = COL.quakes; c.globalAlpha = 0.75;

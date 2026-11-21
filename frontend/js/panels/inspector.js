@@ -1,7 +1,7 @@
 // Context inspector: object dossier (glyph + threat colour header, tags, profile sparklines,
 // key/value telemetry, provenance) and actions (Fly to, Follow, Trail, Pin).
 import { $, esc, nf, ago, kv } from "/static/js/ui.js";
-import { uiGlyph, threatColor, aircraftRole, ROLE_LABEL, shipClass, SHIP_LABEL } from "/static/js/symbology.js";
+import { uiGlyph, threatColor, aircraftRole, ROLE_LABEL, shipClass, SHIP_LABEL, eventCat, EVENT_STATUS } from "/static/js/symbology.js";
 
 const EMERG = { 7500: "Hijack", 7600: "Radio failure", 7700: "Emergency" };
 const tsMs = (ts) => (ts == null ? NaN : typeof ts === "number" ? (ts < 1e11 ? ts * 1000 : ts) : Date.parse(ts));
@@ -87,6 +87,40 @@ export class Inspector {
       '<section class="dz-sec"><h3>Telemetry</h3>' + kv(tele) + '</section><section class="dz-sec"><h3>Identity</h3>' + kv(ident) + "</section>" +
       '<section class="dz-sec"><h3>Provenance</h3><div class="prov">' + prov.map(([k, v]) => "<div><i></i>" + esc(k) + ": " + v + "</div>").join("") + "</div></section>";
     this._show(html, threatColor(kind, it));
+  }
+
+  // news event: `it` is the slim list item, `detail` is GET /api/events/{id} (or null while loading)
+  event(it, detail) {
+    this.cur = null;
+    const d = detail || it;
+    const cat = eventCat(it.category), conf = Math.min(1, Math.max(0, +it.confidence || 0));
+    const span = (a, b) => { const x = String(a || "").replace("T", " ").slice(0, 16), y = String(b || "").replace("T", " ").slice(0, 16); return esc(x) + (x === y || !y ? "" : " → " + esc(y)) + " UTC"; };
+    const tags = '<span class="pill st-' + esc(String(it.status).replace(/[^a-z-]/g, "")) + '">' + esc(EVENT_STATUS[it.status] || it.status) + "</span>" +
+      '<span class="tag">' + esc(cat[0]) + "</span>" + (d.gdelt_ids && d.gdelt_ids.length ? '<span class="tag" title="' + esc(d.gdelt_ids.join(", ")) + '">GDELT · ' + d.gdelt_ids.length + " id" + (d.gdelt_ids.length === 1 ? "" : "s") + "</span>" : "");
+    const place = [d.place_name, d.country].filter(Boolean).join(", ");
+    const facts = kv([["Confidence", '<div class="cbar" title="' + conf.toFixed(2) + '"><i style="width:' + Math.round(conf * 100) + '%"></i></div><b class="cnum">' + conf.toFixed(2) + "</b>"],
+      ["Time span", span(it.t_start, it.t_end)], ["Place", esc(place) || "–"], ["Precision", esc(it.precision) + (d.geo_confidence != null ? " · geo " + nf(d.geo_confidence, 2) : "")],
+      ["Reports", nf(it.mention_count) + " mentions · " + nf(it.source_diversity) + " outlets"], ["Updated", ago(it.updated_at)], ["Position", nf(it.lat, 3) + ", " + nf(it.lon, 3)]]);
+    const docs = d.documents;
+    let src;
+    if (!docs) src = '<div class="dz-empty">Loading sources…</div>';
+    else if (!docs.length) src = '<div class="dz-empty">No source documents</div>';
+    else src = '<ul class="srcl">' + docs.map((x) => {
+      const link = /^https?:\/\//i.test(x.url || "") ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.title || x.url) + "</a>" : "<span>" + esc(x.title || "(untitled)") + "</span>";
+      return "<li><b>" + esc(x.source) + "</b>" + (x.language ? '<em>' + esc(x.language) + "</em>" : "") + "<time>" + esc(String(x.published_at || "").replace("T", " ").slice(0, 16)) + "</time>" + link + "</li>";
+    }).join("") + "</ul>";
+    let fields = "";
+    if (d.fields && d.fields.length) {
+      fields = '<section class="dz-sec"><h3>Extracted fields<small>' + d.fields.length + "</small></h3>" + d.fields.map((f) =>
+        '<div class="fld"><span>' + esc(String(f.field).replace(/_/g, " ")) + "</span><b>" + esc(f.value) + "</b>" + (f.quote ? "<blockquote>" + esc(f.quote) + "</blockquote>" : "") + "</div>").join("") + "</section>";
+    }
+    const html = this._head("events", it, "News event · " + cat[0], it.title || it.id, place || it.precision || "") + '<div class="dz-tags">' + tags + "</div>" +
+      (d.summary ? '<section class="dz-sec"><div class="evsum">' + esc(d.summary) + "</div></section>" : "") +
+      '<section class="dz-sec"><h3>Assessment</h3>' + facts + "</section>" +
+      '<section class="dz-sec"><h3>Sources<small>' + (docs ? docs.length : "…") + "</small></h3>" + src + "</section>" + fields +
+      '<section class="dz-sec"><h3>Corroboration</h3><div class="dz-empty">Sensor corroboration arrives in M3.</div></section>' +
+      '<section class="dz-sec"><h3>Provenance</h3><div class="prov"><div><i></i>ID: ' + esc(it.id) + "</div><div><i></i>Record: " + (detail ? "Full record · /api/events" : "List item (loading full record)") + "</div></div></section>";
+    this._show(html, threatColor("events", it));
   }
 
   observation(kind, it) {

@@ -30,7 +30,7 @@ export class LayerTree {
   setCount(kind, n, truncated) { this.pending[kind] = n; if (truncated != null) this.trunc[kind] = truncated; }
   flush() {
     let live = 0, any = false;
-    for (const k of ["aircraft", "ships", "fires", "quakes"]) {
+    for (const k of ["aircraft", "ships", "fires", "quakes", "events"]) {
       const n = k in this.pending ? this.pending[k] : this.shown[k];
       if (k === "aircraft" || k === "ships") { if (n != null) { live += n; any = true; } }
       if (!(k in this.pending)) continue;
@@ -42,6 +42,7 @@ export class LayerTree {
       el.classList.toggle("trunc", !!this.trunc[k]);
       el.title = this.trunc[k] ? "Truncated: the server capped this layer; zoom in or shorten the window" : "";
       this.animate(el, from, n);
+      if (k === "events") { const ge = $("g-events-n"); if (ge) ge.textContent = n == null ? "–" : n.toLocaleString(); }
     }
     const g = $("g-live-n");
     if (g && any) { const t = live.toLocaleString(); if (g.textContent !== t) g.textContent = t; }
