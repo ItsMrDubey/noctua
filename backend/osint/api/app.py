@@ -7,6 +7,7 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
+from osint.api.m1 import mount_m1
 from osint.runtime import Runtime
 
 
@@ -32,6 +33,9 @@ def create_app(runtime: Runtime) -> FastAPI:
             "alive": runtime.ingestor_alive,
             "errors": runtime.ingestor.errors,
             "queue_depth": runtime.ingestor.queue.qsize(),
+            "consecutive_flush_failures": getattr(
+                runtime.ingestor, "consecutive_flush_failures", 0
+            ),
         }
         all_down = bool(sources) and all(s["status"] == "down" for s in sources.values())
         status = "ok" if ingestor["alive"] and not all_down else "degraded"
@@ -50,4 +54,5 @@ def create_app(runtime: Runtime) -> FastAPI:
         kinds = Counter(p.kind for p in list(runtime.ingestor.live.values()))
         return {"tracks": dict(kinds), "quarantined": runtime.store.quarantine_count()}
 
+    mount_m1(app, runtime)
     return app
