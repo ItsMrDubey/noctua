@@ -24,6 +24,7 @@ import { NuclearLayer, NUC_GROUPS, nuclearDetails } from "/static/js/nuclear.js"
 import { MovementsLayer, MOV_ROLES, MOV_KINDS, movementDetails } from "/static/js/movements.js";
 import { WebcamLayer, renderNearbyCameras } from "/static/js/webcams.js";
 import { CarrierLayer } from "/static/js/naval.js";
+import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 
 const errors = {};
 let lastStatus = null;
@@ -42,7 +43,8 @@ async function main() {
   const scene = viewer.scene;
   const redraw = () => scene.requestRender();
   setupImagery(viewer);
-  loadConfig().then((cfg) => applyConfig(viewer, cfg));
+  const cfgP = loadConfig();
+  cfgP.then((cfg) => applyConfig(viewer, cfg));
   const hud = setupHud(viewer);
   const fps = setupFps(viewer);
   const tree = new LayerTree();
@@ -53,13 +55,50 @@ async function main() {
   const all = [air, ships, fires, quakes, events];
   for (const l of all) l.onChange = redraw;
   const byKind = { aircraft: air, ships, fires, quakes, events };
+
+  // ---- 3D level of detail: glTF models near the camera + velocity leader lines ----
+  const models = new Models3D(viewer, {
+    hideBillboard: (kind, id) => { const p = byKind[kind].map.get(id); if (p) p.show = false; },
+    showBillboard: (kind, id) => { const l = byKind[kind], p = l.map.get(id); if (p) p.show = l.filter(l.items.get(id)); },
+  });
+  const leaders = new VectorLeaders(viewer, { kinematics: models.kinematics });
+  // after every aircraft / ship sync (REST, websocket, replay), filter change or layer toggle:
+  // Layer.upsert/refilter re-show billboards, update() hides the ones drawn in 3D again
+  const sync3d = () => {
+    const a = air.visibleItems(), s = ships.visibleItems();
+    models.update(a, s);
+    leaders.update(a, "aircraft"); leaders.update(s, "ships");
+  };
+  models.setEnabled($("t-models3d").checked);
+  leaders.setHorizonMinutes(+$("t-leader-min").value);
+  leaders.setVisible($("t-leaders").checked);
+  $("t-models3d").addEventListener("change", (e) => { models.setEnabled(e.target.checked); sync3d(); });
+  $("t-leaders").addEventListener("change", (e) => { leaders.setVisible(e.target.checked); sync3d(); });
+  $("t-leader-min").addEventListener("change", (e) => leaders.setHorizonMinutes(+e.target.value));
+  // OSM Buildings load lazily on first use (needs the Cesium ion token from /api/config)
+  let ion = null, ionP = null;
+  $("t-buildings").addEventListener("change", async (e) => {
+    const box = e.target, on = box.checked;
+    if (!ion && on) {
+      ionP = ionP || cfgP.then((cfg) => enableIonExtras(viewer, cfg && cfg.cesium_ion_token, { buildings: true }));
+      ion = await ionP;
+      if (!ion || !ion.tileset) {
+        ionP = null; ion = null; box.checked = false;
+        box.closest("label").title = "3D buildings need a Cesium ion token (CESIUM_ION_TOKEN) and network access to ion";
+        return;
+      }
+    }
+    toggleBuildings(ion, box.checked);
+  });
+
   const applyFilters = () => {
     air.filter = (it) => !$("t-aircraft-hp").checked || !!(it && it.high_priority);
     ships.filter = (it) => !$("t-ships-mil").checked || !!(it && it.is_mil);
     air.refilter(); ships.refilter();
+    sync3d();
   };
   applyFilters();
-  for (const k of ["aircraft", "ships", "fires", "quakes", "events"]) $("t-" + k).addEventListener("change", (e) => { byKind[k].show = e.target.checked; });
+  for (const k of ["aircraft", "ships", "fires", "quakes", "events"]) $("t-" + k).addEventListener("change", (e) => { byKind[k].show = e.target.checked; if (k === "aircraft" || k === "ships") sync3d(); });
   $("t-aircraft-hp").addEventListener("change", applyFilters);
   $("t-ships-mil").addEventListener("change", applyFilters);
 
@@ -80,6 +119,7 @@ async function main() {
     const data = await fetchJson(url);
     const items = Array.isArray(data && data.items) ? data.items : [];
     layer.sync(items);
+    if (kind === "aircraft" || kind === "ships") sync3d();
     setCount(kind, items.length, data && data.truncated);
     if (kind === "aircraft") alerts.aircraft(items);
     if (kind === "quakes") alerts.quakes(items);
@@ -228,6 +268,10 @@ async function main() {
       if (!picked || !picked.primitive) continue;
       if (picked.id && picked.id.ref) { refHit = refHit || picked.id; continue; }
       if (picked.id && picked.id.h3) { densityHit = densityHit || picked.id; continue; }
+      if (picked.id && picked.id.models3d) { // a 3D model stands in for its (hidden) billboard
+        if (bestD > 0 && byKind[picked.id.kind] && byKind[picked.id.kind].items.has(picked.id.id)) { bestD = 0; best = { kind: picked.id.kind, id: picked.id.id }; }
+        continue;
+      }
       for (const l of all) {
         if (l.map.get(picked.id) !== picked.primitive) continue;
         const w = Cesium.SceneTransforms.worldToWindowCoordinates(scene, picked.primitive.position);
@@ -470,6 +514,7 @@ async function main() {
         const items = Array.isArray(d && d.items) ? d.items : [];
         byKind[k].sync(items); setCount(k, items.length, d && d.truncated);
       }
+      sync3d();
       if (selected) refreshSelected();
     } catch (e) { onErr("replay", String((e && e.message) || e)); }
     finally {
@@ -494,6 +539,7 @@ async function main() {
       const rm = m.removed || [];
       air.removeIds(rm); ships.removeIds(rm);
     } else return;
+    sync3d();
     setCount("aircraft", air.items.size); setCount("ships", ships.items.size);
     alerts.aircraft(m.aircraft || []);
     if (selected && isTrack(selected.kind)) { refreshSelected(); trailSelected(false); }

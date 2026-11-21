@@ -57,6 +57,9 @@
     <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a1a"></span>Fires 24 h<b id="c-fires" class="num">–</b></label>
     <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw ring" style="--c:#ffd24a"></span>Quakes 24 h<b id="c-quakes" class="num">–</b></label>
     <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw ln" style="--c:#9ff3ff"></span>Trails, all mil aircraft 1 h</label>
+    <label class="row" title="Nearest 250 tracks in view drawn as 3D models with dead-reckoned motion"><input type="checkbox" id="t-models3d" checked><span class="sw gl" style="--c:#d3dee8"></span>3D models <small>zoom &lt; 300 km</small></label>
+    <label class="row" title="Where each track will be if it keeps its course and speed"><input type="checkbox" id="t-leaders"><span class="sw ln" style="--c:#ffa040"></span>Velocity leaders</label>
+    <label class="row field sub">Leader horizon <select id="t-leader-min" class="mini"><option value="1">1 min</option><option value="5" selected>5 min</option><option value="10">10 min</option></select></label>
   </section>
   <section class="grp" data-g="events">
     <header><h3>Events</h3><b id="g-events-n" class="num">–</b></header>
@@ -119,6 +122,7 @@
     <label class="row"><input type="checkbox" id="t-daynight"><span class="sw half"></span>Day / night shading</label>
     <label class="row"><input type="checkbox" id="t-labels"><span class="sw txt" style="--c:#c8d4de">A</span>Place labels</label>
     <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
+    <label class="row" title="OSM Buildings via Cesium ion; drawn below 60 km eye altitude"><input type="checkbox" id="t-buildings"><span class="sw sq" style="--c:#9aa3ad"></span>3D buildings <small>ion</small></label>
     <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
     <label class="row field">GIBS date <input type="date" id="gibs-date"></label>
   </section>
