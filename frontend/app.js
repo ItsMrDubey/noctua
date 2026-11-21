@@ -24,6 +24,7 @@ import { NuclearLayer, NUC_GROUPS, nuclearDetails } from "/static/js/nuclear.js"
 import { MovementsLayer, MOV_ROLES, MOV_KINDS, movementDetails } from "/static/js/movements.js";
 import { WebcamLayer, renderNearbyCameras } from "/static/js/webcams.js";
 import { CarrierLayer } from "/static/js/naval.js";
+import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 
 const errors = {};
@@ -264,6 +265,7 @@ async function main() {
     // carrier hypotheses sit on top of everything else, then public webcams
     for (const picked of hits) if (picked && picked.id && (picked.id.navalHyp || picked.id.navalIndicator) && mods.naval.pick(picked)) return;
     for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
+    for (const picked of hits) if (picked && picked.id && picked.id.histCell) { histLayer.zoomCell(picked.id.histCell); return; }
     for (const picked of hits) {
       if (!picked || !picked.primitive) continue;
       if (picked.id && picked.id.ref) { refHit = refHit || picked.id; continue; }
@@ -316,6 +318,15 @@ async function main() {
     refSel = ref;
     const it = ref.item || {};
     if (it.lat != null) { const p = Cesium.Cartesian3.fromDegrees(it.lon, it.lat); fx.setTarget(() => p, "ref"); } else fx.setTarget(null);
+    if (ref.kind === "historical") {
+      const [ht, hb] = historicalDetails(it);
+      inspector.reference(ref, ht, hb); buttons();
+      fetchJson("/api/events/" + encodeURIComponent(it.id), 8000).then((d) => {
+        if (refSel !== ref) return;
+        const [t2, b2] = historicalDetails(it, d); inspector.reference(ref, t2, b2);
+      }).catch(() => {});
+      return;
+    }
     const [title, body] = ref.kind === "nuclear" ? nuclearDetails(it) : MOV_KINDS[ref.kind] ? movementDetails(ref) : refDetails(ref);
     inspector.reference(ref, title, body);
     buttons();
@@ -476,6 +487,17 @@ async function main() {
   }
   const evFeed = new EventFeed(events, (items) => { tick_ev_count(); if (!replayAt) alerts.events([...events.items.values()]); if (selected && selected.kind === "events") refreshSelected(); });
 
+  // ---- Historical conflict events (UCDP), default off ----
+  const histLayer = new HistoricalLayer(viewer);
+  histLayer.onData = () => {
+    $("c-historical").textContent = histLayer.on ? histLayer.visibleN.toLocaleString() : "";
+    $("hist-note").textContent = histLayer.note();
+  };
+  $("t-historical").addEventListener("change", (e) => {
+    histLayer.setOn(e.target.checked).then(() => histLayer.onData(), () => { $("hist-note").textContent = histLayer.on ? "Historical events unavailable" : ""; });
+    if (!e.target.checked) { histLayer.onData(); if (refSel && refSel.kind === "historical") clearSelection(); }
+  });
+
   // ---- Search field opens the command palette ----
   const sIn = $("search");
   const openPalette = () => { if (ctx.palette) { const v = sIn.value; sIn.value = ""; sIn.blur(); ctx.palette.open(v); } };
@@ -493,7 +515,7 @@ async function main() {
     if (!has("/api/density")) disable(["d-aircraft", "d-ships", "d-fires", "d-quakes", "d-res"], "Not supported by this backend version");
     if (!has("/api/reference")) { disable([...REF_IDS], "Reference data not supported by this backend version"); for (const id of REF_IDS) refLayers.setOn(id, false); }
     if (!has("/api/tracks")) disable(["t-miltrails"], "Not supported by this backend version");
-    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
+    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-range", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
   }).catch(() => { /* openapi unavailable: leave controls enabled */ });
 
   // ---- Replay (time slider) ----
@@ -502,12 +524,14 @@ async function main() {
     if (replayBusy) { replayPending = at; return; }
     replayBusy = true;
     try {
-      const iso = encodeURIComponent(at.toISOString());
+      const iso = encodeURIComponent(at.toISOString()), wh = replayWindowH();
+      // tracks only exist for days the lake holds; a failed snapshot is "no data", not an error
+      const none = { items: [] };
       const [a, sh, fi, qk] = await Promise.all([
-        fetchJson("/api/snapshot?kind=air&window_min=10&at=" + iso),
-        fetchJson("/api/snapshot?kind=sea&window_min=30&at=" + iso),
-        fetchJson("/api/layers/fires?hours=24&until=" + iso),
-        fetchJson("/api/layers/quakes?hours=24&until=" + iso),
+        fetchJson("/api/snapshot?kind=air&window_min=10&at=" + iso).catch(() => none),
+        fetchJson("/api/snapshot?kind=sea&window_min=30&at=" + iso).catch(() => none),
+        fetchJson("/api/layers/fires?hours=" + wh + "&until=" + iso),
+        fetchJson("/api/layers/quakes?hours=" + wh + "&until=" + iso),
       ]);
       if (!replayAt) return; // went live meanwhile
       for (const [k, d] of [["aircraft", a], ["ships", sh], ["fires", fi], ["quakes", qk]]) {
@@ -515,6 +539,8 @@ async function main() {
         byKind[k].sync(items); setCount(k, items.length, d && d.truncated);
       }
       sync3d();
+      const noTracks = !(a.items && a.items.length) && !(sh.items && sh.items.length);
+      $("tl-note").textContent = (noTracks ? "no track data at this time · " : "") + "fires/quakes: " + (wh >= 48 ? wh / 24 + " d" : wh + " h") + " before cursor";
       if (selected) refreshSelected();
     } catch (e) { onErr("replay", String((e && e.message) || e)); }
     finally {
@@ -523,12 +549,18 @@ async function main() {
       if (replayPending && replayAt) { const n = replayPending; replayPending = null; renderReplay(n); }
     }
   }
+  // observation window shown around the replay cursor grows with the range
+  const replayWindowH = () => (timeline.span <= 7 * 1440 ? 24 : timeline.span <= 30 * 1440 ? 72 : 168);
   const timeline = new Timeline((at) => {
     replayAt = at;
     events.setReplay(at); tick_ev_count();
+    histLayer.setReplay(at, replayWindowH() * 3600e3);
     if (at) renderReplay(at);
-    else { replayPending = null; ticks.forEach((t) => t(true).catch(() => {})); }
-  }, (playing) => viewer.setContinuous("replay", playing));
+    else { replayPending = null; $("tl-note").textContent = ""; ticks.forEach((t) => t(true).catch(() => {})); }
+  }, (playing) => viewer.setContinuous("replay", playing), () => {
+    histLayer.setSince(new Date(timeline.start())).catch(() => {});
+  });
+  histLayer.setSince(new Date(timeline.start()));
 
   // ---- WebSocket live push (falls back to polling while closed) ----
   live = new LiveSocket((m) => {

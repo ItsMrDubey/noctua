@@ -163,3 +163,4 @@
 #dz-extra { padding: 4px 14px 0; }
 .dz-mod { padding: 10px 14px 0; }
 .dz-mod-head { padding: 12px 40px 0 14px; font: 600 9.5px var(--f-head); letter-spacing: .18em; text-transform: uppercase; color: var(--threat, var(--acc)); }
+.row-note:empty { display: none; }

@@ -67,6 +67,8 @@
     <div id="ev-cats" class="chips"></div>
     <div id="ev-status" class="chips"></div>
     <label class="row field" title="Hide events below this confidence">Min confidence <input type="range" id="ev-conf" min="0" max="1" step="0.05" value="0"><output id="ev-conf-v" class="num">0.00</output></label>
+    <label class="row" title="UCDP Georeferenced Event Dataset: curated, historical armed-conflict events within the timeline range"><input type="checkbox" id="t-historical"><span class="sw" style="--c:#8f86c9"></span>Historical conflict (UCDP)<b id="c-historical" class="num"></b></label>
+    <div id="hist-note" class="row-note"></div>
     <label class="row" title="Cause → consequence arcs arrive with the event-chain milestone"><input type="checkbox" disabled><span class="sw ln" style="--c:#a99bff"></span>Event chains <small>soon</small></label>
   </section>
   <section class="grp" data-g="moves">
@@ -171,8 +173,10 @@
   <div class="dk-ctl">
     <span id="tl-mode" class="mode num">LIVE</span>
     <button id="tl-play" title="Play / pause replay (Space)">Play</button>
-    <select id="tl-speed" title="Replay speed"><option value="1">1 min/s</option><option value="10" selected>10 min/s</option><option value="60">1 h/s</option></select>
+    <select id="tl-speed" title="Replay speed"><option value="1">1 min/s</option><option value="10" selected>10 min/s</option><option value="60">1 h/s</option><option value="360">6 h/s</option><option value="1440">1 d/s</option></select>
+    <select id="tl-range" title="Timeline range"><option value="48h">48 h</option><option value="7d">7 d</option><option value="30d">30 d</option><option value="1y">1 y</option></select>
     <button id="tl-live" class="on live-btn" title="Return to live (L)">Live</button>
+    <span id="tl-note" class="dk-note num"></span>
     <span class="dk-legend" id="dk-legend"></span>
   </div>
   <div class="dk-track">

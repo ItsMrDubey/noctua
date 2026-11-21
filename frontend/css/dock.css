@@ -27,3 +27,5 @@
 .dk-tip b { color: var(--acc); font-weight: 500; }
 .dk-axis { display: flex; justify-content: space-between; align-items: center; }
 .dk-axis .lbl { font-size: 9.5px; color: var(--dim); white-space: nowrap; }
+.dk-note { font: 10.5px var(--f-mono); color: var(--amber); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dk-note:empty { display: none; }
