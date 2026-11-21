@@ -1,0 +1,90 @@
+{
+  "axis": "glTF Y-up, nose/bow along glTF +Z (vehicle +X fwd, +Y left, +Z up). In Cesium (forwardAxis=Z) the nose maps to local +X; use heading = toRadians(heading_deg) + HEADING_OFFSET (-PI/2).",
+  "units": "metres, real-world scale; origin at vehicle centre (ships: waterline)",
+  "models": {
+    "aircraft_fighter": {
+      "file": "aircraft_fighter.glb",
+      "length_m": 19.0,
+      "triangles": 300,
+      "bytes": 25180
+    },
+    "aircraft_transport": {
+      "file": "aircraft_transport.glb",
+      "length_m": 53.0,
+      "triangles": 620,
+      "bytes": 50160
+    },
+    "aircraft_airliner": {
+      "file": "aircraft_airliner.glb",
+      "length_m": 44.5,
+      "triangles": 408,
+      "bytes": 33584
+    },
+    "aircraft_tanker": {
+      "file": "aircraft_tanker.glb",
+      "length_m": 50.0,
+      "triangles": 652,
+      "bytes": 52604
+    },
+    "aircraft_awacs": {
+      "file": "aircraft_awacs.glb",
+      "length_m": 46.6,
+      "triangles": 708,
+      "bytes": 57040
+    },
+    "aircraft_helo": {
+      "file": "aircraft_helo.glb",
+      "length_m": 19.6,
+      "triangles": 360,
+      "bytes": 29864
+    },
+    "aircraft_uav": {
+      "file": "aircraft_uav.glb",
+      "length_m": 11.8,
+      "triangles": 204,
+      "bytes": 17656
+    },
+    "aircraft_generic": {
+      "file": "aircraft_generic.glb",
+      "length_m": 20.0,
+      "triangles": 388,
+      "bytes": 32048
+    },
+    "ship_carrier": {
+      "file": "ship_carrier.glb",
+      "length_m": 330.0,
+      "triangles": 332,
+      "bytes": 28220
+    },
+    "ship_destroyer": {
+      "file": "ship_destroyer.glb",
+      "length_m": 155.0,
+      "triangles": 352,
+      "bytes": 29092
+    },
+    "ship_cargo": {
+      "file": "ship_cargo.glb",
+      "length_m": 300.0,
+      "triangles": 904,
+      "bytes": 74272
+    },
+    "ship_tanker": {
+      "file": "ship_tanker.glb",
+      "length_m": 250.0,
+      "triangles": 340,
+      "bytes": 28836
+    },
+    "ship_passenger": {
+      "file": "ship_passenger.glb",
+      "length_m": 200.0,
+      "triangles": 280,
+      "bytes": 23484
+    },
+    "ship_small": {
+      "file": "ship_small.glb",
+      "length_m": 30.0,
+      "triangles": 256,
+      "bytes": 21636
+    }
+  }
+}
