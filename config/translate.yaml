@@ -1,0 +1,27 @@
+# Translation stage: English versions of event titles/summaries and source document
+# titles/snippets. Read by osint.translate.config.TranslateConfig. Cache lives in
+# data_dir/translations.sqlite (keyed by sha1(lang + "\n" + text)); English is passed through.
+
+enabled: true
+backend: claude_cli        # local `claude -p` on the user's plan (same backends as extraction)
+model: haiku
+cli_path: null             # null = resolve `claude` on PATH
+timeout_s: 180
+concurrency: 1             # CLI calls in flight (1-2)
+
+batch_size: 40             # texts per CLI call
+max_chars: 300             # titles/snippets are clipped to this before translation
+
+# usage caps (own call log); when share_extraction_limiter is on, every call also needs a
+# slot in the extraction job's limiter, so both stages together stay under its caps
+max_calls_per_hour: 60
+max_calls_per_day: 600
+share_extraction_limiter: true
+
+interval_s: 120            # TranslateJob pass interval
+initial_delay_s: 45
+max_calls_per_pass: 6
+max_events: 5000           # events scanned on a full (backfill) pass, most recent first
+skip_statuses: [historical]  # curated datasets (UCDP) are already English
+retry_after_min: 30        # failed items retried after this long
+max_attempts: 3

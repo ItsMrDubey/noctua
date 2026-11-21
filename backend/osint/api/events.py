@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import Response
 
 from osint.api import kml
+from osint.translate import english
+from osint.translate import job as translate_job
 
 MAX_LIMIT = 10000
 KML_LIMIT = 5000
@@ -68,9 +70,10 @@ def events_kml(items: list[dict]) -> str:
                 ("Confidence", f"{conf:.2f}"), ("Place", it.get("place_name")),
                 ("Precision", it.get("precision")), ("Mentions", it.get("mention_count")),
                 ("Outlets", it.get("source_diversity")), ("First report", it.get("t_start")),
-                ("Latest report", it.get("t_end")), ("Summary", it.get("summary")),
+                ("Latest report", it.get("t_end")),
+                ("Summary", it.get("summary_en") or it.get("summary")),
                 ("Event id", it.get("id"))]
-        pms.append(kml._placemark(it.get("title") or it.get("id") or "event",
+        pms.append(kml._placemark(it.get("title_en") or it.get("title") or it.get("id") or "event",
                                   kml._table(rows), style, float(it["lon"]),
                                   float(it["lat"]), when=it.get("t_start")))
     return (f'{kml._NS}<Document><name>{escape("Events")}</name>{"".join(pms)}'
@@ -96,6 +99,11 @@ def add_corroboration(store, items: list[dict]) -> None:
 def mount_events(app: FastAPI, runtime) -> None:
     store = runtime.store
 
+    def add_english(items: list[dict], *, summaries: bool = False) -> None:
+        """title_en / lang (+ summary_en) from the translation cache; None = not ready."""
+        english.annotate_events(translate_job.get_store(runtime), items, summaries=summaries,
+                                extractions=getattr(runtime, "extraction_store", None))
+
     @app.get("/api/events")
     async def list_events(
         bbox: str | None = None, since: str | None = None, category: str | None = None,
@@ -114,6 +122,7 @@ def mount_events(app: FastAPI, runtime) -> None:
             include_unlocated=all_ or include_unlocated,
             map_default=not all_ and not status)
         await asyncio.to_thread(add_corroboration, store, items)
+        await asyncio.to_thread(add_english, items)
         return _json({"layer": "events", "count": len(items), "items": items})
 
     @app.get("/api/events/stats")
@@ -144,6 +153,9 @@ def mount_events(app: FastAPI, runtime) -> None:
             raise HTTPException(404, "unknown event")
         await asyncio.to_thread(add_corroboration, store, [ev])
         ev["corroborations"] = await asyncio.to_thread(store.list_corroborations, event_id)
+        await asyncio.to_thread(add_english, [ev], summaries=True)
+        await asyncio.to_thread(english.annotate_documents, translate_job.get_store(runtime),
+                                ev.get("documents") or [])
         v = (await asyncio.to_thread(store.verifications, [event_id])).get(event_id)
         ev["verification"] = None if v is None else {
             "verdict": v["verdict"], "reasons": v["reasons"], "quotes": v["quotes"]}
@@ -154,4 +166,17 @@ def mount_events(app: FastAPI, runtime) -> None:
                                ) -> Response:
         items = await asyncio.to_thread(store.list_events, min_confidence=min_confidence,
                                         limit=KML_LIMIT, slim=False)
+        await asyncio.to_thread(add_english, items, summaries=True)
         return Response(await asyncio.to_thread(events_kml, items), media_type=kml.KML_MEDIA)
+
+    @app.get("/api/translate/status")
+    async def translate_status() -> Response:
+        """Translation stage: calls today, queue, failures (cache stats without the job)."""
+        job = getattr(runtime, "translate_job", None)
+        if job is not None:
+            return _json(await asyncio.to_thread(job.status))
+        tstore = translate_job.get_store(runtime)
+        if tstore is None:
+            return _json({"enabled": False, "running": False})
+        return _json(await asyncio.to_thread(translate_job.status, tstore,
+                                             translate_job.load_config(runtime)))
