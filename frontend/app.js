@@ -6,13 +6,15 @@ import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $, esc } from "/static/js/ui.js";
+import { $ } from "/static/js/ui.js";
 import { createViewer, setupImagery } from "/static/js/theme/globe.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
 import { LayerTree } from "/static/js/panels/layertree.js";
 import { setupHud, setupFps } from "/static/js/panels/hud.js";
 import { Inspector } from "/static/js/panels/inspector.js";
 import { AlertCenter } from "/static/js/panels/alerts.js";
+import { Palette } from "/static/js/palette.js";
+import { Reticle } from "/static/js/reticle.js";
 
 const errors = {};
 let lastStatus = null;
@@ -61,8 +63,8 @@ async function main() {
   $("d-res").addEventListener("change", (e) => { for (const d of Object.values(dens)) d.setRes(+e.target.value); });
   $("t-miltrails").addEventListener("change", (e) => trails.setMil(e.target.checked));
   const wsLive = () => !!(live && live.isOpen());
-  const feed = (kind, url, layer) => async () => {
-    if (replayAt || ((kind === "aircraft" || kind === "ships") && wsLive())) return;
+  const feed = (kind, url, layer) => async (force) => {
+    if (replayAt || (force !== true && (kind === "aircraft" || kind === "ships") && wsLive())) return;
     const data = await fetchJson(url);
     const items = Array.isArray(data && data.items) ? data.items : [];
     layer.sync(items);
@@ -240,32 +242,11 @@ async function main() {
     }
   }
 
-  // ---- Search (quick results; the command palette takes over when present) ----
-  const sIn = $("search"), sOut = $("results");
-  const matches = () => {
-    const q = sIn.value.trim().toLowerCase();
-    if (!q) return [];
-    const out = [];
-    for (const l of [air, ships]) {
-      for (const it of l.visibleItems()) {
-        const hay = [it.name, it.id, it.type_code, it.operator, it.reg].map((v) => String(v == null ? "" : v).toLowerCase());
-        if (hay.some((h) => h.includes(q))) { out.push({ kind: l.kind, it }); if (out.length >= 50) return out; }
-      }
-    }
-    return out;
-  };
-  const go = (m) => { select(m.kind, m.it.id); flyToItem(m.kind, m.it.id); sOut.classList.add("hidden"); };
-  sIn.addEventListener("input", () => {
-    const m = matches().slice(0, 8);
-    sOut.innerHTML = m.map((x, i) => '<div data-i="' + i + '">' + esc(x.it.name || x.it.id) + " <small>" + esc(x.kind) + " · " + esc(x.it.type_code || "") + " " + esc(x.it.reg || x.it.operator || "") + "</small></div>").join("");
-    sOut.classList.toggle("hidden", !m.length);
-    sOut._m = m;
-  });
-  sOut.addEventListener("click", (e) => { const d = e.target.closest("div[data-i]"); if (d && sOut._m) go(sOut._m[+d.dataset.i]); });
-  sIn.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { const m = matches(); if (m.length) go(m[0]); }
-    else if (e.key === "Escape") { sOut.classList.add("hidden"); sIn.blur(); }
-  });
+  // ---- Search field opens the command palette ----
+  const sIn = $("search");
+  const openPalette = () => { if (ctx.palette) { const v = sIn.value; sIn.value = ""; sIn.blur(); ctx.palette.open(v); } };
+  sIn.addEventListener("focus", openPalette);
+  sIn.addEventListener("input", openPalette);
 
   // ---- Feature detection: older backends lack the v2 routes; disable those controls ----
   const disable = (ids, why) => {
@@ -310,7 +291,7 @@ async function main() {
   const timeline = new Timeline((at) => {
     replayAt = at;
     if (at) renderReplay(at);
-    else { replayPending = null; ticks.forEach((t) => t().catch(() => {})); }
+    else { replayPending = null; ticks.forEach((t) => t(true).catch(() => {})); }
   }, (playing) => viewer.setContinuous("replay", playing));
 
   // ---- WebSocket live push (falls back to polling while closed) ----
@@ -331,9 +312,9 @@ async function main() {
   const ctx = { viewer, scene, air, ships, byKind, refLayers, tree, timeline, hud, fps, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
   document.addEventListener("keydown", (e) => {
     const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (ctx.palette) ctx.palette.open(); else { sIn.focus(); sIn.select(); } return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (ctx.palette.isOpen) ctx.palette.close(); else ctx.palette.open(); return; }
     if (typing) return;
-    if (e.key === "/") { e.preventDefault(); if (ctx.palette) ctx.palette.open(); else sIn.focus(); }
+    if (e.key === "/") { e.preventDefault(); ctx.palette.open(); }
     else if (e.key === "Escape") clearSelection();
     else if (e.key === "f" || e.key === "F") fps.toggle();
     else if (e.key === "h" || e.key === "H") hud.home();
@@ -354,6 +335,14 @@ async function main() {
   poll("quakes", 300000, ticks[3], onErr);
   // refresh relative "last seen" in the inspector
   setInterval(() => { if (selected) { refreshSelected(); if (!replayAt) trailSelected(false); } }, 5000);
+  // ---- Selection reticle + high-priority halos ----
+  const reticle = new Reticle(scene);
+  fx.setTarget = (fn, kind) => reticle.setTarget(fn, kind);
+  let haloT = 0;
+  const prevAir = air.onChange;
+  air.onChange = () => { prevAir && prevAir(); clearTimeout(haloT); haloT = setTimeout(() => reticle.syncHalos(air), 300); };
+  ctx.tracklist = tracklist;
+  ctx.palette = new Palette(ctx);
   window.__osint = ctx;
   return ctx;
 }

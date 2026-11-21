@@ -126,3 +126,24 @@ input:disabled + .sw { opacity: .3; }
 .sev-ok { --sev: var(--green); }
 
 @media (max-width: 1100px) { #toasts { right: var(--gap); top: calc(var(--bar-h) + 30px); } }
+
+/* ---- command palette ---- */
+#palette { position: fixed; inset: 0; z-index: 50; background: rgba(2, 5, 9, .45); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; animation: rise var(--t-fast) var(--ease) both; }
+.pl-box { position: relative; width: min(640px, calc(100% - 40px)); max-height: 64vh; display: flex; flex-direction: column; background: var(--glass-hi); border-color: var(--line-2); box-shadow: 0 24px 60px rgba(0, 0, 0, .6), 0 0 0 1px rgba(var(--acc-rgb), .08); }
+.pl-in { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 50px; border-bottom: 1px solid var(--line); }
+.pl-in svg { width: 16px; height: 16px; fill: none; stroke: var(--acc); stroke-width: 1.5; flex: none; }
+.pl-in input { flex: 1; border: 0; background: none; font: 15px var(--f-body); padding: 0; }
+.pl-list { overflow: auto; padding: 4px 0 8px; }
+.pl-grp { padding: 10px 16px 4px; font: 600 9.5px var(--f-head); letter-spacing: .22em; text-transform: uppercase; color: var(--dim); }
+.pl-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 6px 16px; cursor: pointer; border-left: 2px solid transparent; }
+.pl-row.act { background: rgba(var(--acc-rgb), .1); border-left-color: var(--acc); }
+.pl-g { display: grid; place-items: center; color: var(--fg-2); }
+.pl-l { font: 500 13px var(--f-body); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-s { font: 10.5px var(--f-mono); color: var(--dim); white-space: nowrap; }
+.pl-chk { width: 10px; height: 10px; border: 1px solid var(--line-2); }
+.pl-chk.on { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 5px var(--acc); }
+.pl-act { font: 700 14px/1 var(--f-mono); color: var(--acc); font-style: normal; }
+.pl-empty { padding: 18px 16px; color: var(--fg-2); font-size: 12px; }
+.pl-foot { display: flex; gap: 16px; padding: 7px 14px; border-top: 1px solid var(--line); font: 10.5px var(--f-body); color: var(--dim); }
+.pl-foot kbd { margin-right: 3px; }
+.pl-in input:focus-visible { outline: none; }

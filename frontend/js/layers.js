@@ -1,14 +1,14 @@
 // Primitive collections updated incrementally by id.
 const C = Cesium;
-const PLANE = "data:image/svg+xml;utf8," + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-  '<path fill="#fff" stroke="#000" stroke-opacity=".6" stroke-width="1" d="M16 2c1.2 0 2 1 2 2.5V12l11 7v3l-11-3v6l3 2.5V30l-5-1.2L11 30v-1.5l3-2.5v-6L3 22v-3l11-7V4.5C14 3 14.8 2 16 2z"/></svg>');
+import { aircraftRole, aircraftGlyph, shipClass, shipGlyph, COLORS } from "/static/js/symbology.js";
 
-const AIR_WHITE = C.Color.WHITE;
-const AIR_ORANGE = C.Color.fromCssColorString("#ff9a1f");
-const AIR_RED = C.Color.fromCssColorString("#ff3b3b");
-const SHIP_CYAN = C.Color.fromCssColorString("#2fd8ff");
-const SHIP_RED = C.Color.fromCssColorString("#ff3b3b");
+const AIR_MIL = C.Color.fromCssColorString(COLORS.air);
+const AIR_CIV = C.Color.fromCssColorString(COLORS.airCiv);
+const AIR_RED = C.Color.fromCssColorString(COLORS.hp);
+const SHIP_BLUE = C.Color.fromCssColorString(COLORS.ship);
+const SHIP_RED = C.Color.fromCssColorString(COLORS.shipMil);
+const SHIP_SCALE = new C.NearFarScalar(2e5, 1.1, 2e7, 0.55);
+const SHIP_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.85);
 
 // shared per-layer constants: never allocate these per item
 const AIR_SCALE = new C.NearFarScalar(5e5, 1.2, 2.5e7, 0.75);
@@ -17,7 +17,7 @@ const PT_SCALE = new C.NearFarScalar(1e6, 1.2, 2e7, 1.0);
 const PT_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.9);
 const Q_SCALE = new C.NearFarScalar(1e6, 1.3, 2e7, 1.0);
 const BLACK70 = C.Color.BLACK.withAlpha(0.7);
-const QUAKE = C.Color.fromCssColorString("#ffe14a").withAlpha(0.85);
+const QUAKE = C.Color.fromCssColorString(COLORS.quake).withAlpha(0.85);
 const FIRE_RAMP = Array.from({ length: 11 }, (_, i) => C.Color.fromHsl(0.09 * (1 - i / 10), 1, 0.5, 0.9));
 
 function pos(lat, lon, altM) { return C.Cartesian3.fromDegrees(lon, lat, altM || 0); }
@@ -69,17 +69,20 @@ class Layer {
 
 export class AircraftLayer extends Layer {
   constructor(scene) { super(scene, new C.BillboardCollection({ scene })); this.kind = "aircraft"; }
-  make() {
+  make(it) {
     return this.col.add({
-      image: PLANE, alignedAxis: C.Cartesian3.UNIT_Z, width: 30, height: 30,
+      image: aircraftGlyph(aircraftRole(it)), alignedAxis: C.Cartesian3.UNIT_Z, width: 28, height: 28,
       scaleByDistance: AIR_SCALE, translucencyByDistance: AIR_FADE,
     });
   }
+  key(it) { return it.lat + "|" + it.lon + "|" + it.alt_ft + "|" + it.heading_deg + "|" + (it.high_priority ? 1 : 0) + (it.is_mil ? 1 : 0) + it.type_code + "|" + it.category; }
   apply(p, it) {
     p.position = pos(it.lat, it.lon, (it.alt_ft || 0) * 0.3048);
     p.rotation = -C.Math.toRadians(it.heading_deg || 0);
-    p.color = it.high_priority ? AIR_RED : it.is_mil ? AIR_ORANGE : AIR_WHITE;
-    p.width = p.height = it.high_priority ? 36 : 30;
+    const role = aircraftRole(it);
+    if (p._role !== role) { p._role = role; p.image = aircraftGlyph(role); }
+    p.color = it.high_priority ? AIR_RED : it.is_mil ? AIR_MIL : AIR_CIV;
+    p.width = p.height = it.high_priority ? 34 : role === "helo" || role === "uav" || role === "trainer" ? 24 : 28;
   }
 }
 
@@ -88,14 +91,19 @@ class PointLayer extends Layer {
   make() { return this.col.add({ position: C.Cartesian3.ZERO, scaleByDistance: PT_SCALE, translucencyByDistance: PT_FADE }); }
 }
 
-export class ShipLayer extends PointLayer {
-  constructor(scene) { super(scene); this.kind = "ships"; }
+export class ShipLayer extends Layer {
+  constructor(scene) { super(scene, new C.BillboardCollection({ scene })); this.kind = "ships"; }
+  make(it) {
+    return this.col.add({ image: shipGlyph(shipClass(it)), alignedAxis: C.Cartesian3.UNIT_Z, width: 18, height: 18, scaleByDistance: SHIP_SCALE, translucencyByDistance: SHIP_FADE });
+  }
+  key(it) { return it.lat + "|" + it.lon + "|" + it.heading_deg + "|" + (it.is_mil ? 1 : 0) + it.type_code; }
   apply(p, it) {
     p.position = pos(it.lat, it.lon, 0);
-    p.pixelSize = 6;
-    p.outlineColor = BLACK70;
-    p.outlineWidth = 1;
-    p.color = it.is_mil ? SHIP_RED : SHIP_CYAN;
+    p.rotation = -C.Math.toRadians(it.heading_deg || 0);
+    const cls = shipClass(it);
+    if (p._cls !== cls) { p._cls = cls; p.image = shipGlyph(cls); }
+    p.color = it.is_mil ? SHIP_RED : SHIP_BLUE;
+    p.width = p.height = it.is_mil ? 22 : 18;
   }
 }
 

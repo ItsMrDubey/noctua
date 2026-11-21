@@ -5,8 +5,8 @@ const SEGMENTS = 6;
 const MATS = new Map();
 
 function colorFor(kind, it) {
-  if (kind === "aircraft") return C.Color.fromCssColorString(it && it.high_priority ? "#ff3b3b" : it && it.is_mil ? "#ff9a1f" : "#ffffff");
-  return C.Color.fromCssColorString(it && it.is_mil ? "#ff3b3b" : "#2fd8ff");
+  if (kind === "aircraft") return C.Color.fromCssColorString(it && it.high_priority ? "#ff4b55" : it && it.is_mil ? "#9ff3ff" : "#c8d4de");
+  return C.Color.fromCssColorString(it && it.is_mil ? "#ff4b55" : "#7fa8ff");
 }
 
 export class Trails {
@@ -61,7 +61,7 @@ export class Trails {
       const d = await fetchJson("/api/tracks?kind=air&hours=1&mil_only=true", 30000);
       if (!this.milOn) return;
       this.mil.removeAll();
-      const col = C.Color.fromCssColorString("#ff9a1f");
+      const col = C.Color.fromCssColorString("#9ff3ff");
       for (const pts of Object.values(d.tracks || {})) this._draw(this.mil, pts.map((p) => [p[0], p[1], (p[2] || 0) * 0.3048]), col, 1.5);
       this.scene.requestRender();
     } catch (e) { /* retry next tick */ }
