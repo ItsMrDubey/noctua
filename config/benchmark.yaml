@@ -1,0 +1,31 @@
+# GDELT 2.0 benchmark scorecard (M6). Read by osint.benchmark.config.BenchmarkConfig.
+
+# rolling windows the scorecard is computed over (name -> hours)
+windows:
+  24h: 24
+  7d: 168
+cache_ttl_s: 300            # API results are cached this long per window
+snapshot_interval_s: 3600   # periodic job: persist one snapshot per window per interval
+first_snapshot_delay_s: 300 # let boot (gazetteer, warm starts) settle first
+snapshot_retention_days: 90
+
+# DuckDB settings for the GDELT lake aggregates (own short-lived connection)
+duckdb_memory_limit: 512MB
+duckdb_threads: 2
+# GDELT decisions are joined to their lake rows over [window start - margin, now]
+# (a row is decided up to ~stale_h after its DATEADDED)
+decision_join_margin_h: 48
+
+# precision levels counted as "city or better"
+city_or_better: [point, city]
+# latency pairs with |delta| above this are treated as clock garbage and dropped
+latency_max_h: 72
+# residual-duplicate proxy: two of our city/point events of the same category in the
+# same H3 res-5 cell whose start times are this close are counted as a possible duplicate
+residual_duplicate_window_h: 12
+
+# labelled gold set
+min_labels: 20
+sample_default_n: 50
+sample_max_n: 200
+rejected_sample_n: 20

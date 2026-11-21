@@ -12,6 +12,8 @@ from osint.api.backfill import mount_backfill
 from osint.api.events import mount_events
 from osint.api.extraction import mount_extraction
 from osint.api.imagery import mount_imagery
+from osint.api.movements import mount_movements
+from osint.api.nuclear import mount_nuclear
 from osint.api.reference import mount_reference
 from osint.api.webcams import mount_webcams
 from osint.config import ROOT
@@ -100,12 +102,15 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     history.mount(app, runtime)
     live_ws.mount(app, runtime, cache.meta)
     mount_reference(app)
+    mount_nuclear(app)
+    mount_movements(app, runtime)
     mount_events(app, runtime)
     mount_imagery(app, runtime)
     mount_extraction(app, runtime)
     mount_webcams(app)
     mount_backfill(app, runtime)
     __import__("osint.api.naval", fromlist=["mount_naval"]).mount_naval(app, runtime)
+    __import__("osint.api.benchmark", fromlist=["mount_benchmark"]).mount_benchmark(app, runtime)
 
     @app.get("/")
     def index():
