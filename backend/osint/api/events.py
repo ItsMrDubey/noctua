@@ -1,0 +1,119 @@
+"""Events API: map list, detail, stats (GDELT scorecard v1) and KML for Google Earth Pro."""
+
+import asyncio
+from datetime import UTC, datetime
+from xml.sax.saxutils import escape
+
+import msgspec
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import Response
+
+from osint.api import kml
+
+MAX_LIMIT = 10000
+KML_LIMIT = 5000
+_ENCODER = msgspec.json.Encoder()
+
+# category -> KML colour (aabbggrr)
+CATEGORY_COLORS = {
+    "armed_conflict": "ff0000ff",   # red
+    "air_activity": "ff00a5ff",     # orange
+    "maritime_security": "ffffbf00",  # deep sky blue
+    "civil_unrest": "ff00ffff",     # yellow
+    "disaster": "ff8b008b",         # purple
+    "infrastructure": "ff13458b",   # brown
+    "political": "ffffffff",        # white
+    "economic": "ff00ff00",         # green
+    "cyber_outage": "ffff00ff",     # magenta
+}
+DEFAULT_COLOR = "ffc0c0c0"
+
+
+def parse_bbox(raw: str | None) -> tuple[float, float, float, float] | None:
+    """``west,south,east,north`` in degrees; 422 when malformed."""
+    if not raw:
+        return None
+    try:
+        w, s, e, n = (float(x) for x in raw.split(","))
+    except ValueError:
+        raise HTTPException(422, "bbox must be west,south,east,north") from None
+    if not (-180 <= w <= 180 and -180 <= e <= 180 and -90 <= s <= n <= 90):
+        raise HTTPException(422, "bbox out of range")
+    return w, s, e, n
+
+
+def parse_since(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00").replace(" ", "+"))
+    except ValueError:
+        raise HTTPException(422, "since must be ISO-8601") from None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _json(obj: object) -> Response:
+    return Response(_ENCODER.encode(obj), media_type="application/json")
+
+
+def events_kml(items: list[dict]) -> str:
+    pms = []
+    for it in items[:KML_LIMIT]:
+        if it.get("lat") is None or it.get("lon") is None:
+            continue
+        conf = float(it.get("confidence") or 0.0)
+        color = CATEGORY_COLORS.get(it.get("category") or "", DEFAULT_COLOR)
+        style = kml._style(kml.ICON + "placemark_circle.png", color, 0.6 + 1.2 * conf)
+        rows = [("Category", it.get("category")), ("Status", it.get("status")),
+                ("Confidence", f"{conf:.2f}"), ("Place", it.get("place_name")),
+                ("Precision", it.get("precision")), ("Mentions", it.get("mention_count")),
+                ("Outlets", it.get("source_diversity")), ("First report", it.get("t_start")),
+                ("Latest report", it.get("t_end")), ("Summary", it.get("summary")),
+                ("Event id", it.get("id"))]
+        pms.append(kml._placemark(it.get("title") or it.get("id") or "event",
+                                  kml._table(rows), style, float(it["lon"]),
+                                  float(it["lat"]), when=it.get("t_start")))
+    return (f'{kml._NS}<Document><name>{escape("Events")}</name>{"".join(pms)}'
+            "</Document></kml>")
+
+
+def mount_events(app: FastAPI, runtime) -> None:
+    store = runtime.store
+
+    @app.get("/api/events")
+    async def list_events(
+        bbox: str | None = None, since: str | None = None, category: str | None = None,
+        status: str | None = None,
+        min_confidence: float | None = Query(None, ge=0.0, le=1.0),
+        limit: int = Query(1000, ge=1, le=MAX_LIMIT),
+    ) -> Response:
+        items = await asyncio.to_thread(
+            store.list_events, bbox=parse_bbox(bbox), since=parse_since(since),
+            category=category, status=status, min_confidence=min_confidence, limit=limit)
+        return _json({"layer": "events", "count": len(items), "items": items})
+
+    @app.get("/api/events/stats")
+    async def event_stats() -> Response:
+        stats = await asyncio.to_thread(store.event_stats)
+        builder = getattr(runtime, "event_builder", None)
+        if builder is not None:
+            last = builder.last_pass
+            stats["builder"] = {
+                "passes": builder.passes, "last_error": builder.last_error,
+                "last_pass": None if last is None else msgspec.to_builtins(last.__dict__),
+            }
+        return _json(stats)
+
+    @app.get("/api/events/{event_id}")
+    async def event_detail(event_id: str) -> Response:
+        ev = await asyncio.to_thread(store.get_event, event_id)
+        if ev is None:
+            raise HTTPException(404, "unknown event")
+        return _json(ev)
+
+    @app.get("/kml/events.kml")
+    async def events_kml_route(min_confidence: float | None = Query(None, ge=0.0, le=1.0)
+                               ) -> Response:
+        items = await asyncio.to_thread(store.list_events, min_confidence=min_confidence,
+                                        limit=KML_LIMIT, slim=False)
+        return Response(await asyncio.to_thread(events_kml, items), media_type=kml.KML_MEDIA)

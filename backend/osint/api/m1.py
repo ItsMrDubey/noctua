@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from osint.api import history, kml, layers, live_ws
+from osint.api.events import mount_events
 from osint.api.reference import mount_reference
 from osint.config import ROOT
 from osint.runtime import Runtime
@@ -95,6 +96,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     history.mount(app, runtime)
     live_ws.mount(app, runtime, cache.meta)
     mount_reference(app)
+    mount_events(app, runtime)
 
     @app.get("/")
     def index():

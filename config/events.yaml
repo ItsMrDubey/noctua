@@ -1,0 +1,65 @@
+# Event building (pipeline stages 3, 8, 9): clustering thresholds, GDELT adjudication,
+# status levels and confidence weights. Read by osint.pipeline.events.EventsConfig.
+
+interval_s: 60            # EventBuilder pass interval
+min_relevance: 0.35       # triage relevance a document needs to enter clustering
+cursor_overlap_min: 10    # re-read documents fetched this long before the cursor (late writes)
+batch_limit: 20000        # max documents read from the lake per pass
+require_location: true    # unlocated documents may join an event but never create one
+
+minhash:
+  permutations: 128
+  shingle: 5              # character 5-grams of normalised title + snippet
+  bands: 32               # 32 bands x 4 rows -> candidate S-curve threshold ~0.42
+
+clustering:
+  index_window_h: 72      # events with t_end in this window stay in the in-memory index
+  text_threshold: 0.5     # tau_text: estimated Jaccard to join on text alone
+  overlap_threshold: 0.2  # tau_overlap: shared tokens / smaller token set (geo path)
+  # shared tokens needed on the geo path (place counts as one token). Spatially specific
+  # categories may join on the place alone; statement-type categories need more evidence.
+  min_shared_tokens:
+    default: 2
+    armed_conflict: 1
+    air_activity: 1
+    maritime_security: 1
+    disaster: 1
+    infrastructure: 1
+    civil_unrest: 1
+  max_signatures: 8       # MinHash signatures kept per event for text matching
+  max_tokens: 64          # overlap tokens kept per event
+  # time window around [t_start, t_end] in which a document may still join (hours)
+  time_window_h:
+    default: 24
+    armed_conflict: 12
+    air_activity: 12
+    maritime_security: 24
+    civil_unrest: 24
+    disaster: 48
+    infrastructure: 24
+    political: 48
+    economic: 48
+    cyber_outage: 24
+
+gdelt:
+  # CAMEO root codes we track; others are rejected as irrelevant_category
+  tracked_roots: ["13", "14", "15", "16", "17", "18", "19", "20"]
+  # event codes tracked even under an untracked root (prefix match)
+  tracked_codes: ["0233", "0234", "073", "163", "176"]
+  min_mentions: 3          # below this, a row with no other source is rejected (low_mentions)
+  stale_h: 24              # DATEADDED older than this -> stale
+  stale_event_days: 7      # SQLDATE (event date) older than this -> stale
+
+status:
+  multi_source_min_domains: 2   # independent outlets (distinct URL domains)
+
+confidence:
+  # confidence = sum(weight * component), each component in 0..1; weights sum to 1
+  weights:
+    source_diversity: 0.35   # 1 - 0.5^(domains - 1): 1 outlet 0, 2 -> 0.5, 3 -> 0.75
+    geo: 0.20                # precision score x geo confidence
+    relevance: 0.25          # best triage relevance among the event's documents
+    recency: 0.10            # 0.5^(hours since t_end / recency_half_life_h)
+    gdelt: 0.10              # 1 if a GDELT row was accepted onto the event
+  precision_score: {point: 1.0, city: 1.0, admin1: 0.6, country: 0.2}
+  recency_half_life_h: 24
