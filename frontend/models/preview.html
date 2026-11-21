@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Visual QA for the generated models (python scripts/gen_models.py).
+     Row 1: aircraft at heading 0 (should point north, toward the cyan N arrows).
+     Row 2: same aircraft at heading 90 (should point east). Row 3: ships at heading 0.
+     One extra airliner flies east at 300 kt (dead reckoning + 5-min velocity leader). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NOCTUA models preview</title>
+<link rel="stylesheet" href="/static/vendor/cesium/Widgets/widgets.css">
+<style>html,body,#globe{margin:0;width:100%;height:100%;overflow:hidden;background:#03060a}
+#lbl{position:absolute;left:8px;top:8px;color:#c8d4de;font:12px monospace;background:#0008;padding:6px 8px;white-space:pre}</style>
+<script src="/static/vendor/cesium/Cesium.js"></script>
+</head>
+<body>
+<div id="globe"></div><div id="lbl"></div>
+<script type="module">
+import { Models3D, VectorLeaders, destination, aircraftModel, shipModel } from "/static/js/models3d.js";
+const C = Cesium;
+const viewer = new C.Viewer("globe", { baseLayer: false, geocoder: false, baseLayerPicker: false, timeline: false, animation: false,
+  homeButton: false, navigationHelpButton: false, sceneModePicker: false, fullscreenButton: false, infoBox: false, selectionIndicator: false,
+  requestRenderMode: true, maximumRenderTimeChange: Infinity });
+viewer.scene.globe.baseColor = C.Color.fromCssColorString("#1d3346");
+viewer.scene.skyAtmosphere.show = false;
+const LAT = 36.0, LON = -5.0;
+const at = (dn, de) => { const [a, b] = destination(LAT, LON, 0, dn); return destination(a, b, 90, de); };
+const AIR = [["F16", true], ["C17", true], ["B738", false], ["K35R", true], ["E3TF", true], ["H60", true], ["MQ9", true], ["GLF5", false]];
+const SHIP = [[{ is_mil: true, name: "USS CVN-78" }], [{ is_mil: true }], [{ type_code: "70" }], [{ type_code: "80" }], [{ type_code: "60" }], [{ type_code: "30" }]];
+const air = [], ships = [];
+AIR.forEach(([t, mil], i) => {
+  for (const [row, hdg] of [[0, 0], [1, 90]]) {
+    const [lat, lon] = at(250 - row * 120, (i - 3.5) * 90);
+    air.push({ id: t + "-" + hdg, lat, lon, alt_ft: 200, heading_deg: hdg, speed_kts: 0, type_code: t, is_mil: mil, high_priority: t === "F16" && hdg === 0 });
+  }
+});
+SHIP.forEach(([o], i) => { const [lat, lon] = at(-300, (i - 2.5) * 380); ships.push({ id: "s" + i, lat, lon, heading_deg: 0, speed_kts: 0, ...o }); });
+const [mlat, mlon] = at(500, -400);
+const mover = { id: "mover", lat: mlat, lon: mlon, alt_ft: 300, heading_deg: 90, speed_kts: 300, type_code: "A320", is_mil: false };
+air.push(mover);
+// north arrows
+const lines = viewer.scene.primitives.add(new C.PolylineCollection());
+for (let i = -4; i <= 4; i++) {
+  const [a1, b1] = at(-500, i * 160), [a2, b2] = at(420, i * 160);
+  lines.add({ positions: C.Cartesian3.fromDegreesArrayHeights([b1, a1, 1, b2, a2, 1]), width: 1, material: C.Material.fromType("Color", { color: C.Color.CYAN.withAlpha(0.25) }) });
+}
+const hidden = new Set();
+const models = new Models3D(viewer, { hideBillboard: (k, id) => hidden.add(k + id), showBillboard: (k, id) => hidden.delete(k + id) });
+const leaders = new VectorLeaders(viewer, { kinematics: models.kinematics });
+models.update(air, ships);
+models.setEnabled(true);
+leaders.update(air, "aircraft"); leaders.update(ships, "ships");
+document.getElementById("lbl").textContent = "row1 hdg 0 / row2 hdg 90: " + AIR.map(([t]) => t + "=" + aircraftModel({ type_code: t, is_mil: true })).join(" ") +
+  "\nships hdg 0: " + SHIP.map(([o]) => shipModel(o)).join(" ");
+// #air / #ships: top-down (north up) for heading checks; default: oblique overview
+const VIEWS = { air: [190, 900, -90], ships: [-300, 2600, -90], "": [-1300, 700, -38] };
+const [vn, va, vp] = VIEWS[location.hash.slice(1)] || VIEWS[""];
+const [clat, clon] = at(vn, 0);
+viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(clon, clat, va), orientation: { heading: 0, pitch: C.Math.toRadians(vp), roll: 0 } });
+window.__models = models; window.__hidden = hidden; window.__viewer = viewer;
+// second fix for the mover after 3 s: turned right 20 deg -> bank, blend toward new position
+setTimeout(() => { const [a, b] = destination(mover.lat, mover.lon, 90, 300 * 0.5144 * 3.2); Object.assign(mover, { lat: a, lon: b, heading_deg: 110 }); models.update([...air.slice(0, -1), { ...mover }], ships); }, 3000);
+</script>
+</body>
+</html>
