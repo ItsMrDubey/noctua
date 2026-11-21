@@ -1,5 +1,6 @@
 import { fetchJson, poll } from "/static/js/api.js";
 import { AircraftLayer, ShipLayer, FireLayer, QuakeLayer, makeImagery } from "/static/js/layers.js";
+import { TrackList } from "/static/js/tracklist.js";
 import { Trails } from "/static/js/trails.js";
 import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
@@ -127,6 +128,7 @@ async function main() {
     setFollow(false);
     selected = { kind, id };
     $("right").classList.remove("hidden");
+    tracklist.setVisible(false);
     followBtn.classList.toggle("hidden", kind !== "aircraft");
     refreshSelected();
     trails.clearSelected();
@@ -140,21 +142,32 @@ async function main() {
   }
   $("d-fly").addEventListener("click", () => selected && flyToItem(selected.kind, selected.id));
   followBtn.addEventListener("click", () => setFollow(!following));
-  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; trails.clearSelected(); $("right").classList.add("hidden"); });
+  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; trails.clearSelected(); $("right").classList.add("hidden"); tracklist.setVisible(true); tracklist.render(true); });
 
+  const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); });
+  tracklist.render(true);
   const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
   handler.setInputAction((click) => {
-    const picked = scene.pick(click.position);
-    if (!Cesium.defined(picked) || !picked.primitive) return;
-    if (picked.id && picked.id.h3) {
+    let hits = [];
+    try { hits = scene.drillPick(click.position, 25, 16, 16); } catch (e) { hits = []; }
+    if (!hits.length) { const p = scene.pick(click.position, 16, 16); if (Cesium.defined(p)) hits = [p]; }
+    let best = null, bestD = Infinity, densityHit = null;
+    for (const picked of hits) {
+      if (!picked || !picked.primitive) continue;
+      if (picked.id && picked.id.h3) { densityHit = densityHit || picked.id; continue; }
+      for (const l of all) {
+        if (l.map.get(picked.id) !== picked.primitive) continue;
+        const w = Cesium.SceneTransforms.worldToWindowCoordinates(scene, picked.primitive.position);
+        const d = w ? Cesium.Cartesian2.distance(w, click.position) : 1e9;
+        if (d < bestD) { bestD = d; best = { kind: l.kind, id: picked.id }; }
+      }
+    }
+    if (best) { select(best.kind, best.id); return; }
+    if (densityHit) {
       const tip = $("pick-tip");
-      tip.textContent = picked.id.density + " density: " + picked.id.count.toLocaleString() + " (H3 " + picked.id.h3 + ")";
+      tip.textContent = densityHit.density + " density: " + densityHit.count.toLocaleString() + " (H3 " + densityHit.h3 + ")";
       tip.classList.remove("hidden");
       clearTimeout(tip._t); tip._t = setTimeout(() => tip.classList.add("hidden"), 5000);
-      return;
-    }
-    for (const l of all) {
-      if (l.map.get(picked.id) === picked.primitive) { select(l.kind, picked.id); return; }
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
   // user dragging away from a tracked entity cancels follow
@@ -188,6 +201,19 @@ async function main() {
     if (e.key === "Enter") { const m = matches(); if (m.length) go(m[0]); }
     else if (e.key === "Escape") sOut.classList.add("hidden");
   });
+
+  // ---- Feature detection: older backends lack the v2 routes; disable those controls ----
+  const disable = (ids, why) => {
+    for (const id of ids) { const el = $(id); if (!el) continue; el.disabled = true; (el.closest("label") || el).title = why; }
+  };
+  fetchJson("/openapi.json", 8000).then((spec) => {
+    const paths = Object.keys((spec && spec.paths) || {});
+    if (!paths.length) return;
+    const has = (p) => paths.some((x) => x.startsWith(p));
+    if (!has("/api/density")) disable(["d-aircraft", "d-ships", "d-fires", "d-quakes", "d-res"], "Not supported by this backend version");
+    if (!has("/api/tracks")) disable(["t-miltrails"], "Not supported by this backend version");
+    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
+  }).catch(() => { /* openapi unavailable: leave controls enabled */ });
 
   // ---- Replay (time slider) ----
   let replayBusy = false, replayPending = null;

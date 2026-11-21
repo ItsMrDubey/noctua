@@ -55,15 +55,16 @@ export class AircraftLayer extends Layer {
   constructor(scene) { super(scene, new C.BillboardCollection({ scene })); this.kind = "aircraft"; }
   make() {
     return this.col.add({
-      image: PLANE, alignedAxis: C.Cartesian3.UNIT_Z, width: 22, height: 22,
-      scaleByDistance: new C.NearFarScalar(1e6, 1.0, 2e7, 0.35),
-      translucencyByDistance: new C.NearFarScalar(1e6, 1.0, 3e7, 0.6),
+      image: PLANE, alignedAxis: C.Cartesian3.UNIT_Z, width: 30, height: 30,
+      scaleByDistance: new C.NearFarScalar(5e5, 1.2, 2.5e7, 0.75),
+      translucencyByDistance: new C.NearFarScalar(1e6, 1.0, 3e7, 0.9),
     });
   }
   apply(p, it) {
     p.position = pos(it.lat, it.lon, (it.alt_ft || 0) * 0.3048);
     p.rotation = -C.Math.toRadians(it.heading_deg || 0);
     p.color = it.high_priority ? AIR_RED : it.is_mil ? AIR_ORANGE : AIR_WHITE;
+    p.width = p.height = it.high_priority ? 36 : 30;
   }
 }
 
@@ -76,10 +77,12 @@ export class ShipLayer extends PointLayer {
   constructor(scene) { super(scene); this.kind = "ships"; }
   apply(p, it) {
     p.position = pos(it.lat, it.lon, 0);
-    p.pixelSize = 4;
+    p.pixelSize = 6;
+    p.outlineColor = C.Color.BLACK.withAlpha(0.7);
+    p.outlineWidth = 1;
     p.color = it.is_mil ? SHIP_RED : SHIP_CYAN;
-    p.scaleByDistance = new C.NearFarScalar(1e6, 1.2, 2e7, 0.6);
-    p.translucencyByDistance = new C.NearFarScalar(2e6, 1.0, 3e7, 0.5);
+    p.scaleByDistance = new C.NearFarScalar(1e6, 1.2, 2e7, 1.0);
+    p.translucencyByDistance = new C.NearFarScalar(2e6, 1.0, 3e7, 0.9);
   }
 }
 
@@ -89,9 +92,9 @@ export class FireLayer extends PointLayer {
     p.position = pos(it.lat, it.lon, 0);
     const t = Math.min(1, Math.max(0, (it.frp || 0) / 100));
     p.color = C.Color.fromHsl(0.09 * (1 - t), 1, 0.5, 0.9); // orange -> red
-    p.pixelSize = 3 + 3 * t;
-    p.scaleByDistance = new C.NearFarScalar(1e6, 1.2, 2e7, 0.4);
-    p.translucencyByDistance = new C.NearFarScalar(1e6, 1.0, 2.5e7, 0.35);
+    p.pixelSize = 6 + 3 * t;
+    p.scaleByDistance = new C.NearFarScalar(1e6, 1.2, 2e7, 1.0);
+    p.translucencyByDistance = new C.NearFarScalar(1e6, 1.0, 2.5e7, 0.9);
   }
 }
 
@@ -102,8 +105,8 @@ export class QuakeLayer extends PointLayer {
     p.color = C.Color.fromCssColorString("#ffe14a").withAlpha(0.85);
     p.outlineColor = C.Color.BLACK;
     p.outlineWidth = 1;
-    p.pixelSize = Math.max(5, 3 + (it.mag || 0) * 2.2);
-    p.scaleByDistance = new C.NearFarScalar(1e6, 1.3, 2e7, 0.6);
+    p.pixelSize = Math.max(7, 3 + (it.mag || 0) * 2.2);
+    p.scaleByDistance = new C.NearFarScalar(1e6, 1.3, 2e7, 1.0);
   }
 }
 
