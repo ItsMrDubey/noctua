@@ -1,7 +1,7 @@
 """Wires stores, ingestor, scheduler and HTTP client into one runnable unit."""
 
 import asyncio
-import contextlib
+import logging
 from datetime import timedelta
 
 import httpx
@@ -14,6 +14,8 @@ from osint.core.scheduler import Scheduler
 from osint.pipeline.ingest import Ingestor
 from osint.store.lake import Lake
 from osint.store.sqlite import SqliteStore
+
+log = logging.getLogger(__name__)
 
 DEDUPE_WINDOW = timedelta(hours=48)
 USER_AGENT = "osint-poc/0.1"
@@ -36,24 +38,47 @@ class Runtime:
         for c in collectors:
             self.store.register_source(c.name, c.domain, c.licence, c.commercial_ok)
         self._tasks: list[asyncio.Task] = []
+        self._ingest_task: asyncio.Task | None = None
+        self.maintenance_interval_s = 600.0
+
+    @property
+    def ingestor_alive(self) -> bool:
+        return self._ingest_task is not None and not self._ingest_task.done()
 
     async def start(self) -> None:
         await asyncio.to_thread(self.ingestor.warm_start, utcnow() - DEDUPE_WINDOW)
-        self._tasks.append(asyncio.create_task(self.ingestor.run(), name="ingestor"))
+        self._ingest_task = asyncio.create_task(self.ingestor.run(), name="ingestor")
+        self._tasks.append(self._ingest_task)
         self._tasks.append(asyncio.create_task(self._maintenance(), name="maintenance"))
         await self.scheduler.start()
 
     async def _maintenance(self) -> None:
         while True:
-            await asyncio.sleep(600)
-            self.ingestor.prune(utcnow() - DEDUPE_WINDOW)
+            await asyncio.sleep(self.maintenance_interval_s)
+            try:
+                self.ingestor.prune(utcnow() - DEDUPE_WINDOW)
+            except Exception:
+                log.exception("maintenance pass failed")
 
     async def stop(self) -> None:
-        await self.scheduler.stop()
-        for t in self._tasks:
-            t.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await t
-        await self.ingestor.stop()  # drains the queue and flushes buffers
-        await self.http.aclose()
-        self.store.close()
+        try:
+            try:
+                await self.scheduler.stop()
+            except Exception:
+                log.exception("scheduler stop failed")
+            for t in self._tasks:
+                t.cancel()
+            for t in self._tasks:
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    log.exception("background task %s had died", t.get_name())
+            self._tasks.clear()
+            await self.ingestor.stop()  # drains the queue and flushes buffers
+        finally:
+            try:
+                await self.http.aclose()
+            finally:
+                self.store.close()

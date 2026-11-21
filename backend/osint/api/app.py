@@ -13,9 +13,11 @@ from osint.runtime import Runtime
 def create_app(runtime: Runtime) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        await runtime.start()
-        yield
-        await runtime.stop()
+        try:
+            await runtime.start()
+            yield
+        finally:
+            await runtime.stop()
 
     app = FastAPI(title="OSINT", version="0.1.0", lifespan=lifespan)
 
@@ -26,7 +28,14 @@ def create_app(runtime: Runtime) -> FastAPI:
             d = asdict(h)
             d["last_success"] = h.last_success.isoformat() if h.last_success else None
             sources[name] = d
-        return {"status": "ok", "sources": sources}
+        ingestor = {
+            "alive": runtime.ingestor_alive,
+            "errors": runtime.ingestor.errors,
+            "queue_depth": runtime.ingestor.queue.qsize(),
+        }
+        all_down = bool(sources) and all(s["status"] == "down" for s in sources.values())
+        status = "ok" if ingestor["alive"] and not all_down else "degraded"
+        return {"status": status, "sources": sources, "ingestor": ingestor}
 
     @app.get("/metrics", response_class=PlainTextResponse)
     def metrics() -> str:
