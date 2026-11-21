@@ -22,7 +22,7 @@ class Layer {
   }
   set show(v) { this.col.show = v; }
   get show() { return this.col.show; }
-  sync(list) {
+  upsert(list) {
     const seen = new Set();
     for (const it of list) {
       if (it == null || it.id == null || it.lat == null || it.lon == null) continue;
@@ -32,11 +32,19 @@ class Layer {
       if (!p) { p = this.make(it); this.map.set(it.id, p); }
       this.apply(p, it);
       p.id = it.id;
+      p.show = this.filter(it);
     }
-    for (const [id, p] of this.map) {
-      if (!seen.has(id)) { this.col.remove(p); this.map.delete(id); this.items.delete(id); }
+    return seen;
+  }
+  removeIds(ids) {
+    for (const id of ids) {
+      const p = this.map.get(id);
+      if (p) { this.col.remove(p); this.map.delete(id); this.items.delete(id); }
     }
-    this.refilter();
+  }
+  sync(list) {
+    const seen = this.upsert(list);
+    this.removeIds([...this.map.keys()].filter((id) => !seen.has(id)));
   }
   refilter() { for (const [id, p] of this.map) p.show = this.filter(this.items.get(id)); }
   visibleItems() { return this.col.show ? [...this.items.values()].filter(this.filter) : []; }

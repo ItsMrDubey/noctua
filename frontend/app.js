@@ -1,5 +1,9 @@
 import { fetchJson, poll } from "/static/js/api.js";
 import { AircraftLayer, ShipLayer, FireLayer, QuakeLayer, makeImagery } from "/static/js/layers.js";
+import { Trails } from "/static/js/trails.js";
+import { DensityLayer } from "/static/js/density.js";
+import { Timeline } from "/static/js/timeline.js";
+import { LiveSocket } from "/static/js/livesocket.js";
 import { $, esc, renderStatus, startClock, detailsHtml } from "/static/js/ui.js";
 
 const errors = {};
@@ -72,12 +76,24 @@ async function main() {
     if (err) errors[name] = err; else delete errors[name];
     renderStatus(lastStatus, errors);
   };
+  let replayAt = null, live = null;
+  const trails = new Trails(scene);
+  const dens = { aircraft: new DensityLayer(scene, "aircraft"), ships: new DensityLayer(scene, "ships"), fires: new DensityLayer(scene, "fires"), quakes: new DensityLayer(scene, "quakes") };
+  for (const k of Object.keys(dens)) $("d-" + k).addEventListener("change", (e) => dens[k].setOn(e.target.checked));
+  $("d-res").addEventListener("change", (e) => { for (const d of Object.values(dens)) d.setRes(+e.target.value); });
+  $("t-miltrails").addEventListener("change", (e) => trails.setMil(e.target.checked));
+  const wsLive = () => !!(live && live.isOpen());
   const feed = (kind, url, layer) => async () => {
+    if (replayAt || ((kind === "aircraft" || kind === "ships") && wsLive())) return;
     const data = await fetchJson(url);
     const items = Array.isArray(data && data.items) ? data.items : [];
     layer.sync(items);
     setCount(kind, items.length);
     if (selected && selected.kind === kind) refreshSelected();
+  };
+  const trailSelected = (force) => {
+    if (!selected || (selected.kind !== "aircraft" && selected.kind !== "ships")) return;
+    trails.showSelected(selected.kind, selected.id, byKind[selected.kind].items.get(selected.id), force);
   };
 
   // ---- Selection / details ----
@@ -113,6 +129,8 @@ async function main() {
     $("right").classList.remove("hidden");
     followBtn.classList.toggle("hidden", kind !== "aircraft");
     refreshSelected();
+    trails.clearSelected();
+    trailSelected(true);
   }
   function flyToItem(kind, id) {
     const it = byKind[kind].items.get(id);
@@ -122,12 +140,19 @@ async function main() {
   }
   $("d-fly").addEventListener("click", () => selected && flyToItem(selected.kind, selected.id));
   followBtn.addEventListener("click", () => setFollow(!following));
-  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; $("right").classList.add("hidden"); });
+  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; trails.clearSelected(); $("right").classList.add("hidden"); });
 
   const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
   handler.setInputAction((click) => {
     const picked = scene.pick(click.position);
     if (!Cesium.defined(picked) || !picked.primitive) return;
+    if (picked.id && picked.id.h3) {
+      const tip = $("pick-tip");
+      tip.textContent = picked.id.density + " density: " + picked.id.count.toLocaleString() + " (H3 " + picked.id.h3 + ")";
+      tip.classList.remove("hidden");
+      clearTimeout(tip._t); tip._t = setTimeout(() => tip.classList.add("hidden"), 5000);
+      return;
+    }
     for (const l of all) {
       if (l.map.get(picked.id) === picked.primitive) { select(l.kind, picked.id); return; }
     }
@@ -164,14 +189,63 @@ async function main() {
     else if (e.key === "Escape") sOut.classList.add("hidden");
   });
 
+  // ---- Replay (time slider) ----
+  let replayBusy = false, replayPending = null;
+  async function renderReplay(at) {
+    if (replayBusy) { replayPending = at; return; }
+    replayBusy = true;
+    try {
+      const iso = encodeURIComponent(at.toISOString());
+      const [a, sh, fi, qk] = await Promise.all([
+        fetchJson("/api/snapshot?kind=air&window_min=10&at=" + iso),
+        fetchJson("/api/snapshot?kind=sea&window_min=30&at=" + iso),
+        fetchJson("/api/layers/fires?hours=24&until=" + iso),
+        fetchJson("/api/layers/quakes?hours=24&until=" + iso),
+      ]);
+      if (!replayAt) return; // went live meanwhile
+      for (const [k, d] of [["aircraft", a], ["ships", sh], ["fires", fi], ["quakes", qk]]) {
+        const items = Array.isArray(d && d.items) ? d.items : [];
+        byKind[k].sync(items); setCount(k, items.length);
+      }
+      if (selected) refreshSelected();
+    } catch (e) { onErr("replay", String((e && e.message) || e)); }
+    finally {
+      replayBusy = false;
+      onErr("replay", null);
+      if (replayPending && replayAt) { const n = replayPending; replayPending = null; renderReplay(n); }
+    }
+  }
+  new Timeline((at) => {
+    replayAt = at;
+    if (at) renderReplay(at);
+    else { replayPending = null; ticks.forEach((t) => t().catch(() => {})); }
+  });
+
+  // ---- WebSocket live push (falls back to polling while closed) ----
+  live = new LiveSocket((m) => {
+    if (replayAt || !m) return;
+    if (m.type === "snapshot") { air.sync(m.aircraft || []); ships.sync(m.ships || []); }
+    else if (m.type === "delta") {
+      air.upsert(m.aircraft || []); ships.upsert(m.ships || []);
+      const rm = m.removed || [];
+      air.removeIds(rm); ships.removeIds(rm);
+    } else return;
+    setCount("aircraft", air.items.size); setCount("ships", ships.items.size);
+    if (selected && (selected.kind === "aircraft" || selected.kind === "ships")) { refreshSelected(); trailSelected(false); }
+  });
+
   // ---- Polling ----
+  const ticks = [
+    feed("aircraft", "/api/layers/aircraft", air), feed("ships", "/api/layers/ships", ships),
+    feed("fires", "/api/layers/fires?hours=24", fires), feed("quakes", "/api/layers/quakes?hours=24", quakes),
+  ];
   poll("status", 5000, async () => { lastStatus = await fetchJson("/api/status", 8000); }, onErr);
-  poll("aircraft", 10000, feed("aircraft", "/api/layers/aircraft", air), onErr);
-  poll("ships", 30000, feed("ships", "/api/layers/ships", ships), onErr);
-  poll("fires", 300000, feed("fires", "/api/layers/fires?hours=24", fires), onErr);
-  poll("quakes", 300000, feed("quakes", "/api/layers/quakes?hours=24", quakes), onErr);
+  poll("aircraft", 10000, ticks[0], onErr);
+  poll("ships", 30000, ticks[1], onErr);
+  poll("fires", 300000, ticks[2], onErr);
+  poll("quakes", 300000, ticks[3], onErr);
   // refresh relative "last seen" in the details panel
-  setInterval(() => { if (selected) refreshSelected(); }, 5000);
+  setInterval(() => { if (selected) { refreshSelected(); if (!replayAt) trailSelected(false); } }, 5000);
 }
 
 main().catch((e) => { console.error(e); const s = document.getElementById("sources"); if (s) s.textContent = "UI error: " + e.message; });

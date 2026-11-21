@@ -31,6 +31,14 @@
   <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw" style="--c:#ff3b3b"></span>Military ships only</label>
   <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a00"></span>Fires 24 h<b id="c-fires">–</b></label>
   <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw" style="--c:#ffe14a"></span>Quakes 24 h<b id="c-quakes">–</b></label>
+  <h3>Trails</h3>
+  <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw" style="--c:#ff9a1f"></span>Show trails for all military aircraft (last 1 h)</label>
+  <h3>Density (H3)</h3>
+  <label class="row"><input type="checkbox" id="d-aircraft"><span class="sw" style="--c:#21918c"></span>Aircraft</label>
+  <label class="row"><input type="checkbox" id="d-ships"><span class="sw" style="--c:#21918c"></span>Ships</label>
+  <label class="row"><input type="checkbox" id="d-fires"><span class="sw" style="--c:#21918c"></span>Fires</label>
+  <label class="row"><input type="checkbox" id="d-quakes"><span class="sw" style="--c:#21918c"></span>Quakes</label>
+  <label class="row date">Resolution <select id="d-res"><option value="3">3 (coarse)</option><option value="4">4</option><option value="5">5 (fine)</option></select></label>
   <h3>Imagery</h3>
   <label class="row"><input type="checkbox" id="t-labels"><span class="sw" style="--c:#aaa"></span>Labels overlay</label>
   <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
@@ -47,6 +55,18 @@
     <button id="d-follow" class="hidden">Follow: off</button>
   </div>
 </aside>
+
+<div id="timeline" class="panel">
+  <span id="tl-mode" class="mode">LIVE</span>
+  <button id="tl-live" class="on">Live</button>
+  <button id="tl-play">Play</button>
+  <select id="tl-speed"><option value="1">1 min/s</option><option value="10" selected>10 min/s</option><option value="60">1 h/s</option></select>
+  <span id="tl-start" class="lbl"></span>
+  <input type="range" id="tl-slider" min="0" max="2880" value="2880" step="1">
+  <span id="tl-end" class="lbl">now</span>
+</div>
+
+<div id="pick-tip" class="panel hidden"></div>
 
 <footer id="attrib" class="panel">Imagery: Esri / NASA GIBS &bull; Data: ADS-B aggregators, AISStream, NASA FIRMS, USGS</footer>
 
