@@ -51,10 +51,22 @@ def env(tmp_path):
     store = SqliteStore(tmp_path / "s.sqlite")
     m = Metrics()
     det = SensorEventDetector(store, lake, m, SensorEventsConfig.from_file(
-        ROOT / "config" / "corroboration.yaml"), clock=lambda: NOW)
+        ROOT / "config" / "corroboration.yaml"), clock=lambda: NOW, airports=[], bases=[])
     yield lake, store, det, m
     store.close()
     lake.close()
+
+
+def history(ids_where, days=4, n=1, prefix="h"):
+    """Baseline: ``n`` aircraft at each place in both 30-min buckets of the 11:00 hour (the
+    hour of the 11:30-12:00 detection window) on each of ``days`` previous days."""
+    rows = []
+    for d in range(1, days + 1):
+        for minute in (10, 40):
+            ts = NOW.replace(hour=11, minute=minute) - timedelta(days=d)
+            for w, where in enumerate(ids_where):
+                rows += [apos(f"air:{prefix}{w}_{d}_{minute}_{i}", where, ts) for i in range(n)]
+    return rows
 
 
 def sensor_events(store, detector=None):
@@ -132,9 +144,10 @@ def test_concentration_above_baseline_only(env):
     store.upsert_tracks([TrackInfo(track_id=f"air:{p}{i}", kind="air", ident=f"{p}{i}",
                                    type_code="C17", is_mil=True)
                          for p in ("m", "b") for i in range(10)], NOW)
-    rows = _fleet(9, NOW - timedelta(minutes=10))  # 9 aircraft now at BASE, none before
-    # at `other` the same 9 aircraft are there every 30 min for two days: that is normal
-    for k in range(1, 96):
+    rows = _fleet(9, NOW - timedelta(minutes=10))  # 9 aircraft now at BASE, little before
+    rows += history([BASE])
+    # at `other` the same 9 aircraft are there every 30 min for four days: that is normal
+    for k in range(1, 192):
         rows += _fleet(9, NOW - timedelta(minutes=30 * k + 5), "b", other)
     rows += _fleet(9, NOW - timedelta(minutes=10), "b", other)
     rows += [apos("air:m9", BASE, NOW - timedelta(minutes=5), alt=0)]  # parked: ignored
@@ -151,7 +164,7 @@ def test_concentration_extends_instead_of_duplicating(env):
     lake, store, det, _ = env
     store.upsert_tracks([TrackInfo(track_id=f"air:m{i}", kind="air", ident=f"m{i}",
                                    type_code="C17", is_mil=True) for i in range(8)], NOW)
-    lake.write("positions", _fleet(8, NOW - timedelta(minutes=10)))
+    lake.write("positions", _fleet(8, NOW - timedelta(minutes=10)) + history([BASE]))
     det.run_once()
     later = NOW + timedelta(minutes=5)
     det.clock = lambda: later
@@ -245,3 +258,125 @@ def test_wire_sets_runtime_attribute(tmp_path):
     d = wire(rt)
     assert rt.sensor_events is d and d.store is rt.store
     rt.store.close()
+
+
+# ------------------------------------------- false-positive guards (airports, trainers)
+
+DXB = (25.25, 55.36)
+
+
+def sites(det, airports=(), bases=()):
+    det._airports, det._bases, det._sites_cache = list(airports), list(bases), None
+
+
+def airport(where, typ="large_airport", mil=False):
+    return {"lat": where[0], "lon": where[1], "type": typ, "is_military": mil}
+
+
+def _fly(lake, track, centre, minutes, alt, leg=30.0, r=8.0, start_min=90):
+    t0 = NOW - timedelta(minutes=start_min)
+    lake.write("positions", [
+        apos(track, offset(*centre, *reversed(racetrack(12.3 * i, leg, r))),
+             t0 + timedelta(minutes=i), alt=alt) for i in range(minutes)])
+
+
+def test_orbit_ignores_airport_holding_stack(env):
+    lake, store, det, _ = env
+    sites(det, [airport(DXB)])
+    store.upsert_tracks([
+        TrackInfo(track_id="air:e1", kind="air", ident="e1", type_code="A332",
+                  name="UAE123", is_mil=False),
+        TrackInfo(track_id="air:e2", kind="air", ident="e2", type_code="A332",
+                  name="ZABEEL04", is_mil=True),  # misclassified airliner
+        TrackInfo(track_id="air:k1", kind="air", ident="k1", type_code="K35R",
+                  name="QID1", is_mil=True)], NOW)
+    near = offset(*DXB, 15, 10)
+    _fly(lake, "air:e1", near, 60, 8000)
+    _fly(lake, "air:e2", near, 60, 8000)
+    _fly(lake, "air:k1", near, 40, 8000, start_min=45)  # low, near airport, < 45 min
+    assert det.run_once()["created"] == {}
+
+
+def test_orbit_dual_use_type_needs_military_marker(env):
+    lake, store, det, _ = env
+    store.upsert_tracks([
+        TrackInfo(track_id="air:e2", kind="air", ident="e2", type_code="A332",
+                  name="ZABEEL04", is_mil=True),
+        TrackInfo(track_id="air:m1", kind="air", ident="m1", type_code="A332",
+                  name="MRTT12", is_mil=True)], NOW)
+    _fly(lake, "air:e2", (10.0, 10.0), 90, 25000)
+    assert det.run_once()["created"] == {}
+    _fly(lake, "air:m1", (10.0, 10.0), 90, 25000)
+    assert det.run_once()["created"] == {"orbit": 1}
+
+
+def test_orbit_kc135_over_sea_far_from_airport(env):
+    lake, store, det, _ = env
+    sites(det, [airport(DXB)])
+    store.upsert_tracks([TrackInfo(track_id="air:k1", kind="air", ident="k1",
+                                   type_code="K35R", name="QID1", is_mil=True)], NOW)
+    _fly(lake, "air:k1", offset(*DXB, km_east=200), 90, 25000)
+    assert det.run_once()["created"] == {"orbit": 1}
+
+
+def test_orbit_isr_low_near_home_base_for_an_hour_allowed(env):
+    lake, store, det, _ = env
+    sites(det, [airport(DXB)])
+    store.upsert_tracks([TrackInfo(track_id="air:p1", kind="air", ident="p1",
+                                   type_code="P8", name="PAT1", is_mil=True)], NOW)
+    _fly(lake, "air:p1", offset(*DXB, 20), 90, 6000)
+    assert det.run_once()["created"] == {"orbit": 1}
+
+
+def test_orbit_too_small_for_aar_isr(env):
+    lake, store, det, _ = env
+    store.upsert_tracks([TrackInfo(track_id="air:p1", kind="air", ident="p1",
+                                   type_code="P8", is_mil=True)], NOW)
+    _fly(lake, "air:p1", (10.0, 10.0), 90, 25000, leg=5.0, r=4.0)  # ~ 14 km axis
+    assert det.run_once()["created"] == {}
+
+
+def _mil(store, prefix, n, typ, category=None):
+    store.upsert_tracks([TrackInfo(track_id=f"air:{prefix}{i}", kind="air", ident=f"{prefix}{i}",
+                                   type_code=typ, category=category, is_mil=True)
+                         for i in range(n)], NOW)
+
+
+def test_concentration_ignores_trainers(env):
+    lake, store, det, _ = env
+    cc = (27.7, -97.4)
+    _mil(store, "t", 4, "T6", "Trainer")
+    _mil(store, "x", 4, "TEX2")  # type alone is enough
+    lake.write("positions", _fleet(4, NOW - timedelta(minutes=10), "t", cc)
+               + _fleet(4, NOW - timedelta(minutes=10), "x", cc) + history([cc]))
+    assert det.run_once()["created"] == {}
+
+
+def test_concentration_fighter_surge_away_from_bases(env):
+    lake, store, det, _ = env
+    sites(det, bases=[{"lat": BASE[0], "lon": BASE[1] + 4, "type": "airbase"}])  # ~ 370 km
+    _mil(store, "f", 8, "F16")
+    lake.write("positions", _fleet(8, NOW - timedelta(minutes=10), "f")
+               + history([BASE], n=2))  # baseline mean 2 -> 8 is 4x
+    assert det.run_once()["created"] == {"concentration": 1}
+
+
+def test_concentration_near_military_airfield_needs_3x(env):
+    lake, store, det, _ = env
+    sites(det, bases=[{"lat": BASE[0], "lon": BASE[1], "type": "airbase"}])
+    _mil(store, "f", 8, "F16")
+    lake.write("positions", _fleet(8, NOW - timedelta(minutes=10), "f")
+               + history([BASE], n=3))  # baseline mean 3: 8 is 2.7x -> suppressed
+    assert det.run_once()["created"] == {}
+    sites(det, bases=[{"lat": BASE[0], "lon": BASE[1], "type": "airbase"}])
+    det._baseline_at = None
+    _mil(store, "g", 9, "F16")
+    lake.write("positions", _fleet(9, NOW - timedelta(minutes=5), "g"))  # 17 now vs 3 -> 5.7x
+    assert det.run_once()["created"] == {"concentration": 1}
+
+
+def test_concentration_needs_three_days_of_baseline(env):
+    lake, store, det, _ = env
+    _mil(store, "f", 8, "F16")
+    lake.write("positions", _fleet(8, NOW - timedelta(minutes=10), "f") + history([BASE], days=2))
+    assert det.run_once()["created"] == {}

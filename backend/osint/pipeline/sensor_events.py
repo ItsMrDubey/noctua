@@ -11,10 +11,14 @@ Detectors (thresholds in ``config/corroboration.yaml`` -> ``sensor_events``):
   gently curving flights accumulate far less than 540 deg in an hour.
 * ``concentration`` — >= ``min_aircraft`` distinct airborne (>= ``min_alt_ft``) military
   aircraft within one H3 res-3 cell plus its neighbours in the last ``window_min`` (30 min),
-  and at least ``ratio`` x the area's baseline + ``min_excess``. Baseline = mean distinct
-  airborne aircraft per 30-min bucket over the previous ``baseline_days`` (7) in those cells
-  (all air tracks, i.e. conservative: >= the military-only baseline), refreshed hourly.
-  Overlapping areas are suppressed in favour of the densest cell.
+  and above the same-hour-of-day baseline (mean + ``sigma`` x std, >= ``ratio`` x mean,
+  + ``min_excess``) over the previous ``baseline_days`` (7) in those cells (all air tracks,
+  i.e. conservative), refreshed hourly. Trainers are not counted; < ``min_baseline_days`` (3)
+  of baseline data means no event; within ``airfield_radius_km`` of a military airfield the
+  excess must be >= ``airfield_ratio`` x baseline. Overlapping areas favour the densest cell.
+  The orbit detector ignores holding patterns (low altitude near a large/medium airport,
+  unless > 45 min), requires a >= 30 km long axis, and counts dual-use airliner types
+  (A332...) only with a military callsign/operator marker.
 * ``ais_gap`` — a ship whose consecutive AIS positions are >= ``min_gap_h`` (6 h) apart,
   with an implied speed across the gap <= ``max_drift_kts`` (else a bad fix), while at least
   ``min_coverage_tracks`` other ships kept reporting in the same res-3 area during the gap
@@ -36,6 +40,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -51,6 +56,7 @@ import yaml
 from osint.config import ROOT
 from osint.core.geo import haversine_km, utcnow
 from osint.core.metrics import Metrics
+from osint.enrich.mil_types import TRAINERS
 from osint.pipeline.cluster import CLUSTER_VERSION, new_ulid
 from osint.pipeline.corroborate import ts_from_us
 from osint.store.lake import Lake
@@ -108,6 +114,11 @@ def _centroid(pts: list[tuple[float, float]]) -> tuple[float, float]:
     sx = sum(math.cos(math.radians(p[1])) for p in pts)
     sy = sum(math.sin(math.radians(p[1])) for p in pts)
     return lat, math.degrees(math.atan2(sy, sx))
+
+
+def _long_axis_km(win: list[tuple]) -> float:
+    pts = win[::max(1, len(win) // 60)]
+    return max((haversine_km(a[1], a[2], b[1], b[2]) for a in pts for b in pts), default=0.0)
 
 
 def _cell3(lat: float, lon: float) -> str:
@@ -172,13 +183,17 @@ def orbit_turn(points: list[tuple[datetime, float, float, float | None]],
 class SensorEventDetector:
     def __init__(self, store: SqliteStore, lake: Lake, metrics: Metrics | None = None,
                  config: SensorEventsConfig | None = None, *,
-                 clock: Callable[[], datetime] = utcnow) -> None:
+                 clock: Callable[[], datetime] = utcnow,
+                 airports: list[dict] | None = None,
+                 bases: list[dict] | None = None) -> None:
         self.store = store
         self.lake = lake
         self.metrics = metrics or Metrics()
         self.cfg = config or SensorEventsConfig.from_file()
         self.clock = clock
-        self._baseline: dict[str, float] = {}
+        self._airports, self._bases = airports, bases
+        self._sites_cache: tuple[list, list] | None = None
+        self._baseline: dict[str, dict[tuple[int, int], dict[int, int]]] = {}
         self._baseline_at: datetime | None = None
         self._stop = asyncio.Event()
         self.passes = 0
@@ -227,26 +242,52 @@ class SensorEventDetector:
             "WHERE kind = 'air' AND ts >= ? AND ts <= ? ORDER BY track_id, ts",
             [since, until], start=since, end=until)
 
+    def _sites(self) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """(large/medium airports, military airfields) as (lat, lon); lazily from the
+        reference data unless injected. Missing reference data -> empty (no suppression)."""
+        if self._sites_cache is None:
+            airports, bases = self._airports, self._bases
+            if airports is None or bases is None:
+                from osint.reference.loader import default_dir, load_airports, load_bases
+                if airports is None:
+                    airports = load_airports(default_dir() / "airports.csv")
+                if bases is None:
+                    bases = load_bases()
+            civil = [(a["lat"], a["lon"]) for a in airports
+                     if a.get("type") in ("large_airport", "medium_airport")]
+            mil = [(a["lat"], a["lon"]) for a in airports if a.get("is_military")]
+            mil += [(b["lat"], b["lon"]) for b in bases if b.get("type") == "airbase"]
+            self._sites_cache = (civil, mil)
+        return self._sites_cache
+
     def detect_orbit(self, now: datetime) -> list[Detection]:
         c = self.cfg.orbit
         rows = self._air_positions(now - timedelta(minutes=_g(c, "lookback_min", 120)), now)
         series: dict[str, list] = defaultdict(list)
+        alts: dict[str, list] = defaultdict(list)
         for track, us, lat, lon, hd, alt, _ in rows:
             if alt is not None and alt < 500:
                 continue  # taxiing / parked
             series[track].append((ts_from_us(us), lat, lon, hd))
+            alts[track].append(alt)
         info = self.store.get_tracks(sorted(series))
         types = {str(t).upper() for t in c.get("types") or ()}
         cats = {str(t) for t in c.get("categories") or ()}
         window = timedelta(minutes=_g(c, "window_min", 60))
         max_gap = timedelta(minutes=_g(c, "max_gap_min", 10))
         min_turn, max_r = _g(c, "min_turn_deg", 540), _g(c, "max_radius_km", 100)
+        dual = {str(t).upper() for t in c.get("dual_use_types") or ()}
+        mil_re = re.compile(str(c.get("mil_marker_re") or r"$^"), re.IGNORECASE)
+        airports, _ = self._sites()
         hits = []
         for track, pts in series.items():
             t = info.get(track) or {}
-            if not t.get("is_mil") or not (
-                    str(t.get("type_code") or "").upper() in types or t.get("category") in cats):
+            tcode = str(t.get("type_code") or "").upper()
+            if not t.get("is_mil") or not (tcode in types or t.get("category") in cats):
                 continue
+            if tcode in dual and not mil_re.search(
+                    f"{t.get('name') or ''} {t.get('operator') or ''}"):
+                continue  # A332 etc. are airliners unless callsign/operator says MRTT / air force
             if len(pts) < int(_g(c, "min_points", 8)):
                 continue
             turn, i, j = orbit_turn(pts, window, max_gap)
@@ -257,6 +298,18 @@ class SensorEventDetector:
             radius = max(haversine_km(clat, clon, p[1], p[2]) for p in win)
             if radius > max_r:
                 continue
+            if _long_axis_km(win) < _g(c, "min_axis_km", 30):
+                continue  # too small for an AAR / ISR orbit (holding patterns, circuits)
+            tail = alts[track][i:j + 1]
+            known = sorted(a for a in tail if a is not None)
+            alt = known[len(known) // 2] if known else None
+            if alt is not None and alt < _g(c, "airport_alt_ft", 20000) and any(
+                    haversine_km(clat, clon, a[0], a[1]) <= _g(c, "airport_radius_km", 60)
+                    for a in airports):
+                long_enough = (win[-1][0] - win[0][0]).total_seconds() / 60 > _g(
+                    c, "airport_min_duration_min", 45)
+                if not long_enough:  # (types here are already ISR / tanker, mil-checked)
+                    continue  # airport holding stack
             hits.append((track, t, turn, win, clat, clon, radius))
         by_cell: dict[str, list] = defaultdict(list)
         for h in hits:
@@ -297,6 +350,8 @@ class SensorEventDetector:
     # ----------------------------------------------------- concentration
 
     def _refresh_baseline(self, now: datetime, start: datetime) -> None:
+        """cell -> {(day, hour): {slot: distinct aircraft}} over the previous baseline_days
+        (all air tracks: conservative, >= the military-only baseline); refreshed hourly."""
         c = self.cfg.concentration
         every = timedelta(minutes=_g(c, "baseline_refresh_min", 60))
         if self._baseline_at is not None and now - self._baseline_at < every:
@@ -308,16 +363,33 @@ class SensorEventDetector:
             "WHERE kind = 'air' AND ts >= ? AND ts < ? AND alt_ft >= ? "
             f"GROUP BY h3_3, epoch_us(ts) // {bucket_us}",
             [lo, start, int(_g(c, "min_alt_ft", 500))], start=lo, end=start)
-        if not rows:
-            self._baseline, self._baseline_at = {}, now
-            return
-        first = ts_from_us(min(r[2] for r in rows))
-        buckets = max(1.0, (start - first).total_seconds() * 1e6 / bucket_us)
-        sums: dict[str, float] = defaultdict(float)
-        for cell, n, _ in rows:
-            sums[h3.int_to_str(cell)] += n
-        self._baseline = {k: v / buckets for k, v in sums.items()}
-        self._baseline_at = now
+        base: dict[str, dict[tuple[int, int], dict[int, int]]] = defaultdict(
+            lambda: defaultdict(dict))
+        day_us, hour_us = 86_400_000_000, 3_600_000_000
+        for cell, n, us in rows:
+            slot = (us % hour_us) // bucket_us
+            base[h3.int_to_str(cell)][(us // day_us, (us % day_us) // hour_us)][slot] = n
+        self._baseline, self._baseline_at = base, now
+
+    def _baseline_stats(self, disk: set[str], hour: int) -> tuple[float, float, int]:
+        """(mean, std, days) of the distinct-aircraft count in ``disk`` per window bucket at
+        this hour of day, over the days on which the area has any baseline data."""
+        c = self.cfg.concentration
+        slots = max(1, int(60 // _g(c, "window_min", 30)))
+        days: set[int] = set()
+        totals: dict[tuple[int, int], float] = defaultdict(float)  # (day, slot) -> count
+        for cell in disk:
+            for (day, hr), per_slot in self._baseline.get(cell, {}).items():
+                days.add(day)
+                if hr == hour:
+                    for slot, n in per_slot.items():
+                        totals[(day, slot)] += n
+        if not days:
+            return 0.0, 0.0, 0
+        vals = [totals.get((d, s), 0.0) for d in days for s in range(slots)]
+        mean = sum(vals) / len(vals)
+        var = sum((v - mean) ** 2 for v in vals) / len(vals)
+        return mean, math.sqrt(var), len(days)
 
     def detect_concentration(self, now: datetime) -> list[Detection]:
         c = self.cfg.concentration
@@ -328,22 +400,43 @@ class SensorEventDetector:
             "AND alt_ft >= ? GROUP BY track_id",
             [start, now, int(_g(c, "min_alt_ft", 500))], start=start, end=now)
         info = self.store.get_tracks(sorted(r[0] for r in rows))
-        latest = {r[0]: r for r in rows if (info.get(r[0]) or {}).get("is_mil")}
+        skip = {str(t).upper() for t in c.get("exclude_types") or ()} | TRAINERS
+
+        def counted(t: dict | None) -> bool:
+            t = t or {}
+            return bool(t.get("is_mil")) and t.get("category") != "Trainer" and str(
+                t.get("type_code") or "").upper() not in skip
+
+        latest = {r[0]: r for r in rows if counted(info.get(r[0]))}
         per_cell: dict[str, set[str]] = defaultdict(set)
         for tr, r in latest.items():
             per_cell[h3.int_to_str(r[4])].add(tr)
         if not per_cell:
             return []
         self._refresh_baseline(now, start)
+        hour = (start + (now - start) / 2).hour
         n_min = int(_g(c, "min_aircraft", 6))
+        min_days = int(_g(c, "min_baseline_days", 3))
+        sigma, ratio = _g(c, "sigma", 3), _g(c, "ratio", 2)
+        _, mil_fields = self._sites()
         cands = []
         for cell in per_cell:
             disk = h3.grid_disk(cell, 1)
             tracks = set().union(*(per_cell.get(x, set()) for x in disk))
-            base = sum(self._baseline.get(x, 0.0) for x in disk)
-            if len(tracks) >= n_min and len(tracks) >= _g(c, "ratio", 2) * base + _g(
+            n = len(tracks)
+            if n < n_min:
+                continue
+            base, std, days = self._baseline_stats(set(disk), hour)
+            if days < min_days:
+                continue  # no usable baseline: cannot call it unusual
+            if n <= base + sigma * std or n < ratio * base or n < base + _g(
                     c, "min_excess", 3):
-                cands.append((len(tracks), cell, tracks, base, set(disk)))
+                continue
+            clat, clon = _centroid([(latest[t][2], latest[t][3]) for t in tracks])
+            if any(haversine_km(clat, clon, f[0], f[1]) <= _g(c, "airfield_radius_km", 30)
+                   for f in mil_fields) and n < _g(c, "airfield_ratio", 3) * base:
+                continue  # busy military airfield: only a large surge counts
+            cands.append((n, cell, tracks, base, set(disk)))
         cands.sort(key=lambda x: (-x[0], x[1]))
         taken: set[str] = set()
         dets = []
@@ -372,7 +465,7 @@ class SensorEventDetector:
                 "concentration", "air_activity", lat, lon, start, now, round(conf, 4),
                 f"Military aircraft concentration: {n} aircraft",
                 f"{n} airborne military aircraft within ~150 km in {int(_g(c, 'window_min', 30))}"
-                f" min (7-day baseline {base:.1f}): {mix}", evidence,
+                f" min (same-hour baseline {base:.1f}): {mix}", evidence,
                 {"aircraft": n, "baseline": round(base, 2), "types": dict(types)},
                 merge_gap_h=_g(c, "merge_gap_h", 1)))
         return dets

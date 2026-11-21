@@ -69,10 +69,20 @@ sensor_events:
     types: [K35R, K35E, KC46, KC10, A332, A310, KC2, KC39, MRTT, E3CF, E3TF, E6, E737, R135,
             P8, P3, E2, U2, Q4, Q9, GLF5, GLEX, CL60, DH8C, B350, PC12]
     categories: ["ISR/Surveillance"]
+    min_axis_km: 30           # racetrack long axis; smaller loops are holds / circuits
+    airport_radius_km: 60     # centroid this close to a large/medium airport ...
+    airport_alt_ft: 20000     # ... and below this altitude = holding stack, ignored ...
+    airport_min_duration_min: 45   # ... unless the pattern lasts longer than this
+    dual_use_types: [A332, A310, GLF5, GLEX, CL60, DH8C, B350, PC12]  # also civil airliners/bizjets
+    mil_marker_re: "MRTT|RRR|CFC|RCH|NATO|FAF|GAF|RAF|IAM|ASY|QID|air force|airforce|military|navy"
   concentration:
     window_min: 30
     min_aircraft: 6           # distinct airborne military aircraft in cell + neighbours
-    ratio: 2.0                # ... and >= ratio x 7-day baseline + min_excess
+    ratio: 2.0                # ... and >= ratio x same-hour baseline mean, > mean + sigma x std
+    sigma: 3
+    min_baseline_days: 3      # fewer days of baseline in the area = no event
+    airfield_radius_km: 30    # near a military airfield the excess must be airfield_ratio x
+    airfield_ratio: 3
     min_excess: 3
     baseline_days: 7
     baseline_refresh_min: 60
