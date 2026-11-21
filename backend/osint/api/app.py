@@ -24,6 +24,7 @@ def create_app(runtime: Runtime) -> FastAPI:
 
     app = FastAPI(title="OSINT", version="0.1.0", lifespan=lifespan)
     settings = runtime.settings
+    app.state.api_token = settings.api_token
     # last added runs first: reject foreign Host headers (DNS rebinding) before auth
     app.add_middleware(TokenAuthMiddleware, token=settings.api_token)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)

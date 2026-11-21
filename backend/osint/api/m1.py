@@ -15,6 +15,7 @@ from osint.api.imagery import mount_imagery
 from osint.api.movements import mount_movements
 from osint.api.nuclear import mount_nuclear
 from osint.api.reference import mount_reference
+from osint.api.security import is_loopback
 from osint.api.webcams import mount_webcams
 from osint.config import ROOT
 from osint.runtime import Runtime
@@ -45,8 +46,12 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     app.state.layer_cache = cache
 
     @app.get("/api/config")
-    def config() -> dict:
-        return {"cesium_ion_token": runtime.settings.cesium_ion_token or None}
+    def config(request: Request) -> dict:
+        # with an API token the middleware has already authenticated the caller; without one only
+        # loopback clients get the ion token (a proxied/tunnelled client must not)
+        host = request.client.host if request.client else ""
+        open_ok = bool(runtime.settings.api_token) or is_loopback(host)
+        return {"cesium_ion_token": (runtime.settings.cesium_ion_token or None) if open_ok else None}
 
     @app.get("/api/layers/aircraft")
     async def aircraft(bbox: str | None = None) -> Response:

@@ -135,7 +135,7 @@ def parse_digitraffic(raw, now: str) -> list[Webcam]:
         if not presets:
             continue
         w = _mk(DIGITRAFFIC, str(p.get("id") or f.get("id")), (p.get("name") or "").replace("_", " "), coords[1],
-                coords[0], f"https://weathercam.digitraffic.fi/{sorted(presets)[0]}.jpg", now)
+                coords[0], f"https://weathercam.digitraffic.fi/{min(presets)}.jpg", now)
         if w:
             out.append(w)
     return out

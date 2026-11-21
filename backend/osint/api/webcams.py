@@ -3,12 +3,23 @@
 from fastapi import FastAPI, HTTPException, Query, Response
 
 from osint.api.layers import parse_bbox
+from osint.api.security import sign_path, signable
 from osint.webcams.catalogue import ID_RE, Catalogue, SnapshotError, get_catalogue
 
 
 def mount_webcams(app: FastAPI, cat: Catalogue | None = None) -> None:
     def c() -> Catalogue:
         return cat if cat is not None else get_catalogue()
+
+    def token() -> str:
+        return getattr(app.state, "api_token", "") or ""
+
+    @app.get("/api/sign")
+    async def sign(path: str = Query(max_length=200)) -> dict:
+        """Short-lived signed URL for an <img>-loadable resource (webcam snapshot / imagery file)."""
+        if not signable(path):
+            raise HTTPException(422, "path cannot be signed")
+        return {"url": sign_path(token(), path), "ttl_s": 300 if token() else None}
 
     @app.get("/api/webcams")
     async def webcams(bbox: str | None = None, source: str | None = None,
@@ -28,6 +39,8 @@ def mount_webcams(app: FastAPI, cat: Catalogue | None = None) -> None:
         k = c()
         await k.ensure_fresh()
         items = k.near(lat, lon, radius_km, limit)
+        for it in items:
+            it["snapshot_url"] = sign_path(token(), f"/api/webcams/{it['id']}/snapshot")
         return {"items": items, "count": len(items)}
 
     @app.get("/api/webcams/sources")
@@ -58,4 +71,4 @@ def mount_webcams(app: FastAPI, cat: Catalogue | None = None) -> None:
         cam = k.items.get(cam_id)
         if cam is None:
             raise HTTPException(404, "unknown camera")
-        return cam.model_dump()
+        return {**cam.model_dump(), "snapshot_url": sign_path(token(), f"/api/webcams/{cam_id}/snapshot")}

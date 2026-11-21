@@ -1,4 +1,5 @@
 // WebSocket client with exponential backoff. Falls back to polling (caller checks isOpen()).
+import { apiToken } from "/static/js/api.js";
 export class LiveSocket {
   constructor(onMessage) {
     this.onMessage = onMessage;
@@ -9,7 +10,7 @@ export class LiveSocket {
   connect() {
     let ws;
     try {
-      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/live");
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/live" + (apiToken ? "?token=" + encodeURIComponent(apiToken) : ""));
     } catch (e) { this._retry(); return; }
     this.ws = ws;
     ws.onopen = () => { this.open = true; this.delay = 1000; this.warned = false; };

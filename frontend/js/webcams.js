@@ -2,7 +2,7 @@
 // Perf rules: one BillboardCollection (diffed by id), grid-bucket clusters at world zoom, individual
 // cameras below CAM_MAX_H, a single recycled label (hover/selection only), requestRender after changes.
 // Standalone module: the controller wires it (see webcams-report.md).
-import { fetchJson } from "/static/js/api.js";
+import { fetchJson, signedUrl, cacheBust } from "/static/js/api.js";
 import { esc } from "/static/js/ui.js";
 
 const C = Cesium;
@@ -11,7 +11,7 @@ const FONT = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
 const CAM_MAX_H = 1.5e6;      // metres of eye altitude below which individual cameras are drawn
 const CAM_CAP = 1500;         // hard cap on individual billboards in view
 const MIN_REFRESH_S = 10;
-const SNAP = (id, t) => "/api/webcams/" + encodeURIComponent(id) + "/snapshot?t=" + (t || Date.now());
+const SNAP = async (id) => cacheBust(await signedUrl("/api/webcams/" + id + "/snapshot"));
 const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? u : null);
 const pos = (lon, lat) => C.Cartesian3.fromDegrees(lon, lat, 0);
 const BB_SCALE = new C.NearFarScalar(2e5, 1.0, 1.5e6, 0.7);
@@ -221,7 +221,7 @@ function renderCamera(slim, el) {
     const row = (k, v) => (v ? "<span>" + esc(k) + "</span><div>" + v + "</div>" : "");
     el.innerHTML =
       '<div class="wc-insp"><div class="wc-hd">' + esc(rec.name) + "</div>" +
-      '<div class="wc-img"><img alt="' + esc(rec.name) + '" src="' + SNAP(rec.id) + '"></div>' +
+      '<div class="wc-img"><img alt="' + esc(rec.name) + '" src="' + esc(cacheBust(rec.snapshot_url || "")) + '"></div>' +
       (playable ? '<video class="wc-video" controls muted playsinline preload="none" src="' + esc(vid) + '"></video>' : "") +
       '<div class="kv">' +
       row("Source", esc(rec.source)) + row("Position", esc(rec.lat.toFixed(4) + ", " + rec.lon.toFixed(4))) +
@@ -235,14 +235,14 @@ function renderCamera(slim, el) {
       im.onerror = () => { im.replaceWith(Object.assign(document.createElement("div"), { className: "wc-loading", textContent: "Snapshot unavailable" })); };
     }
   };
-  const tick = () => {
+  const tick = async () => {
     if (stopped) return;
     if (!el.isConnected) return stop();
     const im = el.querySelector(".wc-img img");
     if (!im) return;
     const next = new Image();   // swap only when the new frame has loaded (no flicker)
     next.onload = () => { if (!stopped && im.isConnected) im.src = next.src; };
-    next.src = SNAP(rec.id);
+    try { next.src = await SNAP(rec.id); } catch (e) { /* retry next tick */ }
   };
   fetchJson("/api/webcams/" + encodeURIComponent(slim.id)).then((full) => {
     if (stopped) return;
@@ -272,7 +272,7 @@ export async function renderNearbyCameras(lat, lon, containerEl, { radiusKm = 25
   containerEl.innerHTML = '<div class="wc-near-h">Cameras nearby <span>' + items.length + "</span></div>" +
     '<div class="wc-near">' + items.map((w, i) =>
       '<button type="button" class="wc-thumb" data-i="' + i + '" title="' + esc(w.name) + '">' +
-      '<img loading="lazy" alt="" src="' + SNAP(w.id) + '"><span>' + esc(w.name) + "</span><em>" + w.distance_km.toFixed(1) + " km</em></button>").join("") +
+      '<img loading="lazy" alt="" src="' + esc(cacheBust(w.snapshot_url || "")) + '"><span>' + esc(w.name) + "</span><em>" + w.distance_km.toFixed(1) + " km</em></button>").join("") +
     "</div>";
   containerEl.querySelectorAll(".wc-thumb img").forEach((im) => { im.onerror = () => im.classList.add("wc-bad"); });
   containerEl.querySelectorAll(".wc-thumb").forEach((btn) => btn.addEventListener("click", () => {

@@ -86,3 +86,37 @@ def test_live_summary_uses_max_age(tmp_path):
                                          source="t")
     client = TestClient(create_app(rt), base_url=LOCAL)
     assert client.get("/api/live/summary").json()["tracks"] == {"air": 1, "sea": 1}
+
+
+def test_signed_urls_for_img_paths(tmp_path):
+    from osint.api.security import sign_path, valid_signature
+
+    client = TestClient(create_app(_rt(tmp_path, api_token="s3cret")), base_url=LOCAL)
+    path = "/api/webcams/tfl:00001.1/snapshot"
+    assert client.get(path).status_code == 401
+    signed = client.get("/api/sign", params={"path": path}, headers={"Authorization": "Bearer s3cret"}).json()["url"]
+    assert "sig=" in signed and "exp=" in signed
+    assert client.get(signed).status_code == 404  # authenticated by signature, unknown camera
+    assert client.get(signed.replace("tfl:00001.1", "tfl:00002.1")).status_code == 401  # bound to the path
+    assert client.get(signed.replace("sig=", "sig=0")).status_code == 401
+    assert client.get(signed, headers={"Authorization": "Bearer wrong"}).status_code == 404  # sig suffices
+    assert client.get("/api/sign", params={"path": path}).status_code == 401
+    assert client.get("/api/sign", params={"path": "/api/events"},
+                      headers={"Authorization": "Bearer s3cret"}).status_code == 422
+    # not a general bypass: other protected paths ignore signatures
+    assert client.get(sign_path("s3cret", "/api/config") + "?sig=x&exp=9999999999999").status_code == 401
+    # expiry
+    old = sign_path("s3cret", path, now=1000)
+    q = old.split("?", 1)[1]
+    assert not valid_signature("s3cret", path, q, now=1000 + 301)
+    assert valid_signature("s3cret", path, q, now=1000 + 299)
+    assert sign_path("", path) == path  # no token configured: plain URL
+
+
+def test_config_ion_token_only_for_loopback_or_authenticated(tmp_path):
+    rt = _rt(tmp_path, cesium_ion_token="ion-secret")
+    # TestClient peers as "testclient" (not loopback): no token handed out without auth
+    assert TestClient(create_app(rt), base_url=LOCAL).get("/api/config").json()["cesium_ion_token"] is None
+    rt2 = _rt(tmp_path, cesium_ion_token="ion-secret", api_token="s3cret")
+    c = TestClient(create_app(rt2), base_url=LOCAL)
+    assert c.get("/api/config", headers={"Authorization": "Bearer s3cret"}).json()["cesium_ion_token"] == "ion-secret"

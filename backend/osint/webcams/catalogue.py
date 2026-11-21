@@ -192,7 +192,7 @@ class Catalogue:
     async def _bg_refresh(self) -> None:
         try:
             await self.refresh()
-        except Exception:  # noqa: BLE001 - background task must never crash the app
+        except Exception:
             log.exception("webcam background refresh failed")
 
     # ---- queries -----------------------------------------------------
