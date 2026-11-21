@@ -1,0 +1,1 @@
+"""Global event intelligence platform."""

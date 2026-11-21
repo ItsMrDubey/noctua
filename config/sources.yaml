@@ -1,0 +1,19 @@
+# One block per collector. Missing keys use the collector's defaults.
+adsb:
+  enabled: true
+  interval_s: 30
+  endpoints:
+    adsb.lol: https://api.adsb.lol/v2
+    airplanes.live: https://api.airplanes.live/v2
+    adsb.fi: https://opendata.adsb.fi/api/v2
+ais:
+  enabled: true
+  batch_seconds: 5
+firms:
+  enabled: true
+  interval_s: 900
+  area: world
+  days: 1
+usgs:
+  enabled: true
+  interval_s: 120
