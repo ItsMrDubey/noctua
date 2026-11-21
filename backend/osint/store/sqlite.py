@@ -214,7 +214,8 @@ class SqliteStore:
         columns as Python objects); first_seen keeps its first value. Documents, fields and
         decisions are insert-if-absent (re-running a pass is harmless)."""
         ev_rows = [
-            tuple(_json_col(e.get(c), c) if c in _JSON_DEFAULTS else e.get(c)
+            tuple(_json_col(e.get(c), c) if c in _JSON_DEFAULTS
+                  else (e.get(c) or "") if c == "summary" else e.get(c)
                   for c in EVENT_COLUMNS)
             for e in events
         ]
