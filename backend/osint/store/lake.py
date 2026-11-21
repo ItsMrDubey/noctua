@@ -1,5 +1,6 @@
 """Append-only Parquet lake partitioned by hour, queried with DuckDB."""
 
+import hashlib
 import os
 import time
 import uuid
@@ -13,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from osint.core.geo import h3_cells
-from osint.core.models import Observation, Position
+from osint.core.models import Document, Observation, Position, TriageResult
 
 _TS = pa.timestamp("us", tz="UTC")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -32,7 +33,24 @@ SCHEMAS: dict[str, pa.Schema] = {
         ("source", pa.string()), ("attrs", pa.string()),
         *_H3,
     ]),
+    # metadata + link only (no article text); triage output as columns; partitioned by
+    # published_at. lat/lon/h3 are the best place and are null when no place was found.
+    "documents": pa.schema([
+        ("id", pa.string()), ("source", pa.string()), ("kind", pa.string()),
+        ("origin_id", pa.string()), ("url", pa.string()), ("title", pa.string()),
+        ("snippet", pa.string()), ("language", pa.string()),
+        ("published_at", _TS), ("fetched_at", _TS), ("content_hash", pa.string()),
+        ("attrs", pa.string()),
+        ("relevance", pa.float32()), ("categories", pa.string()), ("places", pa.string()),
+        ("place_name", pa.string()), ("place_precision", pa.string()),
+        ("place_confidence", pa.float32()),
+        ("lat", pa.float64()), ("lon", pa.float64()),
+        *_H3,
+    ]),
 }
+
+# column used for the date=/hour= partition of each dataset (default "ts")
+PARTITION_FIELD: dict[str, str] = {"documents": "published_at"}
 
 
 def _h3_fields(lat: float, lon: float) -> dict:
@@ -56,6 +74,34 @@ def observation_row(o: Observation) -> dict:
     }
 
 
+def content_hash(title: str, snippet: str) -> str:
+    text = " ".join(f"{title} {snippet}".casefold().split())
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def document_row(d: Document, t: TriageResult | None = None) -> dict:
+    best = t.best_place if t is not None else None
+    h3 = _h3_fields(best.lat, best.lon) if best is not None else {
+        "h3_3": None, "h3_5": None, "h3_7": None}
+    return {
+        "id": d.id, "source": d.source, "kind": d.kind, "origin_id": d.origin_id,
+        "url": d.url, "title": d.title, "snippet": d.snippet,
+        "language": (t.language if t is not None and t.language else d.language),
+        "published_at": d.published_at, "fetched_at": d.fetched_at,
+        "content_hash": content_hash(d.title, d.snippet),
+        "attrs": msgspec.json.encode(d.attrs).decode(),
+        "relevance": t.relevance if t is not None else None,
+        "categories": ",".join(t.categories) if t is not None else "",
+        "places": msgspec.json.encode(t.places if t is not None else []).decode(),
+        "place_name": best.name if best is not None else None,
+        "place_precision": best.precision if best is not None else None,
+        "place_confidence": best.confidence if best is not None else None,
+        "lat": best.lat if best is not None else None,
+        "lon": best.lon if best is not None else None,
+        **h3,
+    }
+
+
 class Lake:
     def __init__(
         self, root: Path, *, duckdb_memory_limit: str = "1GB", duckdb_threads: int = 4
@@ -68,8 +114,9 @@ class Lake:
     def write(self, dataset: str, rows: list[dict]) -> int:
         schema = SCHEMAS[dataset]
         groups: dict[tuple[str, int], list[dict]] = defaultdict(list)
+        ts_field = PARTITION_FIELD.get(dataset, "ts")
         for r in rows:
-            ts = r["ts"].astimezone(UTC)  # partitions are always UTC
+            ts = r[ts_field].astimezone(UTC)  # partitions are always UTC
             groups[(ts.strftime("%Y-%m-%d"), ts.hour)].append(r)
         for (date, hour), group in groups.items():
             part_dir = self.root / dataset / f"date={date}" / f"hour={hour:02d}"
@@ -117,3 +164,12 @@ class Lake:
             [since],
         )
         return {(r[0], r[1]): _EPOCH + timedelta(microseconds=r[2]) for r in rows}
+
+    def recent_document_index(self, since: datetime) -> dict[str, datetime]:
+        """fetched_at per document id fetched since ``since`` (dedupe warm start)."""
+        rows = self.query(
+            "SELECT id, max(epoch_us(fetched_at)) FROM documents WHERE fetched_at >= ? "
+            "GROUP BY id",
+            [since],
+        )
+        return {r[0]: _EPOCH + timedelta(microseconds=r[1]) for r in rows}

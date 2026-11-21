@@ -7,19 +7,24 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 import msgspec
 
 from osint.core.geo import utcnow, valid_coord
 from osint.core.metrics import Metrics
-from osint.core.models import Batch, Position
-from osint.store.lake import Lake, observation_row, position_row
+from osint.core.models import Batch, Document, Position
+from osint.store.lake import Lake, document_row, observation_row, position_row
 from osint.store.sqlite import SqliteStore
+
+if TYPE_CHECKING:
+    from osint.pipeline.triage import Triage
 
 log = logging.getLogger(__name__)
 
 DEFAULT_THIN_S = {"air": 60.0, "sea": 300.0}
 _MAX_FUTURE = timedelta(minutes=10)
+DOC_MAX_AGE = timedelta(hours=48)  # older documents are stale: counted and skipped
 
 
 class Ingestor:
@@ -34,6 +39,8 @@ class Ingestor:
         flush_rows: int = 50_000,
         queue_size: int = 64,
         max_buffer_rows: int = 500_000,
+        triage: "Triage | None" = None,
+        doc_max_age: timedelta = DOC_MAX_AGE,
     ) -> None:
         self.store, self.lake, self.metrics = store, lake, metrics
         self.thin_s = thin_s or DEFAULT_THIN_S
@@ -44,9 +51,14 @@ class Ingestor:
         self._drop_warned = False
         self.queue: asyncio.Queue[Batch] = asyncio.Queue(maxsize=queue_size)
         self.live: dict[str, Position] = {}
-        self._buffers: dict[str, list[dict]] = {"positions": [], "observations": []}
+        self._buffers: dict[str, list[dict]] = {
+            "positions": [], "observations": [], "documents": []}
         self._last_written: dict[str, datetime] = {}
         self._seen_obs: dict[tuple[str, str], datetime] = {}
+        # document id -> fetched_at; kept >= doc_max_age so a stale-skip covers expiry
+        self._seen_docs: dict[str, datetime] = {}
+        self._triage = triage  # created lazily (loads lexicons + gazetteer) on first document
+        self.doc_max_age = doc_max_age
         self._last_flush = time.monotonic()
         self._task: asyncio.Task | None = None
         self._inflight: asyncio.Future | None = None
@@ -60,11 +72,24 @@ class Ingestor:
 
     def warm_start(self, since: datetime) -> None:
         index = self.lake.recent_observation_index(since)
+        doc_index = self.lake.recent_document_index(since)
         with self._lock:
             for key, ts in index.items():
                 current = self._seen_obs.get(key)
                 if current is None or ts > current:
                     self._seen_obs[key] = ts
+            for doc_id, ts in doc_index.items():
+                current = self._seen_docs.get(doc_id)
+                if current is None or ts > current:
+                    self._seen_docs[doc_id] = ts
+
+    @property
+    def triage(self) -> "Triage":
+        if self._triage is None:
+            from osint.pipeline.triage import Triage
+
+            self._triage = Triage.default()
+        return self._triage
 
     def _bad(self, batch: Batch, record_type: str, record: object, reason: str) -> None:
         self.store.quarantine(batch.source, record_type, reason, msgspec.to_builtins(record))
@@ -116,9 +141,36 @@ class Ingestor:
                 continue
             self._seen_obs[key] = o.ts
             self._buffers["observations"].append(observation_row(o))
+        for d in batch.documents:
+            self._process_document(batch, d, now)
         self._enforce_cap()
         self.metrics.inc("batches_ingested_total", source=batch.source)
         self.metrics.set("live_tracks", len(self.live))
+
+    def _process_document(self, batch: Batch, d: Document, now: datetime) -> None:
+        """Validate, dedupe and triage one document (caller holds the lock)."""
+        if not d.url or not d.id:
+            self._bad(batch, "document", d, "missing url or id")
+            return
+        if self._naive(d.published_at) or self._naive(d.fetched_at):
+            self._bad(batch, "document", d, "naive timestamp")
+            return
+        if d.published_at > now + _MAX_FUTURE:
+            self._bad(batch, "document", d, "timestamp in the future")
+            return
+        if d.published_at < now - self.doc_max_age:
+            self.metrics.inc("documents_stale_total", source=batch.source)
+            return
+        if d.id in self._seen_docs:
+            self.metrics.inc("documents_duplicate_total", source=batch.source)
+            return
+        result = self.triage.assess(d)  # pure CPU; we are already in the worker thread
+        self._seen_docs[d.id] = d.fetched_at
+        self.metrics.inc("documents_triaged_total", source=batch.source)
+        if result.relevance >= self.triage.cfg.relevant:
+            for category in result.categories or ["uncategorised"]:
+                self.metrics.inc("documents_relevant_total", category=category)
+        self._buffers["documents"].append(document_row(d, result))
 
     def _buffered(self) -> int:
         return sum(len(rows) for rows in self._buffers.values())
@@ -164,6 +216,9 @@ class Ingestor:
     def prune(self, older_than: datetime) -> None:
         with self._lock:
             self._seen_obs = {k: ts for k, ts in self._seen_obs.items() if ts >= older_than}
+            # documents stay remembered for at least doc_max_age after they were fetched
+            doc_cut = min(older_than, utcnow() - self.doc_max_age)
+            self._seen_docs = {k: ts for k, ts in self._seen_docs.items() if ts >= doc_cut}
             self._last_written = {
                 k: ts for k, ts in self._last_written.items() if ts >= older_than
             }

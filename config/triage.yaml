@@ -1,0 +1,624 @@
+# Free local triage: multilingual keyword lexicons per category (spec §3 taxonomy).
+#
+# Term syntax (matched on case-folded, accent-stripped text; Arabic letter variants folded):
+#   word        whole-word match ("strike" does not match "striker")
+#   word*       prefix match ("airstrike*" matches "airstrikes"; use for inflected languages)
+#   a b         multi-word phrase (any whitespace between words)
+#   Arabic-script terms also match with a leading clitic (و ف ب ل ك ال ...).
+#   CJK terms match as substrings (no word boundaries).
+# Matching is language-independent: every language's terms are tried on every document,
+# so a wrong language guess cannot hide a hit.
+#
+# Scoring per category: raw = sum(strong) + weak_weight * sum(weak) - negative_weight *
+# sum(negative), each distinct term weighted 1.0 in the title and snippet_weight in the
+# snippet only; score = 1 - exp(-raw). Off-topic context (sports, entertainment)
+# multiplies every score by off_topic_penalty.
+
+threshold: 0.35          # category score needed to tag a document with the category
+relevant: 0.35           # relevance needed to count a document as relevant (metrics)
+weak_weight: 0.35
+negative_weight: 0.7
+snippet_weight: 0.6
+place_bonus: 0.05        # added to relevance when a confident place is found
+off_topic_penalty: 0.25
+off_topic_trigger: 1.0   # off-topic score (strong=1, weak=0.5) that triggers the penalty
+
+# Phrases removed before scoring (idioms and look-alikes of conflict vocabulary).
+mask:
+  - hunger strike*
+  - strike a deal
+  - strike a balance
+  - strike a chord
+  - strike the right
+  - striking similarity
+  - lucky strike
+  - bowling strike
+  - strike rate
+  - strikeout*
+  - price war*
+  - culture war*
+  - war of words
+  - war on drugs
+  - star wars
+  - war room
+  - battle for the title
+  - battle of the bands
+  - charm offensive
+  - offensive line*
+  - offensive coordinator
+  - offensive remark*
+  - shot clock
+  - shootout
+  - penalty shootout
+  - fire sale
+  - fired coach
+  - голодовк*
+  - huelga de hambre
+  - grève de la faim
+  - hungerstreik*
+  - إضراب عن الطعام
+  - اعتصاب غذا
+
+off_topic:
+  strong:
+    - football
+    - soccer
+    - striker*
+    - midfielder*
+    - goalkeeper*
+    - premier league
+    - champions league
+    - europa league
+    - la liga
+    - bundesliga
+    - serie a
+    - ligue 1
+    - cricket
+    - wicket*
+    - t20
+    - odi
+    - test match
+    - rugby
+    - tennis
+    - grand slam
+    - nba
+    - nfl
+    - mlb
+    - nhl
+    - fifa
+    - uefa
+    - olympic*
+    - world cup
+    - formula 1
+    - formula one
+    - grand prix
+    - golf
+    - ufc
+    - hat-trick
+    - hat trick
+    - transfer window
+    - playoff*
+    - quarter-final*
+    - semi-final*
+    - box office
+    - album
+    - footballer*
+    - futbol*
+    - fútbol
+    - fußball
+    - футбол*
+    - كرة القدم
+    - فوتبال
+    - 足球
+    - futbolcu*
+    - teknik direktör
+  weak:
+    - match
+    - matches
+    - goal
+    - goals
+    - coach
+    - league
+    - cup
+    - tournament
+    - fixture*
+    - scored
+    - derby
+    - kick-off
+    - stadium
+    - fans
+    - championship
+    - season
+    - movie
+    - film
+    - celebrity
+    - concert
+    - матч*
+    - partido
+    - maç*
+    - مباراة
+    - 比赛
+
+categories:
+  armed_conflict:
+    strong:
+      en: [airstrike*, air strike*, air raid*, missile strike*, missile attack*, drone strike*,
+           drone attack*, shelling, shelled, artillery, bombardment, bombing*, rocket fire,
+           rocket attack*, mortar*, ballistic missile*, cruise missile*, frontline, front line,
+           ground offensive, counteroffensive, counter-offensive, ceasefire, cease-fire, truce,
+           militant*, insurgent*, gunmen, ambush*, troops, soldiers killed, war crime*,
+           armed clash*, clashes, firefight*, suicide bomb*, ied, car bomb*, siege, invasion,
+           invaded, hostage*, killed in an attack, military operation*, interceptor*,
+           air defence*, air defense*, shot down, warplane*, fighter jet*, kamikaze drone*,
+           shahed, hamas, hezbollah, idf, wagner, jihadist*, al-shabaab, boko haram,
+           annex*, occupied territor*, paramilitar*, rsf, armed group*, rebels, rebel forces,
+           russian attack*, russian strike*, ukrainian attack*, ukrainian strike*,
+           israeli attack*, israeli strike*, us strike*, airstrikes]
+      ar: [غارة, غارات, قصف, صاروخ, صواريخ, مسيرة, مسيرات, طائرة مسيرة, اشتباك*, مسلح*,
+           هجوم, هجمات, انفجار, قذائف, مدفعي*, عملية عسكرية, وقف إطلاق النار, هدنة, اجتياح,
+           توغل, قوات الاحتلال, شهداء, استشهاد, الجيش الإسرائيلي, كتائب, حزب الله, حماس,
+           الحوثي*, رهائن, كمين, اغتيال]
+      fa: [حمله هوایی, حمله پهپادی, پهپاد*, موشک*, بمباران, گلوله‌باران, درگیری, شبه‌نظامی*,
+           آتش‌بس, انفجار, نیروهای مسلح, سپاه, عملیات نظامی, تروریست*, حمله موشکی, شهید,
+           کشته شدند]
+      ru: [авиаудар*, ракетн* удар*, обстрел*, бомбардиров*, беспилотник*, дрон*, артиллер*,
+           ракет*, перемири*, прекращение огня, боевик*, наступлени*, контрнаступлени*,
+           линия фронта, зона сво, сво, всу, вс рф, минобороны, теракт*,
+           шахед*, сбит*, пво, оккупац*, мобилизац*, диверсант*]
+      uk: [авіаудар*, ракетн* удар*, обстріл*, бомбардуван*, безпілотник*, дрон*, артилері*,
+           ракет*, перемир*, припинення вогню, бойовик*, наступальн*, контрнаступ*, лінія фронту,
+           зсу, теракт*, шахед*, збит*, ппо, окупац*, мобілізац*,
+           повітряна тривога, окупант*]
+      fr: [frappe aérienne, frappes aériennes, frappe de drone*, bombardement*, tir* de roquette*,
+           obus, artillerie, missile*, drone*, cessez-le-feu, trêve, offensive, contre-offensive,
+           ligne de front, militants armés, insurgé*, djihadiste*, embuscade*, attentat*,
+           otage*, affrontements, soldats tués, invasion]
+      es: [ataque aéreo, ataques aéreos, bombardeo*, misil*, dron*, artillería, cohete*,
+           alto el fuego, tregua, ofensiva, contraofensiva, línea del frente, insurgente*,
+           milicia*, emboscada*, atentado*, rehén*, rehenes, enfrentamientos, soldados muertos,
+           invasión, yihadista*, guerrilla*]
+      de: [luftangriff*, raketenangriff*, drohnenangriff*, beschuss, bombardierung*,
+           artillerie*, rakete*, drohne*, waffenruhe, waffenstillstand, feuerpause, offensive,
+           gegenoffensive, frontlinie, aufständisch*, miliz*, hinterhalt, anschlag*, geisel*,
+           gefechte, soldaten getötet, invasion, dschihadist*]
+      tr: [hava saldırısı, hava saldırıları, füze*, insansız hava aracı, iha, siha, bombardıman*,
+           top atışı, topçu, ateşkes, saldırı*, çatışma*, militan*, terörist*, pusu*,
+           rehine*, kara harekatı, askeri operasyon*, şehit*, cephe hattı, işgal*]
+      zh: [空袭, 导弹袭击, 导弹, 无人机袭击, 无人机, 炮击, 轰炸, 停火, 火箭弹, 武装分子, 叛军,
+           交火, 冲突, 袭击, 前线, 反攻, 入侵, 人质, 自杀式爆炸, 军事行动]
+    weak:
+      en: [strike*, attack*, killed, kills, dead, war, military, army, forces, weapon*,
+           explosion*, blast*, fighting, battle*, combat, casualt*, wounded, injur*, struck,
+           drone*, defence, defense,
+           shot, gunfire, bomb, threat*, escalat*, raid*, operation]
+      ar: [قتلى, قتيل, جرحى, حرب, الجيش, عسكري*]
+      fa: [جنگ, ارتش, نظامی, کشته]
+      ru: [удар*, атак*, войн*, армия, армии, военн*, убит*, ранен*, взрыв*, погибл*]
+      uk: [удар*, атак*, війн*, армія, військов*, вбит*, поранен*, вибух*, загинул*]
+      fr: [attaque*, frappe*, guerre, armée, militaire*, tués, blessés, combats]
+      es: [ataque*, guerra, ejército, militar*, muertos, heridos, combates]
+      de: [angriff*, krieg*, armee, militär*, getötet, verletzt, kämpfe]
+      tr: [savaş*, ordu*, asker*, öldü, yaralı]
+      zh: [战争, 军队, 死亡, 受伤, 军方]
+    negative:
+      en: [workers, union, unions, walkout, wages, pay dispute, teachers, nurses, doctors strike,
+           industrial action, picket*, video game*, chess, poker, esports]
+      fr: [grévistes, syndicat*, salariés]
+      es: [sindicato*, trabajadores]
+      de: [gewerkschaft*, tarif*]
+
+  air_activity:
+    strong:
+      en: [fighter jet*, warplane*, bomber*, b-52, b-2, b-1b, f-35, f-16, f-15, su-34, su-35,
+           tu-95, tu-22, awacs, e-3 sentry, tanker aircraft, aerial refuel*, airspace violation*,
+           violated airspace, airspace closure, airspace closed, no-fly zone, scrambled jets,
+           scrambled fighter*, intercepted aircraft, air patrol*, air drill*, reconnaissance flight*,
+           spy plane*, surveillance aircraft, military aircraft, drone incursion*, notam,
+           flights suspended, flights cancelled, flight ban, air traffic halted, mig-31,
+           helicopter crash*, military helicopter*, plane crash*, aircraft crash*]
+      ar: [طائرات حربية, مقاتلات, المجال الجوي, اختراق المجال الجوي, حظر الطيران, طائرة استطلاع,
+           قاذفات, تحليق, سلاح الجو, مروحية عسكرية, تحطم طائرة, إغلاق المجال الجوي]
+      fa: [جنگنده, حریم هوایی, هواپیمای نظامی, بمب‌افکن, نیروی هوایی, سقوط هواپیما,
+           سقوط بالگرد, پرواز شناسایی]
+      ru: [истребител*, бомбардировщик*, воздушное пространство, воздушного пространства,
+           нарушение границы, бесполетн*, самолет-разведчик, ввс, вкс, авиаполк*, крушение самолет*,
+           крушение вертолет*, дальняя авиация, ту-95, су-34, миг-31, заправщик*]
+      uk: [винищувач*, бомбардувальник*, повітряний простір, повітряного простору, повс,
+           авіація, катастрофа літака, гелікоптер*, міг-31, ту-95, стратегічна авіація]
+      fr: [avion de chasse, avions de chasse, chasseurs, bombardier*, espace aérien,
+           zone d'exclusion aérienne, avion espion, armée de l'air, crash d'avion, hélicoptère]
+      es: [avión de combate, aviones de combate, cazas, bombardero*, espacio aéreo,
+           zona de exclusión aérea, avión espía, fuerza aérea, accidente aéreo, helicóptero]
+      de: [kampfjet*, kampfflugzeug*, bomber, luftraum*, flugverbot*, aufklärungsflug*,
+           luftwaffe, flugzeugabsturz, hubschrauber*, abfangjäger*]
+      tr: [savaş uçağı, savaş uçakları, hava sahası, hava sahasını, uçuş yasağı, keşif uçağı,
+           hava kuvvetleri, uçak düştü, helikopter düştü, bombardıman uçağı]
+      zh: [战斗机, 轰炸机, 领空, 防空识别区, 侦察机, 空军, 军机, 加油机, 预警机, 坠机, 禁飞区]
+    weak:
+      en: [aircraft, jet*, flight*, airport, aviation, pilot*, helicopter*, drone*, sortie*,
+           airbase, air base]
+      ru: [самолет*, аэропорт*, вертолет*]
+      uk: [літак*, аеропорт*]
+      ar: [طائرة, مطار, طيران]
+      fa: [هواپیما, فرودگاه]
+      fr: [avion*, aéroport*]
+      es: [avión, aviones, aeropuerto*]
+      de: [flugzeug*, flughafen*]
+      tr: [uçak*, havaalanı, havalimanı]
+      zh: [飞机, 机场]
+    negative:
+      en: [airline fares, ticket prices, frequent flyer, airline stock*, boeing earnings,
+           travel tips, holiday flights]
+
+  maritime_security:
+    strong:
+      en: [tanker attack*, attacked vessel, vessel attacked, ship attacked, merchant vessel*,
+           cargo ship*, container ship*, oil tanker*, bulk carrier*, hijack*, piracy, pirates,
+           seized tanker, seized vessel, ship seized, ukmto, jmic, maritime security,
+           naval blockade, blockade, warship*, destroyer*, frigate*, aircraft carrier*,
+           submarine*, coast guard, coastguard, navy, naval drill*, naval exercise*,
+           shipping lane*, strait of hormuz, red sea, bab el-mandeb, gulf of aden, sea mine*,
+           unmanned surface vessel*, sea drone*, dark fleet, shadow fleet, ais off, spoofing,
+           gps jamming, collision at sea, ran aground, capsized, shipwreck*,
+           cape of good hope, maritime incident]
+      ar: [سفينة, سفن, ناقلة نفط, ناقلات, سفينة تجارية, قرصنة, قراصنة, احتجاز ناقلة,
+           البحرية, بارجة, مدمرة, فرقاطة, حاملة طائرات, غواصة, خفر السواحل, البحر الأحمر,
+           باب المندب, خليج عدن, مضيق هرمز, الملاحة, زورق مسير, حصار بحري, غرق]
+      fa: [نفتکش, کشتی, کشتی تجاری, نیروی دریایی, ناوشکن, ناوچه, ناو هواپیمابر, زیردریایی,
+           تنگه هرمز, دزدی دریایی, توقیف نفتکش, گارد ساحلی, رزمایش دریایی]
+      ru: [танкер*, сухогруз*, судно, судна, корабл*, флот*, фрегат*, эсминец*, подлодк*,
+           подводн* лодк*, авианос*, береговая охрана, пират*, захват судна, морской дрон*,
+           безэкипажн* катер*, теневой флот, черноморск* флот*, блокад*, затонул*]
+      uk: [танкер*, суховантаж*, судно, судна, корабл*, флот*, фрегат*, підводн* човн*,
+           морськ* дрон*, безекіпажн*, тіньовий флот, чорноморськ* флот*, блокад*, затонул*]
+      fr: [pétrolier*, navire*, cargo, porte-conteneurs, vraquier, piraterie, pirates,
+           marine nationale, frégate*, destroyer, sous-marin*, porte-avions, garde-côtes,
+           mer rouge, détroit d'ormuz, blocus, naufrage, chavir*]
+      es: [petrolero*, buque*, barco*, carguero*, portacontenedores, piratería, piratas,
+           armada, fragata*, destructor*, submarino*, portaaviones, guardacostas, mar rojo,
+           estrecho de ormuz, bloqueo naval, naufragio, hundimiento]
+      de: [tanker, frachter*, frachtschiff*, containerschiff*, schiff*, piraterie, piraten,
+           marine, fregatte*, zerstörer*, u-boot*, flugzeugträger*, küstenwache, rotes meer,
+           straße von hormus, seeblockade, schiffsunglück, gekentert]
+      tr: [tanker*, gemi*, kargo gemisi, yük gemisi, korsan*, deniz kuvvetleri, donanma*,
+           fırkateyn*, muhrip*, denizaltı*, uçak gemisi, sahil güvenlik, kızıldeniz,
+           hürmüz boğazı, abluka, batan gemi, alabora]
+      zh: [油轮, 货船, 集装箱船, 商船, 海盗, 劫持, 军舰, 驱逐舰, 护卫舰, 航母, 潜艇, 海警,
+           海军, 红海, 霍尔木兹海峡, 南海, 台湾海峡, 封锁, 沉没, 撞船]
+    weak:
+      en: [ship*, vessel*, port, maritime, sea, shipping, sailor*, crew, cargo, strait,
+           harbour, harbor, fleet, sank, sinking, rerouted, rerouting, boarded]
+      ar: [ميناء, بحري*]
+      ru: [порт*, морск*]
+      uk: [порт*, морськ*]
+      fr: [port, maritime*]
+      es: [puerto, marítim*]
+      de: [hafen*]
+      tr: [liman*, deniz*]
+      zh: [港口, 海上]
+    negative:
+      en: [cruise holiday*, yacht race, sailing regatta, ship of theseus, relationship*,
+           shipping costs for, free shipping, ship date]
+
+  civil_unrest:
+    strong:
+      en: [protest*, protester*, demonstrator*, demonstration*, riot*, rioter*, unrest,
+           tear gas, teargas, rubber bullets, water cannon*, crackdown, curfew, state of emergency,
+           martial law, coup, coup attempt, uprising, looting, clashes with police,
+           police fired, mass arrest*, detained protesters, general strike, nationwide strike,
+           blockade of roads, sit-in, marched on, storming, stormed parliament, insurrection,
+           civil disobedience, opposition rally, rally against, lynching, ethnic violence,
+           sectarian violence, mob violence]
+      ar: [احتجاج*, متظاهر*, مظاهر*, شغب, اضطرابات, الغاز المسيل للدموع, حظر التجول,
+           حالة الطوارئ, انقلاب, انتفاضة, اعتقال*, قمع, اعتصام, عصيان مدني, إضراب عام, نهب]
+      fa: [اعتراض*, معترض*, تظاهرات, تجمع اعتراضی, شورش, ناآرامی, گاز اشک‌آور, حکومت نظامی,
+           کودتا, سرکوب, بازداشت, اعتصاب, منع آمد و شد, قیام]
+      ru: [протест*, митинг*, демонстрант*, беспорядк*, слезоточив*, комендантск* час*,
+           чрезвычайн* положени*, военное положение, переворот*, восстани*, задержан*, разгон*,
+           мародер*, забастовк*, акция протеста, бунт*]
+      uk: [протест*, мітинг*, демонстрант*, заворушен*, сльозогінн*, комендантськ* годин*,
+           надзвичайн* стан*, воєнний стан, переворот*, повстанн*, затриман*, страйк*, бунт*]
+      fr: [manifestation*, manifestant*, émeute*, gaz lacrymogène*, couvre-feu, état d'urgence,
+           loi martiale, coup d'état, putsch, soulèvement, pillage*, répression, grève générale,
+           interpellations, heurts, affrontements avec la police, mouvement de contestation]
+      es: [protesta*, manifestante*, manifestación*, disturbio*, gas lacrimógeno, toque de queda,
+           estado de emergencia, ley marcial, golpe de estado, levantamiento, saqueo*, represión,
+           huelga general, detenidos, enfrentamientos con la policía, estallido social]
+      de: [protest*, demonstrant*, demonstration*, ausschreitung*, krawall*, tränengas,
+           wasserwerfer, ausgangssperre, ausnahmezustand, kriegsrecht, putsch*, aufstand*,
+           plünderung*, generalstreik, festnahme*]
+      tr: [protesto*, gösterici*, gösteri*, eylem*, biber gazı, tazyikli su, sokağa çıkma yasağı,
+           olağanüstü hal, sıkıyönetim, darbe*, ayaklanma*, yağma*, gözaltı*, genel grev]
+      zh: [抗议, 示威, 骚乱, 暴乱, 催泪弹, 宵禁, 紧急状态, 戒严, 政变, 起义, 镇压, 逮捕, 罢工, 冲突]
+    weak:
+      en: [police, arrest*, rally, marched, marchers, strike*, opposition, activists, dissident*, clashes]
+      ar: [الشرطة, شرطة]
+      ru: [полиц*, оппозиц*]
+      uk: [поліці*, опозиці*]
+      fr: [police, grève*]
+      es: [policía, huelga*]
+      de: [polizei, streik*]
+      tr: [polis, grev*]
+      zh: [警察]
+    negative:
+      en: [protest song, music festival, pride parade]
+
+  disaster:
+    strong:
+      en: [earthquake*, quake*, aftershock*, tsunami*, flood*, flash flood*, landslide*,
+           mudslide*, cyclone*, hurricane*, typhoon*, tornado*, wildfire*, forest fire*,
+           bushfire*, volcan*, eruption*, drought*, heatwave*, heat wave, blizzard*,
+           avalanche*, storm surge, evacuat*, death toll, rescue teams, rescuers, epidemic*,
+           outbreak*, cholera, ebola, mpox, famine, displaced, refugees, humanitarian crisis,
+           industrial accident, chemical leak, gas explosion, building collapse*, dam burst,
+           dam collapse*, train derail*, derailment, mine collapse]
+      ar: [زلزال*, هزة أرضية, تسونامي, فيضان*, سيول, انهيار أرضي, إعصار, عاصفة, حرائق, حريق,
+           بركان, جفاف, موجة حر, إجلاء, حصيلة القتلى, فرق الإنقاذ, وباء, تفشي, كوليرا, مجاعة,
+           نازحين, لاجئين, انهيار مبنى]
+      fa: [زلزله, پس‌لرزه, سونامی, سیل, رانش زمین, طوفان, گردباد, آتش‌سوزی, آتشفشان, خشکسالی,
+           تخلیه, امدادگران, همه‌گیری, شیوع, وبا, قحطی, آوارگان, پناهجویان, ریزش ساختمان]
+      ru: [землетрясени*, цунами, наводнени*, паводк*, оползн*, циклон*, ураган*, тайфун*,
+           торнадо, лесн* пожар*, пожар*, вулкан*, извержени*, засух*, жара, лавин*, эвакуац*,
+           спасател*, эпидеми*, вспышк*, холер*, голод, беженц*, обрушени*, крушение поезд*]
+      uk: [землетрус*, цунамі, повін*, паводк*, зсув*, циклон*, ураган*, тайфун*, лісов* пожеж*,
+           пожеж*, вулкан*, виверженн*, посух*, лавин*, евакуац*, рятувальник*, епідемі*, холер*,
+           біженц*, обвал*]
+      fr: [séisme*, tremblement de terre, tsunami, inondation*, crue, crues, glissement de terrain,
+           cyclone*, ouragan*, typhon*, tornade*, incendie*, feux de forêt, volcan*, éruption*,
+           sécheresse*, canicule*, avalanche*, évacu*, secouristes, bilan des morts, épidémie*,
+           choléra, famine, déplacés, réfugiés, effondrement]
+      es: [terremoto*, sismo*, tsunami, inundación*, inundaciones, deslizamiento*,
+           ciclón, huracán, tifón, tornado*, incendio*, volcán, erupción, sequía*, ola de calor,
+           avalancha*, evacua*, rescatistas, cifra de muertos, epidemia*, brote*, cólera, hambruna,
+           desplazados, refugiados, derrumbe*]
+      de: [erdbeben*, nachbeben*, tsunami*, überschwemmung*, hochwasser*, flut*, erdrutsch*,
+           zyklon*, hurrikan*, taifun*, tornado*, waldbrand*, brand, vulkan*, ausbruch*, dürre*,
+           hitzewelle*, lawine*, evakuier*, rettungskräfte, todeszahl, epidemie*, cholera,
+           hungersnot, flüchtling*, einsturz*, entgleis*]
+      tr: [deprem*, artçı*, tsunami, sel felaketi, sel baskını, seli, heyelan*, kasırga*, tayfun*, hortum*, orman yangın*,
+           yangın*, yanardağ*, volkan*, kuraklık*, sıcak hava dalgası, çığ*, tahliye*,
+           arama kurtarma, salgın*, kolera, kıtlık, göçmen*, mülteci*, çöktü, enkaz*]
+      zh: [地震, 余震, 海啸, 洪水, 洪灾, 山体滑坡, 泥石流, 台风, 飓风, 龙卷风, 山火, 火灾, 火山,
+           喷发, 干旱, 热浪, 雪崩, 疏散, 救援, 死亡人数, 疫情, 霍乱, 饥荒, 难民, 坍塌]
+    weak:
+      en: [storm*, fire*, rain*, damage*, emergency, disaster*, victims, missing, collapse*,
+           magnitude]
+      ru: [шторм*, ущерб*, жертв*]
+      uk: [шторм*, жертв*]
+      ar: [ضحايا, كارثة]
+      fr: [tempête*, victimes, catastrophe*]
+      es: [tormenta*, víctimas, desastre*]
+      de: [sturm*, opfer, katastrophe*]
+      tr: [fırtına*, afet*]
+      zh: [灾害, 遇难]
+    negative:
+      en: [fired from, fire sale, fired coach, ceasefire, firestorm of criticism, flood of,
+           storm of criticism, brainstorm*, perfect storm, box office disaster, fashion disaster]
+
+  infrastructure:
+    strong:
+      en: [power outage*, blackout*, power cut*, grid failure, power grid, power plant*,
+           power station*, nuclear plant, nuclear power plant, zaporizhzhia nuclear, substation*,
+           energy infrastructure, pipeline explosion, pipeline attack*, pipeline sabotage,
+           refinery, oil depot, fuel depot, gas pipeline*, undersea cable*, subsea cable*,
+           cable cut, cables cut, water supply, dam, bridge collapse*, railway sabotage,
+           rail sabotage, sabotage, critical infrastructure, port closed, airport closed,
+           desalination plant, oil facility, gas field, lng terminal]
+      ar: [انقطاع الكهرباء, انقطاع التيار, محطة كهرباء, شبكة الكهرباء, محطة نووية, مصفاة,
+           خط أنابيب, أنابيب النفط, منشآت نفطية, البنية التحتية, كابلات بحرية, سد, جسر, تخريب,
+           محطة تحلية, مستودع وقود]
+      fa: [قطعی برق, خاموشی, نیروگاه, شبکه برق, نیروگاه هسته‌ای, پالایشگاه, خط لوله,
+           زیرساخت, کابل زیردریایی, سد, پل, خرابکاری, انبار سوخت]
+      ru: [отключени* электроэнерги*, отключени* света, блэкаут*, электростанци*, аэс,
+           подстанци*, энергосистем*, энергетическ* инфраструктур*, нпз, нефтебаз*,
+           трубопровод*, газопровод*, нефтепровод*, подводн* кабел*, плотин*, мост*, диверсия]
+      uk: [відключенн* світла, відключенн* електроенергі*, блекаут*, електростанці*, аес,
+           підстанці*, енергосистем*, енергетичн* інфраструктур*, нпз, нафтобаз*,
+           трубопровод*, газопровід*, дамб*, міст, мосту, диверсі*]
+      fr: [panne de courant, coupure de courant, coupure d'électricité, centrale électrique,
+           centrale nucléaire, réseau électrique, raffinerie*, oléoduc*, gazoduc*, câble sous-marin,
+           câbles sous-marins, barrage, effondrement d'un pont, sabotage, infrastructure* critique*,
+           dépôt de carburant]
+      es: [apagón*, corte de luz, corte eléctrico, central eléctrica, central nuclear,
+           red eléctrica, refinería*, oleoducto*, gasoducto*, cable submarino, cables submarinos,
+           presa, represa, colapso de un puente, sabotaje, infraestructura crítica,
+           depósito de combustible]
+      de: [stromausfall*, blackout*, kraftwerk*, atomkraftwerk*, akw, stromnetz*,
+           umspannwerk*, raffinerie*, pipeline*, ölleitung*, gasleitung*, unterseekabel*,
+           seekabel*, staudamm*, brückeneinsturz, sabotage*, kritische infrastruktur, treibstofflager]
+      tr: [elektrik kesinti*, karartma, enerji santrali, nükleer santral, elektrik şebekesi,
+           rafineri*, boru hattı, doğalgaz boru hattı, denizaltı kablo*, baraj*, köprü çöktü,
+           sabotaj*, kritik altyapı, yakıt deposu]
+      zh: [停电, 大停电, 电网, 发电厂, 核电站, 变电站, 炼油厂, 输油管道, 天然气管道, 海底电缆,
+           大坝, 桥梁坍塌, 破坏活动, 关键基础设施, 油库]
+    weak:
+      en: [electricity, power, energy, grid, infrastructure, oil, gas, pipeline*, cable*,
+           bridge, railway, rail line, water]
+      ru: [электроэнерги*, энергетик*, инфраструктур*]
+      uk: [електроенергі*, енергетик*, інфраструктур*]
+      ar: [الكهرباء, النفط, الغاز]
+      fr: [électricité, énergie]
+      es: [electricidad, energía]
+      de: [strom, energie]
+      tr: [elektrik, enerji]
+      zh: [电力, 能源]
+    negative:
+      en: [power ranking*, power couple, power play, powerball, gas prices fall, bridge tournament,
+           cable tv, cable news]
+
+  political:
+    strong:
+      en: [election*, referendum*, prime minister, foreign minister, defence minister,
+           defense minister, summit, sanction*, diplomat*, embassy, ambassador*,
+           peace talks, treaty, security council, un general assembly,
+           nato, european union, impeach*, resign*, ousted, opposition leader, state visit,
+           bilateral talks, joint statement, expelled diplomat*, recalls ambassador, veto]
+      ar: [انتخابات, استفتاء, البرلمان, الرئيس, رئيس الوزراء, وزير الخارجية, الحكومة, قمة,
+           عقوبات, دبلوماسي*, السفارة, السفير, محادثات السلام, مفاوضات, اتفاق*, مجلس الأمن,
+           الأمم المتحدة, حلف الناتو, استقالة]
+      fa: [انتخابات, همه‌پرسی, مجلس, رئیس‌جمهور, نخست‌وزیر, وزیر امور خارجه, دولت, نشست سران,
+           تحریم*, دیپلمات*, سفارت, سفیر, مذاکرات, توافق, شورای امنیت, سازمان ملل, ناتو, استعفا]
+      ru: [выборы, выборах, выборов, референдум*, парламент*, президент*, премьер-министр*, министр*, правительств*,
+           саммит*, санкци*, дипломат*, посольств*, посол*, мирн* переговор*, переговор*,
+           договор*, соглашени*, совбез*, совет безопасности, оон, нато, евросоюз*, отставк*,
+           импичмент*]
+      uk: [вибори, виборах, виборів, референдум*, парламент*, верховн* рад*, президент*, прем'єр-міністр*,
+           міністр*, уряд*, саміт*, санкці*, дипломат*, посольств*, посол*, мирн* переговор*,
+           переговор*, угод*, рада безпеки, оон, нато, євросоюз*, відставк*]
+      fr: [élection*, référendum*, parlement*, président*, premier ministre, ministre*,
+           gouvernement*, sommet*, sanction*, diplomat*, ambassade*, ambassadeur*,
+           pourparlers de paix, négociation*, traité*, accord*, conseil de sécurité, otan,
+           union européenne, démission*, destitution]
+      es: [elecciones, elección, referéndum, parlamento*, presidente*, primer ministro,
+           ministro*, gobierno*, cumbre*, sanción, sanciones, diplomátic*, embajada*, embajador*,
+           conversaciones de paz, negociación*, negociaciones, tratado*, acuerdo*,
+           consejo de seguridad, otan, unión europea, dimisión, renuncia*]
+      de: [wahl*, referendum*, parlament*, präsident*, ministerpräsident*, minister*,
+           regierung*, gipfel*, sanktion*, diplomat*, botschaft*, botschafter*, friedensgespräch*,
+           verhandlung*, vertrag*, abkommen*, sicherheitsrat, nato, europäische union,
+           rücktritt*, amtsenthebung*]
+      tr: [seçim*, referandum*, meclis*, cumhurbaşkanı*, başbakan*, bakan*, hükümet*, zirve*,
+           yaptırım*, diplomat*, büyükelçilik*, büyükelçi*, barış görüşmeleri, müzakere*,
+           antlaşma*, anlaşma*, güvenlik konseyi, nato, avrupa birliği, istifa*]
+      zh: [选举, 公投, 议会, 总统, 总理, 外长, 部长, 政府, 峰会, 制裁, 外交, 大使馆, 大使,
+           和谈, 谈判, 条约, 协议, 安理会, 联合国, 北约, 欧盟, 辞职]
+    weak:
+      en: [talks, policy, vote*, law, bill, party, leader*, official*, statement, meeting,
+           president, government, minister*, parliament*, cabinet, negotiations, accord,
+           resolution]
+      ru: [заявлени*, встреч*]
+      uk: [заява, зустріч*]
+      ar: [تصريح*, لقاء]
+      fr: [réunion, déclaration]
+      es: [reunión, declaración]
+      de: [treffen, erklärung]
+      tr: [görüşme*, açıklama*]
+      zh: [会谈, 声明]
+    negative:
+      en: [student council election, class president, club president, fantasy league]
+
+  economic:
+    strong:
+      en: [inflation, interest rate*, central bank, recession, gdp, stock market*, stocks fell,
+           market crash, currency, devaluation, default*, debt crisis, bailout, imf, world bank,
+           tariff*, trade war, export ban, import ban, embargo, oil price*, brent, opec*,
+           commodity prices, food prices, fuel shortage*, shortage*, bank run, layoffs, unemployment,
+           supply chain, price cap]
+      ar: [التضخم, سعر الفائدة, البنك المركزي, ركود, الناتج المحلي, البورصة, العملة, تخفيض قيمة,
+           صندوق النقد الدولي, البنك الدولي, رسوم جمركية, حظر تصدير, أسعار النفط, أوبك, نقص الوقود]
+      fa: [تورم, نرخ بهره, بانک مرکزی, رکود, تولید ناخالص داخلی, بورس, ارز, ریال, صندوق بین‌المللی پول,
+           تعرفه, قیمت نفت, اوپک, کمبود سوخت, بیکاری]
+      ru: [инфляци*, ключев* ставк*, центробанк*, цб рф, рецесси*, ввп, бирж*, курс рубля, рубл*,
+           девальваци*, дефолт*, мвф, пошлин*, эмбарго, цен* на нефть, опек*, дефицит*,
+           безработиц*, потолок цен]
+      uk: [інфляці*, облікова ставка, нбу, рецесі*, ввп, біржа, гривн*, девальваці*, дефолт*,
+           мвф, мито, мита, ембарго, цін* на нафту, дефіцит*, безробітт*]
+      fr: [inflation, taux d'intérêt, banque centrale, récession, pib, bourse*, monnaie,
+           dévaluation, défaut de paiement, fmi, banque mondiale, droits de douane, guerre commerciale,
+           embargo, prix du pétrole, opep, pénurie*, chômage]
+      es: [inflación, tipos de interés, tasa de interés, banco central, recesión, pib, bolsa*,
+           moneda, devaluación, impago, fmi, banco mundial, aranceles, guerra comercial, embargo,
+           precio del petróleo, opep, escasez, desempleo]
+      de: [inflation, leitzins*, zentralbank*, notenbank*, rezession*, bip, börse*, währung*,
+           abwertung*, zahlungsausfall, iwf, weltbank, zölle, zoll*, handelskrieg*, embargo*,
+           ölpreis*, opec*, engpass*, arbeitslosigkeit]
+      tr: [enflasyon*, faiz*, merkez bankası, durgunluk, resesyon, gsyih, borsa*, döviz*,
+           devalüasyon, temerrüt, imf, dünya bankası, gümrük vergisi, ticaret savaşı, ambargo*,
+           petrol fiyat*, opec, kıtlık, işsizlik]
+      zh: [通胀, 通货膨胀, 利率, 央行, 经济衰退, 国内生产总值, 股市, 汇率, 货币贬值, 违约,
+           国际货币基金组织, 世界银行, 关税, 贸易战, 禁运, 油价, 欧佩克, 短缺, 失业]
+    weak:
+      en: [economy, economic, market*, prices, trade, exports, imports, budget, debt, bank*]
+      ru: [экономик*, рынок, рынк*]
+      uk: [економік*, ринок]
+      ar: [الاقتصاد, اقتصادي*]
+      fa: [اقتصاد]
+      fr: [économie, marché*]
+      es: [economía, mercado*]
+      de: [wirtschaft*, markt]
+      tr: [ekonomi*, piyasa*]
+      zh: [经济, 市场]
+    negative:
+      en: [celebrity net worth, horoscope]
+
+  cyber_outage:
+    strong:
+      en: [cyberattack*, cyber attack*, cyber-attack*, ransomware, hacker*, hacked, hacking,
+           ddos, data breach*, malware, phishing campaign, zero-day, state-sponsored hackers,
+           internet outage*, internet shutdown*, internet blackout, connectivity disruption,
+           network outage, telecom outage, service outage, outage, gps jamming, gps spoofing,
+           jamming, spoofing, cyber espionage, apt group, wiper malware]
+      ar: [هجوم إلكتروني, هجمات إلكترونية, هجوم سيبراني, قراصنة, اختراق, برامج الفدية,
+           انقطاع الإنترنت, قطع الإنترنت, تشويش, تسريب بيانات]
+      fa: [حمله سایبری, هکر*, هک, باج‌افزار, قطعی اینترنت, قطع اینترنت, اختلال اینترنت,
+           نشت اطلاعات, پارازیت]
+      ru: [кибератак*, хакер*, взлом*, вирус-вымогатель, программ* вымогател*, ddos-атак*,
+           утечк* данных, отключени* интернет*, сбой*, глушени*, рэб, спуфинг*]
+      uk: [кібератак*, хакер*, злам*, витік даних, відключенн* інтернет*, збій*, глушінн*, рэб, реб]
+      fr: [cyberattaque*, pirates informatiques, piratage*, rançongiciel*, fuite de données,
+           coupure d'internet, panne d'internet, panne informatique, brouillage]
+      es: [ciberataque*, hackers, hackeo*, ransomware, filtración de datos, corte de internet,
+           apagón de internet, caída del servicio, interferencia gps]
+      de: [cyberangriff*, hackerangriff*, hacker, erpressersoftware, datenleck*, internetausfall*,
+           netzausfall*, störung*, gps-störung*]
+      tr: [siber saldırı*, hacker*, fidye yazılımı, veri sızıntısı, internet kesintisi,
+           erişim engeli, gps karıştırma]
+      zh: [网络攻击, 黑客, 勒索软件, 数据泄露, 断网, 网络中断, 服务中断, 干扰]
+    weak:
+      en: [cyber, internet, network, systems down, disruption, servers]
+      ru: [интернет*]
+      uk: [інтернет*]
+      ar: [الإنترنت]
+      fr: [internet]
+      es: [internet]
+      de: [internet]
+      tr: [internet]
+      zh: [互联网]
+    negative:
+      en: [life hack*, hackathon, growth hack*, outage map game]
+
+# CAMEO root code (GDELT EventRootCode) -> our category. Event-code overrides win.
+cameo_roots:
+  "01": political    # make public statement
+  "02": political    # appeal
+  "03": political    # express intent to cooperate
+  "04": political    # consult
+  "05": political    # diplomatic cooperation
+  "06": economic     # material cooperation
+  "07": economic     # provide aid
+  "08": political    # yield
+  "09": political    # investigate
+  "10": political    # demand
+  "11": political    # disapprove
+  "12": political    # reject
+  "13": political    # threaten
+  "14": civil_unrest # protest
+  "15": armed_conflict # exhibit force posture
+  "16": political    # reduce relations
+  "17": civil_unrest # coerce (arrests, repression)
+  "18": armed_conflict # assault
+  "19": armed_conflict # fight
+  "20": armed_conflict # unconventional mass violence
+cameo_overrides:
+  "138": armed_conflict   # threaten with military force
+  "1381": armed_conflict
+  "1382": armed_conflict
+  "1383": armed_conflict
+  "1384": armed_conflict
+  "1385": armed_conflict
+  "163": economic         # impose embargo, boycott, sanctions
+  "1621": economic        # reduce or stop economic assistance
+  "176": cyber_outage     # attack cybernetically
+  "0233": disaster        # appeal for humanitarian aid
+  "0234": disaster        # appeal for military protection or peacekeeping
+  "073": disaster         # provide humanitarian aid
+  "0874": armed_conflict  # retreat or surrender militarily
+  "192": armed_conflict   # occupy territory
+  "195": armed_conflict   # employ aerial weapons
+# relevance of a GDELT row by QuadClass (1 verbal coop, 2 material coop, 3 verbal
+# conflict, 4 material conflict) before the article-count bonus
+gdelt_quad_relevance:
+  "1": 0.15
+  "2": 0.2
+  "3": 0.35
+  "4": 0.6
