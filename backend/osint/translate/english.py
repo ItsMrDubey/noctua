@@ -5,10 +5,11 @@ shows the original with a "translating..." hint). English originals pass through
 """
 
 from osint.pipeline.triage import detect_language
-from osint.translate.store import TranslationStore, clean
+from osint.translate.store import TranslationStore, clean, norm_lang
 
 
-def _english_or_none(ref: dict | None, text: str | None, max_chars: int) -> str | None:
+def _english_or_none(ref: dict | None, text: str | None, max_chars: int,
+                     lang: str = "") -> str | None:
     """The cached English for ``text`` if ``ref`` still points at that text."""
     t = clean(text, max_chars)
     if not t:
@@ -18,6 +19,8 @@ def _english_or_none(ref: dict | None, text: str | None, max_chars: int) -> str 
             return (text or "").strip()  # English original, unclipped
         return ref.get("text_en") or None
     # not registered yet (or the text changed since): English originals pass through
+    if lang and lang != "en":
+        return None
     return (text or "").strip() if detect_language(t) == "en" else None
 
 
@@ -82,6 +85,7 @@ def annotate_documents(store: TranslationStore | None, docs: list[dict], *,
     for d in docs:
         tref = refs.get(f"d:{d['doc_id']}:title")
         d["lang"] = (d.get("language") or "") or _lang(tref, d.get("title"))
-        d["title_en"] = _english_or_none(tref, d.get("title"), max_chars)
+        d["title_en"] = _english_or_none(tref, d.get("title"), max_chars,
+                                         norm_lang(d.get("language")))
         sref = refs.get(f"d:{d['doc_id']}:snippet")
         d["snippet_en"] = None if sref is None else sref.get("text_en")

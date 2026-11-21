@@ -140,6 +140,8 @@ async def test_capped_leaves_items_pending():
 def test_english_passthrough_and_cache_keys(tstore):
     assert is_english("Hello", "en") and is_english("The strike hit the city of Kyiv", "")
     assert not is_english("Удар по Харкову", "uk")
+    assert not is_english("Raketeneinschlag: NATO-Generalsekretär sagt Polen Unterstützung zu",
+                          "de")  # the tag wins over the stopword heuristic
     assert text_key("uk", "x") != text_key("ru", "x") and text_key("EN-us", "x") == \
         text_key("en", "x")
     assert clean("  a \n b ", 300) == "a b" and len(clean("x" * 500, 300)) == 300
@@ -152,6 +154,10 @@ def test_english_passthrough_and_cache_keys(tstore):
     assert row["status"] == "passthrough" and row["text_en"] == "Hi there"
     due = tstore.due(10, T0, timedelta(minutes=30), 3)
     assert [d["text"] for d in due] == ["Привіт"]
+    # a row once passed through but no longer judged English is requeued
+    tstore.enqueue([{**items[0], "english": False}], T0)
+    row = tstore.get(text_key("en", "Hi there"))
+    assert row["status"] == "pending" and row["text_en"] is None
 
 
 async def test_failed_items_retried_after_delay(tstore):

@@ -103,9 +103,11 @@ class TranslationStore:
                 if cur.rowcount:
                     added += 1
                 elif not english:
-                    self._db.execute(
-                        "UPDATE translations SET prio=MIN(prio, ?), "
-                        "sort_ts=MAX(sort_ts, ?) WHERE key=? AND status IN ('pending','failed')",
+                    self._db.execute(  # (a passthrough row no longer judged English: requeue)
+                        "UPDATE translations SET prio=MIN(prio, ?), sort_ts=MAX(sort_ts, ?), "
+                        "status=CASE status WHEN 'passthrough' THEN 'pending' ELSE status END,"
+                        " text_en=CASE status WHEN 'passthrough' THEN NULL ELSE text_en END "
+                        "WHERE key=? AND status IN ('pending','failed','passthrough')",
                         (int(it.get("prio", 9)), it.get("sort_ts") or "", it["key"]))
         return added
 

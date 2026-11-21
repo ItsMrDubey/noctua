@@ -38,7 +38,10 @@ def _parse(ts: str | None) -> datetime | None:
 
 
 def is_english(text: str, lang: str) -> bool:
-    return norm_lang(lang) == "en" or detect_language(text) == "en"
+    """Tagged English, or untagged text detected as English. A non-English tag wins over
+    detection (the stopword heuristic calls e.g. short German/Turkish headlines English)."""
+    lang = norm_lang(lang)
+    return lang == "en" or (not lang and detect_language(text) == "en")
 
 
 def event_lang(ev: dict, docs: list[dict]) -> str:
