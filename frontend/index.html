@@ -3,93 +3,145 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OSINT // Global Picture</title>
+<title>NOCTUA // Global Watch</title>
 <link rel="stylesheet" href="/static/vendor/cesium/Widgets/widgets.css">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/shell.css">
+<link rel="stylesheet" href="/static/css/panels.css">
+<link rel="stylesheet" href="/static/css/dock.css">
 <script>window.CESIUM_BASE_URL = "/static/vendor/cesium/";</script>
 <script src="/static/vendor/cesium/Cesium.js"></script>
 </head>
 <body>
 <div id="globe"></div>
+<div id="vignette"></div>
 
-<header id="topbar" class="panel">
-  <div class="brand">OSINT <span>//</span> Global Picture</div>
-  <div id="sources" class="sources"></div>
-  <div id="counts" class="counts"></div>
-  <div class="search">
-    <input id="search" type="search" placeholder="Search name / id / type / operator" autocomplete="off">
-    <div id="results" class="results hidden"></div>
+<header id="cmdbar" class="glass">
+  <div class="mark" title="NOCTUA // Global Watch">
+    <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12" /><circle cx="9.2" cy="13" r="3.4" /><circle cx="18.8" cy="13" r="3.4" /><path d="M14 16.5l-1.6 2.6h3.2z" /><path d="M2 14h3M23 14h3M14 2v3" /></svg>
+    <span class="mark-name">NOCTUA</span><span class="mark-sep">//</span><span class="mark-sub">Global watch</span>
   </div>
-  <div id="clock" class="clock">--:--:-- UTC</div>
+  <label class="cmd-search">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4L14 14" /></svg>
+    <input id="search" type="search" placeholder="Search tracks, places, layers, actions" autocomplete="off" spellcheck="false" aria-label="Search">
+    <kbd>Ctrl K</kbd>
+    <div id="results" class="results hidden"></div>
+  </label>
+  <div id="sources" class="sources" aria-label="Source health"></div>
+  <div id="mode-pill" class="mode-pill" role="status"><i></i><span id="mode-text">LIVE</span></div>
+  <div class="clocks"><div id="clock" class="num">--:--:--<small>UTC</small></div><div id="clock-local" class="num">--:--<small>LCL</small></div></div>
 </header>
 
-<aside id="left" class="panel">
-  <h3>Layers</h3>
-  <label class="row"><input type="checkbox" id="t-aircraft" checked><span class="sw" style="--c:#ff9a1f"></span>Military aircraft<b id="c-aircraft">–</b></label>
-  <label class="row sub"><input type="checkbox" id="t-aircraft-hp"><span class="sw" style="--c:#ff3b3b"></span>High-priority only</label>
-  <label class="row"><input type="checkbox" id="t-ships" checked><span class="sw" style="--c:#2fd8ff"></span>Ships<b id="c-ships">–</b></label>
-  <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw" style="--c:#ff3b3b"></span>Military ships only</label>
-  <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a00"></span>Fires 24 h<b id="c-fires">–</b></label>
-  <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw" style="--c:#ffe14a"></span>Quakes 24 h<b id="c-quakes">–</b></label>
-  <h3>Reference</h3>
-  <label class="row"><input type="checkbox" id="r-airports" checked><span class="sw sq" style="--c:#36c5ff"></span>Airports</label>
-  <label class="row sub"><input type="checkbox" id="r-airports-med"><span class="sw sq" style="--c:#36c5ff"></span>Include medium</label>
-  <label class="row sub"><input type="checkbox" id="r-airports-mil"><span class="sw sq" style="--c:#ff4d4d"></span>Military only</label>
-  <label class="row"><input type="checkbox" id="r-runways"><span class="sw sq" style="--c:#36c5ff"></span>Runways (zoom &lt; 400 km)</label>
-  <label class="row"><input type="checkbox" id="r-ports"><span class="sw sq" style="--c:#3ddcc2"></span>Seaports</label>
-  <label class="row"><input type="checkbox" id="r-bases" checked><span class="sw dm" style="--c:#ff5a5a"></span>Military bases</label>
-  <div id="r-chips" class="chips"></div>
-  <label class="row sub"><input type="checkbox" id="r-rings"><span class="sw" style="--c:#ff5a5a"></span>Range rings 100/300/500 km</label>
-  <label class="row"><input type="checkbox" id="r-borders" checked><span class="sw ln" style="--c:#36c5ff"></span>Country borders</label>
-  <label class="row"><input type="checkbox" id="r-disputed"><span class="sw ln" style="--c:#ffb020"></span>Disputed boundaries</label>
-  <label class="row"><input type="checkbox" id="r-maritime"><span class="sw ln" style="--c:#3ddcc2"></span>Maritime lines</label>
-  <label class="row"><input type="checkbox" id="r-choke" checked><span class="sw sq" style="--c:#ffb020"></span>Chokepoints</label>
-  <label class="row"><input type="checkbox" id="r-clabels"><span class="sw" style="--c:#36c5ff"></span>Country labels</label>
-  <h3>Trails</h3>
-  <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw" style="--c:#ff9a1f"></span>Show trails for all military aircraft (last 1 h)</label>
-  <h3>Density (H3)</h3>
-  <label class="row"><input type="checkbox" id="d-aircraft"><span class="sw" style="--c:#21918c"></span>Aircraft</label>
-  <label class="row"><input type="checkbox" id="d-ships"><span class="sw" style="--c:#21918c"></span>Ships</label>
-  <label class="row"><input type="checkbox" id="d-fires"><span class="sw" style="--c:#21918c"></span>Fires</label>
-  <label class="row"><input type="checkbox" id="d-quakes"><span class="sw" style="--c:#21918c"></span>Quakes</label>
-  <label class="row date">Resolution <select id="d-res"><option value="3">3 (coarse)</option><option value="4">4</option><option value="5">5 (fine)</option></select></label>
-  <h3>Imagery</h3>
-  <label class="row"><input type="checkbox" id="t-labels"><span class="sw" style="--c:#aaa"></span>Labels overlay</label>
-  <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
-  <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
-  <label class="row date">GIBS date <input type="date" id="gibs-date"></label>
+<nav id="rail" class="glass" aria-label="Layer groups">
+  <button class="rail-btn" data-g="live" title="Live tracks"><svg viewBox="0 0 20 20"><path d="M10 2.5l1.2 5.3 5.8 3.2-5.8 1-1.2 5.5-1.2-5.5-5.8-1 5.8-3.2z" /></svg><i class="rail-dot"></i></button>
+  <button class="rail-btn" data-g="events" title="Events"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.2" /><circle cx="10" cy="10" r="6" /><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3" /></svg></button>
+  <button class="rail-btn" data-g="ref" title="Reference geography"><svg viewBox="0 0 20 20"><path d="M10 2.5l7 7.5-7 7.5-7-7.5z" /><path d="M3 10h14M10 2.5v15" /></svg></button>
+  <button class="rail-btn" data-g="density" title="Density"><svg viewBox="0 0 20 20"><path d="M6 3.5l4 2.3v4.6L6 12.7 2 10.4V5.8zM14 7.3l4 2.3v4.6l-4 2.3-4-2.3V9.6z" /></svg></button>
+  <button class="rail-btn" data-g="imagery" title="Imagery"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
+  <span class="rail-fill"></span>
+  <button id="rail-toggle" class="rail-btn" title="Collapse layer panel ( [ )"><svg viewBox="0 0 20 20"><path d="M12.5 5l-5 5 5 5" /></svg></button>
+</nav>
+
+<aside id="left" class="glass" aria-label="Layers">
+  <section class="grp" data-g="live">
+    <header><h3>Live tracks</h3><b id="g-live-n" class="num">–</b></header>
+    <label class="row"><input type="checkbox" id="t-aircraft" checked><span class="sw gl" style="--c:#9ff3ff"></span>Military aircraft<b id="c-aircraft" class="num">–</b></label>
+    <label class="row sub"><input type="checkbox" id="t-aircraft-hp"><span class="sw gl" style="--c:#ff4b55"></span>High-priority only</label>
+    <label class="row"><input type="checkbox" id="t-ships" checked><span class="sw hull" style="--c:#7fa8ff"></span>Ships<b id="c-ships" class="num">–</b></label>
+    <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw hull" style="--c:#ff4b55"></span>Military ships only</label>
+    <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a1a"></span>Fires 24 h<b id="c-fires" class="num">–</b></label>
+    <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw ring" style="--c:#ffd24a"></span>Quakes 24 h<b id="c-quakes" class="num">–</b></label>
+    <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw ln" style="--c:#9ff3ff"></span>Trails, all mil aircraft 1 h</label>
+  </section>
+  <section class="grp" data-g="events">
+    <header><h3>Events</h3><b class="num tag">soon</b></header>
+    <label class="row" title="Fused news events arrive with the event-fusion milestone"><input type="checkbox" disabled><span class="sw" style="--c:#a99bff"></span>News events</label>
+    <label class="row" title="Cause → consequence arcs arrive with the event-fusion milestone"><input type="checkbox" disabled><span class="sw ln" style="--c:#a99bff"></span>Event chains</label>
+  </section>
+  <section class="grp" data-g="ref">
+    <header><h3>Reference</h3></header>
+    <label class="row"><input type="checkbox" id="r-airports" checked><span class="sw sq" style="--c:#36c5ff"></span>Airports</label>
+    <label class="row sub"><input type="checkbox" id="r-airports-med"><span class="sw sq" style="--c:#36c5ff"></span>Include medium</label>
+    <label class="row sub"><input type="checkbox" id="r-airports-mil"><span class="sw sq" style="--c:#ff4d4d"></span>Military only</label>
+    <label class="row"><input type="checkbox" id="r-runways"><span class="sw sq" style="--c:#36c5ff"></span>Runways <small>zoom &lt; 400 km</small></label>
+    <label class="row"><input type="checkbox" id="r-ports"><span class="sw sq" style="--c:#3ddcc2"></span>Seaports</label>
+    <label class="row"><input type="checkbox" id="r-bases" checked><span class="sw dm" style="--c:#ff5a5a"></span>Military bases</label>
+    <div id="r-chips" class="chips"></div>
+    <label class="row sub"><input type="checkbox" id="r-rings"><span class="sw ring" style="--c:#ff5a5a"></span>Range rings 100/300/500 km</label>
+    <label class="row"><input type="checkbox" id="r-borders" checked><span class="sw ln" style="--c:#36c5ff"></span>Country borders</label>
+    <label class="row"><input type="checkbox" id="r-disputed"><span class="sw ln dash" style="--c:#ffb020"></span>Disputed boundaries</label>
+    <label class="row"><input type="checkbox" id="r-maritime"><span class="sw ln dash" style="--c:#3ddcc2"></span>Maritime lines</label>
+    <label class="row"><input type="checkbox" id="r-choke" checked><span class="sw sq" style="--c:#ffb020"></span>Chokepoints</label>
+    <label class="row"><input type="checkbox" id="r-clabels"><span class="sw txt" style="--c:#36c5ff">A</span>Country labels</label>
+  </section>
+  <section class="grp" data-g="density">
+    <header><h3>Density · H3</h3></header>
+    <label class="row"><input type="checkbox" id="d-aircraft"><span class="sw hex"></span>Aircraft</label>
+    <label class="row"><input type="checkbox" id="d-ships"><span class="sw hex"></span>Ships</label>
+    <label class="row"><input type="checkbox" id="d-fires"><span class="sw hex"></span>Fires</label>
+    <label class="row"><input type="checkbox" id="d-quakes"><span class="sw hex"></span>Quakes</label>
+    <label class="row field">Resolution <select id="d-res"><option value="3">3 · coarse</option><option value="4">4</option><option value="5">5 · fine</option></select></label>
+  </section>
+  <section class="grp" data-g="imagery">
+    <header><h3>Imagery</h3></header>
+    <label class="row"><input type="checkbox" id="t-grid"><span class="sw grid" style="--c:#5ee3ea"></span>Graticule 15°</label>
+    <label class="row"><input type="checkbox" id="t-daynight"><span class="sw half"></span>Day / night shading</label>
+    <label class="row"><input type="checkbox" id="t-labels"><span class="sw txt" style="--c:#c8d4de">A</span>Place labels</label>
+    <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
+    <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
+    <label class="row field">GIBS date <input type="date" id="gibs-date"></label>
+  </section>
 </aside>
 
-<aside id="right" class="panel hidden">
-  <button id="close-details" class="close" title="Close">&times;</button>
-  <h3 id="d-title">Details</h3>
-  <div id="d-body"></div>
-  <div class="actions">
-    <button id="d-fly">Fly to</button>
-    <button id="d-follow" class="hidden">Follow: off</button>
-  </div>
-</aside>
+<div id="rightcol">
+  <aside id="right" class="glass hidden" aria-label="Inspector">
+    <button id="close-details" class="ghost close" title="Close (Esc)" aria-label="Close inspector">&times;</button>
+    <h3 id="d-title">Details</h3>
+    <div id="d-body"></div>
+    <div class="actions">
+      <button id="d-fly">Fly to</button>
+      <button id="d-follow" class="hidden">Follow: off</button>
+    </div>
+  </aside>
 
-<aside id="tracks" class="panel">
-  <div class="tk-head"><b>Tracks</b> <span id="tracks-count"></span>
-    <span class="tabs"><button class="tab on" data-tab="aircraft">Aircraft</button><button class="tab" data-tab="ships">Ships</button></span>
-    <button id="tl-collapse" title="Collapse">�</button></div>
-  <div class="tk-body"><table id="tracks-table"></table></div>
-</aside>
-
-<div id="timeline" class="panel">
-  <span id="tl-mode" class="mode">LIVE</span>
-  <button id="tl-live" class="on">Live</button>
-  <button id="tl-play">Play</button>
-  <select id="tl-speed"><option value="1">1 min/s</option><option value="10" selected>10 min/s</option><option value="60">1 h/s</option></select>
-  <span id="tl-start" class="lbl"></span>
-  <input type="range" id="tl-slider" min="0" max="2880" value="2880" step="1">
-  <span id="tl-end" class="lbl">now</span>
+  <aside id="tracks" class="glass">
+    <div class="tk-head"><b>Tracks</b> <span id="tracks-count" class="num"></span>
+      <span class="tabs"><button class="tab on" data-tab="aircraft">Aircraft</button><button class="tab" data-tab="ships">Ships</button></span>
+      <button id="tl-collapse" class="ghost" title="Collapse">–</button></div>
+    <div class="tk-body"><table id="tracks-table"></table></div>
+  </aside>
 </div>
 
-<div id="pick-tip" class="panel hidden"></div>
+<div id="toasts" aria-live="polite"></div>
 
-<footer id="attrib" class="panel">Imagery: Esri / NASA GIBS &bull; Data: ADS-B aggregators, AISStream, NASA FIRMS, USGS &bull; Reference: OurAirports, NGA WPI / Natural Earth (public domain)</footer>
+<div id="timeline" class="glass">
+  <div class="dk-ctl">
+    <span id="tl-mode" class="mode num">LIVE</span>
+    <button id="tl-play" title="Play / pause replay (Space)">Play</button>
+    <select id="tl-speed" title="Replay speed"><option value="1">1 min/s</option><option value="10" selected>10 min/s</option><option value="60">1 h/s</option></select>
+    <button id="tl-live" class="on live-btn" title="Return to live (L)">Live</button>
+    <span class="dk-legend" id="dk-legend"></span>
+  </div>
+  <div class="dk-track">
+    <canvas id="tl-hist"></canvas>
+    <input type="range" id="tl-slider" min="0" max="2880" value="2880" step="1" aria-label="Replay time">
+  </div>
+  <div class="dk-axis"><span id="tl-start" class="lbl num"></span><span id="tl-end" class="lbl num">now</span></div>
+</div>
+
+<div id="hud" class="glass" aria-label="Navigation">
+  <button id="hud-compass" class="compass ghost" title="Reset north"><svg viewBox="0 0 60 60" id="compass-rose"><circle cx="30" cy="30" r="26" /><circle cx="30" cy="30" r="19" class="inner" /><path class="ticks" d="M30 4v5M30 51v5M4 30h5M51 30h5" /><path class="needle" d="M30 11l4 19h-8z" /><path class="needle-s" d="M30 49l4-19h-8z" /><text x="30" y="22.5">N</text></svg></button>
+  <div class="hud-read">
+    <div><span>LAT</span><b id="hud-lat" class="num">—</b></div>
+    <div><span>LON</span><b id="hud-lon" class="num">—</b></div>
+    <div><span>EYE</span><b id="hud-alt" class="num">—</b></div>
+    <div class="hud-btns"><button id="hud-home" class="ghost" title="World view (H)">World</button><button id="hud-mode" class="ghost" title="Toggle 2D / 3D">2D</button></div>
+  </div>
+</div>
+
+<div id="pick-tip" class="glass hidden"></div>
+
+<footer id="attrib">Imagery Esri / NASA GIBS · Data ADS-B aggregators, AISStream, NASA FIRMS, USGS · Reference OurAirports, NGA WPI, Natural Earth</footer>
 
 <script type="module" src="/static/app.js"></script>
 </body>

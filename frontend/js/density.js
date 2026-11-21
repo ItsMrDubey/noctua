@@ -46,13 +46,14 @@ export class DensityLayer {
         appearance: new C.PerInstanceColorAppearance({ translucent: true, closed: false }),
         asynchronous: false,
       }));
+      this.scene.requestRender();
     } catch (e) { /* keep previous */ }
   }
   setOn(on) {
     this.on = on;
     clearInterval(this.timer);
     if (on) { this.load(); this.timer = setInterval(() => this.load(), 300000); }
-    else { this.seq++; this._clear(); }
+    else { this.seq++; this._clear(); this.scene.requestRender(); }
   }
   setRes(res) { this.res = res; if (this.on) this.load(); }
 }

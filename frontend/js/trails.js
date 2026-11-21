@@ -2,6 +2,7 @@
 import { fetchJson } from "/static/js/api.js";
 const C = Cesium;
 const SEGMENTS = 6;
+const MATS = new Map();
 
 function colorFor(kind, it) {
   if (kind === "aircraft") return C.Color.fromCssColorString(it && it.high_priority ? "#ff3b3b" : it && it.is_mil ? "#ff9a1f" : "#ffffff");
@@ -10,6 +11,7 @@ function colorFor(kind, it) {
 
 export class Trails {
   constructor(scene) {
+    this.scene = scene;
     this.sel = scene.primitives.add(new C.PolylineCollection());
     this.mil = scene.primitives.add(new C.PolylineCollection());
     this.milOn = false;
@@ -25,15 +27,15 @@ export class Trails {
     for (let i = 0, n = 0; i < pts.length - 1; i += per, n++) {
       const seg = pts.slice(i, Math.min(pts.length, i + per + 1));
       if (seg.length < 2) continue;
-      const alpha = 0.15 + 0.85 * ((n + 1) / Math.ceil((pts.length - 1) / per));
-      col.add({
-        positions: seg.map((p) => C.Cartesian3.fromDegrees(p[0], p[1], p[2] || 0)),
-        width, material: C.Material.fromType("Color", { color: color.withAlpha(alpha) }),
-      });
+      const alpha = Math.round(10 * (0.15 + 0.85 * ((n + 1) / Math.ceil((pts.length - 1) / per)))) / 10;
+      const mk = color.toCssHexString() + alpha;
+      // materials are shared per colour/alpha step so PolylineCollection can batch them
+      const material = MATS.get(mk) || MATS.set(mk, C.Material.fromType("Color", { color: color.withAlpha(alpha) })).get(mk);
+      col.add({ positions: seg.map((p) => C.Cartesian3.fromDegrees(p[0], p[1], p[2] || 0)), width, material });
     }
   }
 
-  clearSelected() { this.sel.removeAll(); this.selKey = null; }
+  clearSelected() { this.sel.removeAll(); this.selKey = null; this.points = []; this.scene.requestRender(); }
 
   // Fetch + draw the trail for the selected track; throttled unless force.
   async showSelected(kind, id, it, force) {
@@ -47,6 +49,9 @@ export class Trails {
       const pts = (d.points || []).map((p) => [p.lon, p.lat, kind === "aircraft" ? (p.alt_ft || 0) * 0.3048 : 0]);
       this.sel.removeAll();
       this._draw(this.sel, pts, colorFor(kind, it), 3);
+      this.points = d.points || [];
+      if (this.onPoints) this.onPoints(key, this.points);
+      this.scene.requestRender();
     } catch (e) { /* keep previous trail */ }
   }
 
@@ -58,6 +63,7 @@ export class Trails {
       this.mil.removeAll();
       const col = C.Color.fromCssColorString("#ff9a1f");
       for (const pts of Object.values(d.tracks || {})) this._draw(this.mil, pts.map((p) => [p[0], p[1], (p[2] || 0) * 0.3048]), col, 1.5);
+      this.scene.requestRender();
     } catch (e) { /* retry next tick */ }
   }
 
@@ -65,6 +71,6 @@ export class Trails {
     this.milOn = on;
     clearInterval(this.milTimer);
     if (on) { this.refreshMil(); this.milTimer = setInterval(() => this.refreshMil(), 60000); }
-    else this.mil.removeAll();
+    else { this.mil.removeAll(); this.scene.requestRender(); }
   }
 }

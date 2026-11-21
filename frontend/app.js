@@ -1,12 +1,16 @@
 import { fetchJson, poll } from "/static/js/api.js";
-import { AircraftLayer, ShipLayer, FireLayer, QuakeLayer, makeImagery } from "/static/js/layers.js";
+import { AircraftLayer, ShipLayer, FireLayer, QuakeLayer } from "/static/js/layers.js";
 import { TrackList } from "/static/js/tracklist.js";
 import { Trails } from "/static/js/trails.js";
 import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $, esc, renderStatus, startClock, detailsHtml } from "/static/js/ui.js";
+import { $, esc, detailsHtml } from "/static/js/ui.js";
+import { createViewer, setupImagery } from "/static/js/theme/globe.js";
+import { StatusBar, startClock } from "/static/js/panels/topbar.js";
+import { LayerTree } from "/static/js/panels/layertree.js";
+import { setupHud, setupFps } from "/static/js/panels/hud.js";
 
 const errors = {};
 let lastStatus = null;
@@ -17,49 +21,21 @@ async function loadConfig() {
 
 async function main() {
   startClock();
-  if (typeof Cesium === "undefined") { $("sources").textContent = "CesiumJS failed to load (CDN unreachable)"; return; }
+  if (typeof Cesium === "undefined") { $("sources").textContent = "CesiumJS failed to load"; return; }
   const cfg = await loadConfig();
-  const opts = {
-    baseLayer: false, geocoder: false, baseLayerPicker: false, timeline: false, animation: false,
-    homeButton: false, navigationHelpButton: false, sceneModePicker: true, fullscreenButton: false, infoBox: false, selectionIndicator: false,
-  };
-  if (cfg && cfg.cesium_ion_token) {
-    Cesium.Ion.defaultAccessToken = cfg.cesium_ion_token;
-    opts.terrain = Cesium.Terrain.fromWorldTerrain();
-  }
-  const viewer = new Cesium.Viewer("globe", opts);
+  const viewer = createViewer(cfg);
   const scene = viewer.scene;
-  scene.globe.baseColor = Cesium.Color.fromCssColorString("#0a1220");
-  scene.globe.enableLighting = false;
-  viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(20, 25, 2.2e7) });
-
-  // ---- Imagery ----
-  const layers = viewer.imageryLayers;
-  layers.addImageryProvider(makeImagery("base"));
-  const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const dateIn = $("gibs-date");
-  dateIn.value = today;
-  dateIn.max = new Date().toISOString().slice(0, 10);
-  const overlay = { labels: null, viirs: null, night: null };
-  const kindOf = { labels: "labels", viirs: "viirs", night: "night" };
-  function setOverlay(name, on) {
-    if (overlay[name]) { layers.remove(overlay[name], true); overlay[name] = null; }
-    if (on) {
-      const l = layers.addImageryProvider(makeImagery(kindOf[name], dateIn.value || today));
-      l.alpha = name === "night" ? 0.8 : 1;
-      overlay[name] = l;
-      // keep labels on top
-      if (name !== "labels" && overlay.labels) layers.raiseToTop(overlay.labels);
-    }
-  }
-  for (const n of ["labels", "viirs", "night"]) $("t-" + n).addEventListener("change", (e) => setOverlay(n, e.target.checked));
-  dateIn.addEventListener("change", () => {
-    for (const n of ["viirs", "night"]) if ($("t-" + n).checked) setOverlay(n, true);
-  });
+  const redraw = () => scene.requestRender();
+  setupImagery(viewer);
+  const hud = setupHud(viewer);
+  const fps = setupFps(viewer);
+  const tree = new LayerTree();
+  const statusBar = new StatusBar();
 
   // ---- Data layers ----
   const air = new AircraftLayer(scene), ships = new ShipLayer(scene), fires = new FireLayer(scene), quakes = new QuakeLayer(scene);
   const all = [air, ships, fires, quakes];
+  for (const l of all) l.onChange = redraw;
   const byKind = { aircraft: air, ships, fires, quakes };
   const applyFilters = () => {
     air.filter = (it) => !$("t-aircraft-hp").checked || !!(it && it.high_priority);
@@ -67,16 +43,14 @@ async function main() {
     air.refilter(); ships.refilter();
   };
   applyFilters();
-  for (const k of ["aircraft", "ships", "fires", "quakes"]) {
-    $("t-" + k).addEventListener("change", (e) => { byKind[k].show = e.target.checked; });
-  }
+  for (const k of ["aircraft", "ships", "fires", "quakes"]) $("t-" + k).addEventListener("change", (e) => { byKind[k].show = e.target.checked; });
   $("t-aircraft-hp").addEventListener("change", applyFilters);
   $("t-ships-mil").addEventListener("change", applyFilters);
 
-  const setCount = (k, n) => { $("c-" + k).textContent = n == null ? "–" : n.toLocaleString(); };
+  const setCount = (k, n, truncated) => tree.setCount(k, n, truncated);
   const onErr = (name, err) => {
     if (err) errors[name] = err; else delete errors[name];
-    renderStatus(lastStatus, errors);
+    statusBar.render(lastStatus, errors);
   };
   let replayAt = null, live = null;
   const trails = new Trails(scene);
@@ -90,7 +64,7 @@ async function main() {
     const data = await fetchJson(url);
     const items = Array.isArray(data && data.items) ? data.items : [];
     layer.sync(items);
-    setCount(kind, items.length);
+    setCount(kind, items.length, data && data.truncated);
     if (selected && selected.kind === kind) refreshSelected();
   };
   const trailSelected = (force) => {
@@ -99,7 +73,7 @@ async function main() {
   };
 
   // ---- Selection / details ----
-  let selected = null, following = false;
+  let selected = null, following = false, detail = null;
   const tracker = viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(0, 0, 0) });
   const followBtn = $("d-follow");
 
@@ -113,28 +87,50 @@ async function main() {
     } else {
       viewer.trackedEntity = undefined;
     }
+    viewer.setContinuous("follow", on && !!selected);
   }
+  // Slim list items carry no `extra`; merge it from GET /api/track/{id} when available.
+  const withDetail = (it) => {
+    if (!detail || !selected || detail.id !== selected.id) return it;
+    const tr = detail.track || {};
+    return { ...tr, ...it, extra: { ...(tr.extra || {}), ...(it.extra || {}) }, source: detail.position && detail.position.source };
+  };
   function refreshSelected() {
+    if (!selected) return;
     const it = byKind[selected.kind].items.get(selected.id);
     if (!it) return;
-    const [title, body] = detailsHtml(selected.kind, it);
-    $("d-title").textContent = title;
-    $("d-body").innerHTML = body;
-    if (following && selected.kind === "aircraft") {
-      const p = air.positionOf(selected.id);
+    const [title, body] = detailsHtml(selected.kind, withDetail(it));
+    if ($("d-title").textContent !== title) $("d-title").textContent = title;
+    if ($("d-body")._h !== body) { $("d-body")._h = body; $("d-body").innerHTML = body; }
+    if (following) {
+      const p = byKind[selected.kind].positionOf(selected.id);
       if (p) tracker.position = p.clone();
     }
+  }
+  async function loadDetail(kind, id) {
+    detail = null;
+    if (kind !== "aircraft" && kind !== "ships") return;
+    try {
+      const d = await fetchJson("/api/track/" + encodeURIComponent(id), 8000);
+      if (selected && selected.id === id) { detail = d; refreshSelected(); }
+    } catch (e) { /* older backend or unknown track: list item is enough */ }
   }
   function select(kind, id) {
     setFollow(false);
     refSel = null;
     selected = { kind, id };
     $("right").classList.remove("hidden");
-    tracklist.setVisible(false);
-    followBtn.classList.toggle("hidden", kind !== "aircraft");
+    followBtn.classList.toggle("hidden", kind !== "aircraft" && kind !== "ships");
     refreshSelected();
+    loadDetail(kind, id);
+    tracklist.setSelected(id);
     trails.clearSelected();
     trailSelected(true);
+  }
+  function clearSelection() {
+    setFollow(false); selected = null; refSel = null; detail = null;
+    trails.clearSelected(); tracklist.setSelected(null);
+    $("right").classList.add("hidden");
   }
   function flyToItem(kind, id) {
     const it = byKind[kind].items.get(id);
@@ -143,19 +139,19 @@ async function main() {
     viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(it.lon, it.lat, alt), duration: 1.8 });
   }
   $("d-fly").addEventListener("click", () => {
-    if (refSel) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(refSel.item.lon, refSel.item.lat, refSel.kind === "airport" || refSel.kind === "runway" ? 8e4 : 4e5), duration: 1.8 });
+    if (refSel) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(refSel.item.lon, refSel.item.lat, /airport|runway/.test(refSel.kind) ? 8e4 : 4e5), duration: 1.8 });
     else if (selected) flyToItem(selected.kind, selected.id);
   });
   followBtn.addEventListener("click", () => setFollow(!following));
-  $("close-details").addEventListener("click", () => { setFollow(false); selected = null; refSel = null; trails.clearSelected(); $("right").classList.add("hidden"); tracklist.setVisible(true); tracklist.render(true); });
+  $("close-details").addEventListener("click", clearSelection);
 
   const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); });
   tracklist.render(true);
   const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
   handler.setInputAction((click) => {
     let hits = [];
-    try { hits = scene.drillPick(click.position, 25, 16, 16); } catch (e) { hits = []; }
-    if (!hits.length) { const p = scene.pick(click.position, 16, 16); if (Cesium.defined(p)) hits = [p]; }
+    try { hits = scene.drillPick(click.position, 8, 14, 14); } catch (e) { hits = []; }
+    if (!hits.length) { const p = scene.pick(click.position, 14, 14); if (Cesium.defined(p)) hits = [p]; }
     let best = null, bestD = Infinity, densityHit = null, refHit = null;
     for (const picked of hits) {
       if (!picked || !picked.primitive) continue;
@@ -177,9 +173,8 @@ async function main() {
       clearTimeout(tip._t); tip._t = setTimeout(() => tip.classList.add("hidden"), 5000);
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-  // user dragging away from a tracked entity cancels follow
   viewer.trackedEntityChanged.addEventListener(() => {
-    if (following && !viewer.trackedEntity) { following = false; followBtn.textContent = "Follow: off"; followBtn.classList.remove("on"); }
+    if (following && !viewer.trackedEntity) { following = false; followBtn.textContent = "Follow: off"; followBtn.classList.remove("on"); viewer.setContinuous("follow", false); }
   });
 
   // ---- Reference geography ----
@@ -202,15 +197,14 @@ async function main() {
   for (const id of REF_IDS) if ($(id).checked) refLayers.apply(id);
   async function showRef(ref) {
     setFollow(false);
-    selected = null; trails.clearSelected();
+    selected = null; detail = null; trails.clearSelected(); tracklist.setSelected(null);
     refSel = ref;
     $("right").classList.remove("hidden");
-    tracklist.setVisible(false);
     followBtn.classList.add("hidden");
     const [title, body] = refDetails(ref);
     $("d-title").textContent = title;
-    $("d-body").innerHTML = body;
-    if (ref.kind === "airport") {
+    $("d-body").innerHTML = body; $("d-body")._h = null;
+    if (ref.kind === "airport" || ref.kind === "medairport") {
       const rw = await airportRunwaysHtml(ref.item);
       if (refSel === ref && rw) { const [, b2] = refDetails(ref, rw); $("d-body").innerHTML = b2; }
     }
@@ -224,7 +218,7 @@ async function main() {
     const out = [];
     for (const l of [air, ships]) {
       for (const it of l.visibleItems()) {
-        const hay = [it.name, it.id, it.type_code, it.operator].map((v) => String(v == null ? "" : v).toLowerCase());
+        const hay = [it.name, it.id, it.type_code, it.operator, it.reg].map((v) => String(v == null ? "" : v).toLowerCase());
         if (hay.some((h) => h.includes(q))) { out.push({ kind: l.kind, it }); if (out.length >= 50) return out; }
       }
     }
@@ -233,14 +227,26 @@ async function main() {
   const go = (m) => { select(m.kind, m.it.id); flyToItem(m.kind, m.it.id); sOut.classList.add("hidden"); };
   sIn.addEventListener("input", () => {
     const m = matches().slice(0, 8);
-    sOut.innerHTML = m.map((x, i) => '<div data-i="' + i + '">' + esc(x.it.name || x.it.id) + " <small>" + esc(x.kind) + " · " + esc(x.it.type_code || "") + " " + esc(x.it.operator || "") + "</small></div>").join("");
+    sOut.innerHTML = m.map((x, i) => '<div data-i="' + i + '">' + esc(x.it.name || x.it.id) + " <small>" + esc(x.kind) + " · " + esc(x.it.type_code || "") + " " + esc(x.it.reg || x.it.operator || "") + "</small></div>").join("");
     sOut.classList.toggle("hidden", !m.length);
     sOut._m = m;
   });
   sOut.addEventListener("click", (e) => { const d = e.target.closest("div[data-i]"); if (d && sOut._m) go(sOut._m[+d.dataset.i]); });
   sIn.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { const m = matches(); if (m.length) go(m[0]); }
-    else if (e.key === "Escape") sOut.classList.add("hidden");
+    else if (e.key === "Escape") { sOut.classList.add("hidden"); sIn.blur(); }
+  });
+
+  // ---- Keyboard ----
+  document.addEventListener("keydown", (e) => {
+    const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); sIn.focus(); sIn.select(); return; }
+    if (typing) return;
+    if (e.key === "/") { e.preventDefault(); sIn.focus(); }
+    else if (e.key === "Escape") clearSelection();
+    else if (e.key === "f" || e.key === "F") fps.toggle();
+    else if (e.key === "h" || e.key === "H") hud.home();
+    else if (e.key === "[") tree.toggleCollapsed();
   });
 
   // ---- Feature detection: older backends lack the v2 routes; disable those controls ----
@@ -273,7 +279,7 @@ async function main() {
       if (!replayAt) return; // went live meanwhile
       for (const [k, d] of [["aircraft", a], ["ships", sh], ["fires", fi], ["quakes", qk]]) {
         const items = Array.isArray(d && d.items) ? d.items : [];
-        byKind[k].sync(items); setCount(k, items.length);
+        byKind[k].sync(items); setCount(k, items.length, d && d.truncated);
       }
       if (selected) refreshSelected();
     } catch (e) { onErr("replay", String((e && e.message) || e)); }
@@ -285,6 +291,10 @@ async function main() {
   }
   new Timeline((at) => {
     replayAt = at;
+    document.body.classList.toggle("replay", !!at);
+    const pill = $("mode-pill");
+    pill.classList.toggle("replay", !!at);
+    $("mode-text").textContent = at ? "REPLAY" : "LIVE";
     if (at) renderReplay(at);
     else { replayPending = null; ticks.forEach((t) => t().catch(() => {})); }
   });
@@ -314,6 +324,7 @@ async function main() {
   poll("quakes", 300000, ticks[3], onErr);
   // refresh relative "last seen" in the details panel
   setInterval(() => { if (selected) { refreshSelected(); if (!replayAt) trailSelected(false); } }, 5000);
+  window.__osint = { viewer, air, ships, refLayers };
 }
 
 main().catch((e) => { console.error(e); const s = document.getElementById("sources"); if (s) s.textContent = "UI error: " + e.message; });
