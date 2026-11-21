@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from osint.api import history, kml, layers, live_ws
+from osint.api.backfill import mount_backfill
 from osint.api.events import mount_events
 from osint.api.imagery import mount_imagery
 from osint.api.reference import mount_reference
@@ -101,6 +102,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_events(app, runtime)
     mount_imagery(app, runtime)
     mount_webcams(app)
+    mount_backfill(app, runtime)
 
     @app.get("/")
     def index():

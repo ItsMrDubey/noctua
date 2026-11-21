@@ -1,0 +1,46 @@
+# Historical backfill (`osint backfill <source> [--days N | --since D --until D] [--dry-run]`).
+# Each source checkpoints finished units in source_state as backfill:<source>; re-running
+# skips them. Safe to run while `osint run` is serving (append-only lake, SQLite WAL).
+
+gdelt:
+  default_days: 30
+  concurrency: 4            # parallel downloads of 15-minute export files
+  min_interval_s: 0.25      # polite spacing between request starts
+  base_url: https://data.gdeltproject.org/gdeltv2
+  max_missing_fraction: 0.5 # a day with more failed files than this is not checkpointed
+  cluster: true             # afterwards, replay late documents through the clusterer
+  persist_rejected: false   # also store rejected GDELT decisions (millions of rows)
+
+usgs:
+  default_days: 365
+  min_magnitude: 2.5
+  max_per_query: 20000      # FDSN limit; a chunk that hits it is split in half
+  min_interval_s: 1.0
+
+firms:                      # needs FIRMS_MAP_KEY; skipped (with a message) without it
+  default_days: 365
+  area: world
+  chunk_days: 10            # API maximum per request
+  nrt_days: 60              # use NRT products for the most recent N days, SP before
+  sp_products: [MODIS_SP, VIIRS_SNPP_SP]
+  nrt_products: [MODIS_NRT, VIIRS_SNPP_NRT]
+  transactions_per_10min: 5000  # FIRMS MAP_KEY limit (token bucket)
+  cost_per_day: 1           # tokens spent per requested day
+  # History filter (world-wide daily volumes are large). min_confidence: low | nominal |
+  # high (VIIRS l/n/h; MODIS 0-100: >= 30 nominal, >= 80 high). min_frp in MW ("none" = off).
+  min_confidence: nominal
+  min_frp: 5.0
+
+ucdp:                       # UCDP GED, CC BY 4.0 (attribution required)
+  default_since: "1989-01-01"
+  downloads_url: https://ucdp.uu.se/downloads/
+  include_candidate: true   # also the monthly candidate CSVs (newest months)
+  # urls: []                # pin specific CSV/zip URLs instead of discovering them
+
+adsb_history:               # adsb.lol globe_history (ODbL), military aircraft only
+  default_days: 7
+  repo: adsblol/globe_history_{year}
+  variant: prod             # prod | staging | mlatonly
+  thin_s: 60                # keep at most one point per aircraft per N seconds
+  disk_factor: 2.0          # require N x archive size free before downloading
+  max_archive_gb: 12        # skip days whose archive is larger than this
