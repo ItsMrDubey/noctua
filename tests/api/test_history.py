@@ -134,3 +134,52 @@ def test_websocket_snapshot_then_delta(rt, monkeypatch):
         assert {i["id"] for i in d["aircraft"]} == {"air:a", "air:c"}
         assert d["removed"] == ["sea:1"]
         assert next(i for i in d["aircraft"] if i["id"] == "air:c")["name"] == "CIV"
+
+
+def test_history_counts_lake_and_events(client, rt):
+    now = utcnow()
+    q = f"start={(now - timedelta(hours=6)).isoformat()}&end={(now + timedelta(minutes=1)).isoformat()}"
+    q = q.replace("+", "%2B")
+    j = client.get(f"/api/history/counts?layer=fires&bin=hour&{q}").json()
+    assert sum(n for _, n in j["counts"]) == 5 and all(t % 3600000 == 0 for t, _ in j["counts"])
+    assert len(j["counts"]) >= 1 and j["bin_s"] == 3600
+    d = client.get(f"/api/history/counts?layer=fires&bin=day&{q}").json()
+    assert sum(n for _, n in d["counts"]) == 5 and all(t % 86400000 == 0 for t, _ in d["counts"])
+    a = client.get(f"/api/history/counts?layer=aircraft&{q}").json()
+    assert sum(n for _, n in a["counts"]) >= 2  # distinct tracks per bin
+    assert client.get("/api/history/counts?layer=quakes").json()["counts"] == []
+    rt.store.save_events([
+        {**_ev("h1", "multi-source", now - timedelta(hours=2)), "lat": 1.0, "lon": 1.0},
+        {**_ev("h2", "historical", now - timedelta(hours=2)), "lat": 1.0, "lon": 1.0},
+    ])
+    e = client.get(f"/api/history/counts?layer=events&{q}").json()
+    h = client.get(f"/api/history/counts?layer=historical&{q}").json()
+    assert sum(n for _, n in e["counts"]) == 1 and sum(n for _, n in h["counts"]) == 1
+    assert client.get("/api/history/counts?layer=nope").status_code == 422
+    assert client.get("/api/history/counts?layer=aircraft&start=2020-01-01T00:00:00Z").status_code == 422
+    assert client.get("/api/history/counts?layer=fires&start=junk").status_code == 422
+
+
+def _ev(eid, status, t):
+    from osint.store.sqlite import iso
+
+    return {"id": eid, "category": "armed_conflict", "title": eid, "summary": "", "actors": [],
+            "t_start": iso(t), "t_end": iso(t), "status": status, "confidence": 0.9, "version": 1,
+            "mention_count": 1, "source_diversity": 1, "gdelt_ids": [], "first_seen": iso(t),
+            "updated_at": iso(t), "cluster_state": {}}
+
+
+def test_history_counts_cache_serves_closed_bins(rt, monkeypatch):
+    from osint.api import history
+
+    history._cache.clear()
+    now = utcnow()
+    t0, t1 = now - timedelta(hours=8), now + timedelta(minutes=1)
+    first = history.history_counts(rt, "fires", "hour", t0, t1)
+    calls = []
+    real = history._lake_counts
+    monkeypatch.setattr(history, "_lake_counts", lambda *a, **k: calls.append(a[3:]) or real(*a, **k))
+    again = history.history_counts(rt, "fires", "hour", t0, t1)
+    assert again["counts"] == first["counts"] and sum(n for _, n in first["counts"]) == 5
+    assert len(calls) == 1  # only the open tail hits the lake
+    assert calls[0][0] >= now - timedelta(hours=2)

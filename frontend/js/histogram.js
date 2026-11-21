@@ -1,13 +1,12 @@
 // Activity histogram under the timeline scrubber; bins adapt to the range (hourly up to 7 d, daily beyond).
-// Bars (stacked): news events, UCDP historical conflict events, fire detections, quakes, binned
-// client-side. Long ranges are fetched in 7-day chunks (the layer API caps hours at 168).
+// Bars (stacked): news events, UCDP historical conflict events, fire detections, quakes. One
+// /api/history/counts request per layer (server-side GROUP BY), not full rows.
 // Lines: aircraft / ships in the air / at sea, sampled from /api/snapshot (lazy, sequential).
 import { $, esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
 
 const COL = { fires: "#ff6a1a", quakes: "#ffd24a", events: "#a99bff", hist: "#8f86c9", air: "#5ee3ea", sea: "#7fa8ff" };
 const HOUR = 3600e3, DAY = 86400e3, CHUNK_H = 168;
-const FIRES_MAX_MIN = 30 * 1440; // fire detections are too dense to pull for a year
 const SAMPLES = 12;
 
 export const tsMs = (v) => {
@@ -35,17 +34,15 @@ export function binItems(items, field, t0, binMs, n, into) {
 // backwards compatible 48 h hourly helper
 export const binHours = (items, field, t0) => binItems(items, field, t0, HOUR, 48);
 
-// fetch fn(untilIso, hours) for consecutive 168 h windows covering [t0, now], 3 at a time
-async function chunked(t0, now, fn) {
-  const wins = [];
-  for (let end = now; end > t0; end -= CHUNK_H * HOUR) wins.push([end, Math.min(CHUNK_H, Math.ceil((end - t0) / HOUR))]);
-  const out = [];
-  let truncated = false;
-  for (let i = 0; i < wins.length; i += 3) {
-    const rs = await Promise.all(wins.slice(i, i + 3).map(([end, h]) => fn(new Date(end).toISOString(), h)));
-    for (const r of rs) { out.push(...((r && r.items) || [])); truncated = truncated || !!(r && r.truncated); }
+// Server-side aggregates ([[bin_start_ms, n], ...], UTC-aligned bins) into our n bins starting at t0.
+export function binCounts(counts, t0, binMs, n) {
+  const b = new Array(n).fill(0);
+  for (const [t, c] of counts || []) {
+    let i = Math.floor((t - t0) / binMs);
+    if (i === n) i = n - 1;
+    if (i >= 0 && i < n) b[i] += c;
   }
-  return { items: out, truncated };
+  return b;
 }
 
 export class Histogram {
@@ -68,7 +65,7 @@ export class Histogram {
     this.t0 = Date.now() - spanMin * 60000;
     const z = () => new Array(this.n).fill(0);
     this.fires = z(); this.quakes = z(); this.events = z(); this.hist = z();
-    this.air = []; this.sea = []; this.trunc = false; this.firesNA = spanMin > FIRES_MAX_MIN;
+    this.air = []; this.sea = []; this.trunc = false; this.firesNA = false;
   }
   setSpan(spanMin) {
     if (spanMin === this.span) return;
@@ -84,26 +81,17 @@ export class Histogram {
     const g = ++this.gen;
     this.loading = true; this.draw();
     const now = Date.now(), t0 = now - this.spanMs, n = this.n, bin = this.binMs;
-    const long = this.span > 48 * 60;
-    const obs = (layer) => long
-      ? chunked(t0, now, (until, h) => fetchJson("/api/layers/" + layer + "?hours=" + h + "&until=" + encodeURIComponent(until), 30000))
-      : fetchJson("/api/layers/" + layer + "?hours=48", 30000);
-    const since = encodeURIComponent(new Date(t0).toISOString());
-    const [f, q, ev, hi] = await Promise.allSettled([
-      this.firesNA ? Promise.resolve({ items: [] }) : obs("fires"), obs("quakes"),
-      fetchJson("/api/events?limit=10000&since=" + since, 30000),
-      fetchJson("/api/events?status=historical&limit=10000&since=" + since, 30000),
-    ]);
+    const q = (layer) => fetchJson("/api/history/counts?layer=" + layer + "&bin=" + (bin === HOUR ? "hour" : "day") +
+      "&start=" + encodeURIComponent(new Date(t0).toISOString()) + "&end=" + encodeURIComponent(new Date(now).toISOString()), 30000);
+    const [f, qk, ev, hi] = await Promise.allSettled([q("fires"), q("quakes"), q("events"), q("historical")]);
     if (g !== this.gen) return; // range changed meanwhile
     this.loading = false;
     this.t0 = t0;
-    if (f.status === "fulfilled") { this.fires = binItems(f.value.items, "ts", t0, bin, n); this.truncF = !!f.value.truncated; }
-    if (q.status === "fulfilled") { this.quakes = binItems(q.value.items, "ts", t0, bin, n); this.truncQ = !!q.value.truncated; }
-    if (ev.status === "fulfilled") this.events = binItems(ev.value.items, "t_start", t0, bin, n);
-    if (hi.status === "fulfilled") this.hist = binItems(hi.value.items, "t_start", t0, bin, n);
-    this.trunc = !!(this.truncF || this.truncQ);
+    const put = (r, key) => { if (r.status === "fulfilled") this[key] = binCounts(r.value.counts, t0, bin, n); };
+    put(f, "fires"); put(qk, "quakes"); put(ev, "events"); put(hi, "hist");
+    this.trunc = false;
     // retry soon if anything failed rather than waiting for the 10 min refresh
-    if ([f, q, ev].some((r) => r.status === "rejected")) { clearTimeout(this._retry); this._retry = setTimeout(() => this.loadObs(), 20000); }
+    if ([f, qk, ev, hi].some((r) => r.status === "rejected")) { clearTimeout(this._retry); this._retry = setTimeout(() => this.loadObs(), 20000); }
     this.draw();
   }
   async loadSamples() {
@@ -138,7 +126,7 @@ export class Histogram {
       '<span' + (this.firesNA ? ' title="Fire detections are not aggregated beyond 30 d"' : "") + '><i style="--c:' + COL.fires + '"></i>Fires <em>' + (this.firesNA ? "n/a" : sum(this.fires).toLocaleString() + (this.trunc ? "+" : "")) + "</em></span>" +
       '<span><i style="--c:' + COL.quakes + '"></i>Quakes <em>' + sum(this.quakes).toLocaleString() + "</em></span>" +
       '<span title="News events by first-report time"><i style="--c:' + COL.events + '"></i>Events <em>' + sum(this.events).toLocaleString() + "</em></span>" +
-      (nh ? '<span title="UCDP historical conflict events (first 10,000 in range)"><i style="--c:' + COL.hist + '"></i>UCDP <em>' + nh.toLocaleString() + "</em></span>" : "") +
+      (nh ? '<span title="UCDP historical conflict events"><i style="--c:' + COL.hist + '"></i>UCDP <em>' + nh.toLocaleString() + "</em></span>" : "") +
       '<span title="Sampled every ' + every + ' from replay snapshots"><i class="l" style="--c:' + COL.air + '"></i>Aircraft' + (lastAir != null ? " <em>" + lastAir + "</em>" : "") + "</span>" +
       '<span title="Sampled every ' + every + ' from replay snapshots"><i class="l d" style="--c:' + COL.sea + '"></i>Ships</span>' +
       '<span class="dk-unit">' + (this.loading ? "loading… · " : "") + "per " + (this.binMs === HOUR ? "hour" : "day") + " · " + this.rangeLabel + "</span>";
