@@ -15,6 +15,7 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -119,6 +120,9 @@ _DATASET_RE = re.compile(r"\b(" + "|".join(SCHEMAS) + r")\b")
 # (hour stays VARCHAR: DuckDB does not autocast the zero-padded "05")
 _HIVE_FIELDS = [("date", pa.date32()), ("hour", pa.string())]
 _COMPACT_PREFIX = "compact-"
+# close() waits this long for in-flight queries before closing the connection anyway
+CLOSE_TIMEOUT_S = 30.0
+_QUERY_ATTEMPTS = 4
 
 
 def _remove(path: Path) -> None:
@@ -149,7 +153,10 @@ class Lake:
         root.mkdir(parents=True, exist_ok=True)
         # serialises file creation/removal: Lake.write (ingest flush) vs Lake.compact
         self.write_lock = threading.Lock()
-        self._con_lock = threading.Lock()
+        # guards the connection and the count of in-flight cursors; close() waits on it
+        self._con_cond = threading.Condition()
+        self._active = 0
+        self._closing = 0  # close() calls draining in-flight cursors (new ones wait)
         self._con: duckdb.DuckDBPyConnection | None = None
 
     # ------------------------------------------------------------------ writing
@@ -222,19 +229,47 @@ class Lake:
         con.execute("SET parquet_metadata_cache = true")
         return con
 
-    def _cursor(self) -> duckdb.DuckDBPyConnection:
+    @contextmanager
+    def _cursor(self) -> Iterator[duckdb.DuckDBPyConnection]:
         """A per-call cursor on the one long-lived connection (a cursor is never shared
-        between threads; temp views are cursor-local, caches are database-wide)."""
-        with self._con_lock:
+        between threads; temp views are cursor-local, caches are database-wide). It is
+        counted as in flight until closed, so close() never pulls the connection out from
+        under a running query (DuckDB: "connection busy"/"already closed")."""
+        with self._con_cond:
+            self._con_cond.wait_for(lambda: not self._closing)
             if self._con is None:
                 self._con = self._connect()
-            return self._con.cursor()
+            cur = self._con.cursor()
+            self._active += 1
+        try:
+            yield cur
+        finally:
+            try:
+                cur.close()
+            except duckdb.Error:
+                pass
+            with self._con_cond:
+                self._active -= 1
+                self._con_cond.notify_all()
 
-    def close(self) -> None:
-        with self._con_lock:
-            if self._con is not None:
-                self._con.close()
-                self._con = None
+    def close(self, timeout: float = CLOSE_TIMEOUT_S) -> None:
+        """Close the connection once in-flight queries finish (bounded wait). Idempotent;
+        a later query reconnects."""
+        with self._con_cond:
+            self._closing += 1
+            try:
+                if not self._con_cond.wait_for(lambda: self._active == 0, timeout):
+                    log.warning("lake close: %d queries still running after %.0fs; closing",
+                                self._active, timeout)
+                if self._con is not None:
+                    con, self._con = self._con, None
+                    try:
+                        con.close()
+                    except duckdb.Error:
+                        log.warning("lake close failed", exc_info=True)
+            finally:
+                self._closing -= 1
+                self._con_cond.notify_all()
 
     def _bind(self, cur: duckdb.DuckDBPyConnection, sql: str,
               start: datetime | None, end: datetime | None) -> tuple[str, list[tuple[str, bool]]]:
@@ -277,18 +312,20 @@ class Lake:
         With ``start``/``end`` only the hourly partitions overlapping that window (on each
         dataset's PARTITION_FIELD) are read, so the SQL must not need rows outside it;
         without them the whole dataset is scanned (generic fallback)."""
-        for attempt in range(2):
-            cur = self._cursor()
-            bound: list[tuple[str, bool]] = []
-            try:
-                bound_sql, bound = self._bind(cur, sql, start, end)
-                return cur.execute(bound_sql, params or []).fetchall()
-            except duckdb.IOException:
-                if attempt:  # a file vanished under us (compaction): relist once
-                    raise
-            finally:
-                self._unbind(cur, bound)
-                cur.close()
+        for attempt in range(_QUERY_ATTEMPTS):
+            with self._cursor() as cur:
+                bound: list[tuple[str, bool]] = []
+                try:
+                    bound_sql, bound = self._bind(cur, sql, start, end)
+                    return cur.execute(bound_sql, params or []).fetchall()
+                except duckdb.IOException:
+                    # a file vanished under us (compaction merges partition by partition,
+                    # so a whole-dataset listing can race several merges): relist
+                    if attempt == _QUERY_ATTEMPTS - 1:
+                        raise
+                finally:
+                    self._unbind(cur, bound)
+            time.sleep(0.02 * (attempt + 1))
         raise AssertionError("unreachable")
 
     # --------------------------------------------------------------- compaction
