@@ -560,6 +560,7 @@ async function main() {
   const replayWindowH = () => (timeline.span <= 7 * 1440 ? 24 : timeline.span <= 30 * 1440 ? 72 : 168);
   const timeline = new Timeline((at) => {
     replayAt = at;
+    models.setReplay(!!at);
     events.setReplay(at); tick_ev_count();
     histLayer.setReplay(at, replayWindowH() * 3600e3);
     if (at) renderReplay(at);

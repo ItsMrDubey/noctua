@@ -139,6 +139,7 @@ export class Kinematics {
     this.blendS = opts.blendS ?? 2;
     this.ema = opts.ema ?? 0.35;
     this.fadeS = opts.fadeS ?? 30;
+    this.replay = false; // replay snapshots are historical fixes: draw them where they were, never dead-reckon
     this.map = new Map();
   }
   get(kind, id) { return this.map.get(kind + ":" + id); }
@@ -185,6 +186,7 @@ export class Kinematics {
   predict(st, now = Date.now(), raw = false) {
     if (typeof st === "string") st = this.map.get(st);
     if (!st) return null;
+    if (this.replay) return { lat: st.lat, lon: st.lon, altM: st.alt, heading: st.hdg ?? 0, pitch: st.pitch, roll: st.roll, alpha: 1, live: false };
     const lim = this.timeout[st.kind] ?? 90;
     const age = Math.max(0, (now - st.t) / 1000);
     const dt = Math.min(age, lim);
@@ -369,6 +371,14 @@ export class Models3D {
     return moving;
   }
 
+  /** Replay mode: no dead reckoning from arrival time (models would drift away from the snapshot). */
+  setReplay(on) {
+    if (this.kinematics.replay === !!on) return;
+    this.kinematics.replay = !!on;
+    this._place(Date.now());
+    this.scene.requestRender();
+    this._kick();
+  }
   // throttled (<= 30 fps) animation loop; runs only while 3D is active and something moves
   _kick() {
     if (this._raf || !this.active() || !this.entries.size) return;
