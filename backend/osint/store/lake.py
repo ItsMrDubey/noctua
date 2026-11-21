@@ -143,6 +143,21 @@ def _hour_start(part_dir: Path) -> datetime | None:
         return None
 
 
+def _table_rows(table: pa.Table) -> list[dict]:
+    """Rows as dicts with tz-aware UTC datetimes (``to_pylist`` needs tzdata/pytz, which
+    Windows lacks)."""
+    cols: dict[str, list] = {}
+    for name in table.column_names:
+        col = table.column(name)
+        if pa.types.is_timestamp(col.type):
+            us = col.cast(pa.int64()).to_pylist()
+            cols[name] = [None if v is None else _EPOCH + timedelta(microseconds=v)
+                          for v in us]
+        else:
+            cols[name] = col.to_pylist()
+    return [dict(zip(cols, vals, strict=True)) for vals in zip(*cols.values(), strict=True)]
+
+
 class Lake:
     def __init__(
         self, root: Path, *, duckdb_memory_limit: str = "1GB", duckdb_threads: int = 4
@@ -377,6 +392,47 @@ class Lake:
                 pass
             except OSError as exc:  # e.g. Windows: held open by a concurrent reader
                 log.warning("compaction could not remove %s (%s); retried next pass", f, exc)
+
+    # ---------------------------------------------------------------- rewriting
+
+    def partitions(self, dataset: str, start: datetime | None = None,
+                   end: datetime | None = None) -> list[tuple[str, int]]:
+        """(``YYYY-MM-DD``, hour) of every partition overlapping [start, end]."""
+        return [(d.parent.name.removeprefix("date="), int(d.name.removeprefix("hour=")))
+                for d, _ in self._partition_dirs(dataset, start, end)]
+
+    def _hour_dir(self, dataset: str, date: str, hour: int) -> Path:
+        return self.root / dataset / f"date={date}" / f"hour={hour:02d}"
+
+    def read_partition(self, dataset: str, date: str, hour: int) -> tuple[list[dict], list[Path]]:
+        """All rows of one hourly partition plus the files they came from (pass those to
+        ``rewrite_partition`` as ``replaces``)."""
+        schema = SCHEMAS[dataset]
+        files = sorted(self._hour_dir(dataset, date, hour).glob("*.parquet"))
+        rows: list[dict] = []
+        for f in files:
+            rows += _table_rows(pq.ParquetFile(f).read().select(schema.names).cast(schema))
+        return rows, files
+
+    def rewrite_partition(self, dataset: str, date: str, hour: int, rows: list[dict],
+                          replaces: list[Path]) -> bool:
+        """Atomically replace ``replaces`` (the files ``read_partition`` returned) with one
+        file holding ``rows``. Files added since the read (an ingest flush) are kept.
+
+        Holds the write lock only for the swap. The new file is written to .tmp and
+        os.replace'd before the inputs are deleted; it is named like a compaction output of
+        its inputs, so a crash in between is repaired by the next compaction. Returns False,
+        changing nothing, if an input has vanished (compaction ran since the read): re-read
+        and retry."""
+        part_dir = self._hour_dir(dataset, date, hour)
+        table = pa.Table.from_pylist(rows, schema=SCHEMAS[dataset])  # may raise: nothing done
+        with self.write_lock:
+            if any(not f.exists() for f in replaces):
+                return False
+            self._write_atomic(table, part_dir / _compact_name([f.name for f in replaces]))
+            self._remove_inputs([f for f in replaces
+                                 if f.name != _compact_name([x.name for x in replaces])])
+        return True
 
     # ------------------------------------------------------------------ indexes
 
