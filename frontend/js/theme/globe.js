@@ -11,11 +11,10 @@ export function createViewer(cfg) {
     homeButton: false, navigationHelpButton: false, sceneModePicker: false, fullscreenButton: false, infoBox: false, selectionIndicator: false,
     requestRenderMode: true, maximumRenderTimeChange: Infinity,
   };
-  if (cfg && cfg.cesium_ion_token) {
-    C.Ion.defaultAccessToken = cfg.cesium_ion_token;
-    opts.terrain = C.Terrain.fromWorldTerrain();
-  }
+  // base imagery must not queue behind the default 6-requests-per-server throttle
+  C.RequestScheduler.requestsByServer["server.arcgisonline.com:443"] = 18;
   const viewer = new C.Viewer("globe", opts);
+  if (cfg) applyConfig(viewer, cfg);
   const scene = viewer.scene, globe = scene.globe;
   scene.requestRenderMode = true;
   scene.maximumRenderTimeChange = Infinity;
@@ -49,11 +48,45 @@ export function createViewer(cfg) {
   return viewer;
 }
 
+// Terrain arrives after /api/config; the viewer (and its imagery) never waits for it.
+export function applyConfig(viewer, cfg) {
+  if (!cfg || !cfg.cesium_ion_token || viewer._ionTerrain) return;
+  viewer._ionTerrain = true;
+  C.Ion.defaultAccessToken = cfg.cesium_ion_token;
+  viewer.scene.setTerrain(C.Terrain.fromWorldTerrain());
+  viewer.scene.requestRender();
+}
+
+// Warm the browser cache with the base imagery's levels 0-2 (21 tiles) so the first frames
+// of the globe are textured instead of black while Cesium schedules its own requests.
+export function preloadBaseTiles(template) {
+  const imgs = [];
+  for (let z = 0; z <= 2; z++) {
+    const n = 1 << z;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.src = template.replace("{z}", z).replace("{y}", y).replace("{x}", x);
+      imgs.push(im);
+    }
+  }
+  return imgs;
+}
+
 export function setupImagery(viewer) {
   const scene = viewer.scene, layers = viewer.imageryLayers;
-  const base = layers.addImageryProvider(makeImagery("base"));
-  // darken + desaturate so data pops
-  base.brightness = 0.72; base.contrast = 1.12; base.saturation = 0.55; base.gamma = 1.05;
+  // base layer goes in first (index 0), before any data layer or overlay
+  const base = layers.addImageryProvider(makeImagery("base"), 0);
+  // darken + desaturate so data pops (kept mild: never dim the base to near-black)
+  base.brightness = 0.78; base.contrast = 1.1; base.saturation = 0.6; base.gamma = 1.0;
+  // keep requesting frames until the first base tiles have arrived (requestRenderMode would
+  // otherwise only repaint on the 2 s safety net)
+  const t0 = performance.now();
+  const kick = () => {
+    scene.requestRender();
+    if (!scene.globe.tilesLoaded && performance.now() - t0 < 20000) setTimeout(kick, 150);
+  };
+  kick();
   const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const dateIn = $("gibs-date");
   dateIn.value = today;

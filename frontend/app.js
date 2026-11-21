@@ -7,7 +7,8 @@ import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
 import { $ } from "/static/js/ui.js";
-import { createViewer, setupImagery } from "/static/js/theme/globe.js";
+import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
+import { BASE_URL } from "/static/js/layers.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
 import { LayerTree } from "/static/js/panels/layertree.js";
 import { setupHud, setupFps } from "/static/js/panels/hud.js";
@@ -30,11 +31,14 @@ async function loadConfig() {
 async function main() {
   startClock();
   if (typeof Cesium === "undefined") { $("sources").textContent = "CesiumJS failed to load"; return; }
-  const cfg = await loadConfig();
-  const viewer = createViewer(cfg);
+  // base imagery first: warm level 0-2 tiles, build the viewer + base layer before anything
+  // else, and let /api/config (ion terrain) arrive whenever it does
+  preloadBaseTiles(BASE_URL);
+  const viewer = createViewer(null);
   const scene = viewer.scene;
   const redraw = () => scene.requestRender();
   setupImagery(viewer);
+  loadConfig().then((cfg) => applyConfig(viewer, cfg));
   const hud = setupHud(viewer);
   const fps = setupFps(viewer);
   const tree = new LayerTree();

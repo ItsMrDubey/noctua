@@ -133,9 +133,10 @@ export class QuakeLayer extends PointLayer {
 
 // ---- Imagery ----
 const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/";
+export const BASE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 export function makeImagery(kind, date) {
   const credit = "NASA GIBS";
-  if (kind === "base") return new C.UrlTemplateImageryProvider({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", maximumLevel: 19, credit: "Esri, Maxar, Earthstar Geographics" });
+  if (kind === "base") return new C.UrlTemplateImageryProvider({ url: BASE_URL, maximumLevel: 19, credit: "Esri, Maxar, Earthstar Geographics" });
   if (kind === "labels") return new C.UrlTemplateImageryProvider({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", maximumLevel: 13, credit: "Esri" });
   if (kind === "viirs") return new C.UrlTemplateImageryProvider({ url: GIBS + "VIIRS_SNPP_CorrectedReflectance_TrueColor/default/" + date + "/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg", maximumLevel: 9, credit });
   return new C.UrlTemplateImageryProvider({ url: GIBS + "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance/default/" + date + "/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png", maximumLevel: 8, credit });

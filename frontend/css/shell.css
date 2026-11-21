@@ -19,8 +19,13 @@
 .results div:hover { background: rgba(var(--acc-rgb), .12); }
 .results small { color: var(--dim); }
 
-.sources { display: flex; gap: 4px; flex: 1 1 auto; min-width: 0; overflow: hidden; justify-content: flex-end; }
-.src { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, .22); white-space: nowrap; font: 600 10px/1 var(--f-head); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
+/* chips shrink their sparkline first and never overflow to the left (justify-content:flex-end
+   clipped the first chip's label off-screen); the first chip takes the free space instead */
+.sources { display: flex; gap: 4px; flex: 1 1 auto; min-width: 0; overflow: hidden; justify-content: flex-start; }
+.sources > .src:first-child { margin-left: auto; }
+.src .nm { flex: none; }
+.src .spk { min-width: 0; overflow: hidden; flex: 0 1 auto; }
+.src { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, .22); white-space: nowrap; font: 600 10px/1 var(--f-head); letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
 .src svg { width: 34px; height: 12px; overflow: visible; }
 .src svg polyline { fill: none; stroke: currentColor; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 .src svg polygon { fill: currentColor; opacity: .12; stroke: none; }
@@ -28,7 +33,8 @@
 .src .rate { font: 10px var(--f-mono); color: var(--dim); letter-spacing: 0; text-transform: none; min-width: 2.5em; text-align: right; }
 .src.down { border-color: rgba(255, 75, 85, .35); color: #ffb3b7; }
 .src.degraded { border-color: rgba(242, 173, 61, .35); }
-@media (max-width: 1700px) { .src .spk { display: none; } }
+@media (max-width: 1900px) { .src .spk svg { display: none; } }
+@media (max-width: 1600px) { .src .spk { display: none; } }
 @media (max-width: 1250px) { .mark-sub, .mark-sep { display: none; } .src span.nm { display: none; } }
 
 .mode-pill { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 11px; border: 1px solid rgba(79, 223, 140, .5); color: var(--green); font: 700 11px/1 var(--f-head); letter-spacing: .22em; background: rgba(79, 223, 140, .07); white-space: nowrap; }

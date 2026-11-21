@@ -8,6 +8,29 @@ const H = 48;
 const COL = { fires: "#ff6a1a", quakes: "#ffd24a", events: "#a99bff", air: "#5ee3ea", sea: "#7fa8ff" };
 const SAMPLE_EVERY_H = 4;
 
+export const tsMs = (v) => {
+  if (v == null) return NaN;
+  if (typeof v === "number") return v < 1e11 ? v * 1000 : v;
+  const s = String(v);
+  // tolerate "YYYY-MM-DD HH:MM:SS" and naive timestamps (backend is UTC)
+  const iso = s.includes("T") ? s : s.replace(" ", "T");
+  return Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+};
+
+// Hourly bins over [t0, t0 + 48 h]; items stamped up to one hour ahead (GDELT 15-min batches
+// are labelled with the batch end) land in the newest bin instead of being dropped.
+export function binHours(items, field, t0) {
+  const b = new Array(H).fill(0);
+  for (const it of items || []) {
+    const t = tsMs(it && it[field]);
+    if (isNaN(t)) continue;
+    let i = Math.floor((t - t0) / 3600e3);
+    if (i === H) i = H - 1;
+    if (i >= 0 && i < H) b[i]++;
+  }
+  return b;
+}
+
 export class Histogram {
   constructor(spanMin) {
     this.span = spanMin;
@@ -23,29 +46,23 @@ export class Histogram {
     setInterval(() => this.loadObs(), 10 * 60e3);
     setInterval(() => this.loadSamples(), 30 * 60e3);
   }
+  // Each feed is fetched and binned independently: one failing request (e.g. a transient 500)
+  // must not zero the others. Timestamps carry offsets / microseconds; parse via tsMs.
   async loadObs() {
-    try {
-      const [f, q] = await Promise.all([fetchJson("/api/layers/fires?hours=48", 30000), fetchJson("/api/layers/quakes?hours=48", 30000)]);
-      const now = Date.now(), t0 = now - H * 3600e3;
-      const bin = (items) => {
-        const b = new Array(H).fill(0);
-        for (const it of items || []) { const i = Math.floor((Date.parse(it.ts) - t0) / 3600e3); if (i >= 0 && i < H) b[i]++; }
-        return b;
-      };
-      this.t0 = t0;
-      this.fires = bin(f.items); this.quakes = bin(q.items);
-      this.trunc = !!(f.truncated || q.truncated);
-      this.ok.obs = true;
-      this.draw();
-    } catch (e) { /* keep previous */ }
-    try {
-      const t0 = Date.now() - H * 3600e3;
-      const d = await fetchJson("/api/events?limit=10000&since=" + encodeURIComponent(new Date(t0).toISOString()), 30000);
-      const b = new Array(H).fill(0);
-      for (const it of d.items || []) { const i = Math.floor((Date.parse(it.t_start) - t0) / 3600e3); if (i >= 0 && i < H) b[i]++; }
-      this.events = b;
-      this.draw();
-    } catch (e) { /* events API optional */ }
+    const now = Date.now(), t0 = now - H * 3600e3;
+    const [f, q, ev] = await Promise.allSettled([
+      fetchJson("/api/layers/fires?hours=48", 30000), fetchJson("/api/layers/quakes?hours=48", 30000),
+      fetchJson("/api/events?limit=10000&since=" + encodeURIComponent(new Date(t0).toISOString()), 30000),
+    ]);
+    this.t0 = t0;
+    if (f.status === "fulfilled") { this.fires = binHours(f.value.items, "ts", t0); this.truncF = !!f.value.truncated; }
+    if (q.status === "fulfilled") { this.quakes = binHours(q.value.items, "ts", t0); this.truncQ = !!q.value.truncated; }
+    if (ev.status === "fulfilled") this.events = binHours(ev.value.items, "t_start", t0);
+    this.trunc = !!(this.truncF || this.truncQ);
+    this.ok.obs = f.status === "fulfilled" || q.status === "fulfilled";
+    // retry soon if anything failed rather than waiting for the 10 min refresh
+    if ([f, q, ev].some((r) => r.status === "rejected")) { clearTimeout(this._retry); this._retry = setTimeout(() => this.loadObs(), 20000); }
+    this.draw();
   }
   async loadSamples() {
     const now = Date.now();
