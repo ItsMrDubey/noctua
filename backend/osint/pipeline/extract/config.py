@@ -28,8 +28,9 @@ class ExtractionConfig:
     max_calls_per_day: int = 1500
     interval_s: float = 120.0
     initial_delay_s: float = 60.0
-    max_per_run: int = 10
-    event_age_h: float = 48.0
+    max_per_run: int = 20
+    select_limit: int = 5000
+    event_age_h: float = 168.0
     retry_after_min: float = 60.0
     max_attempts: int = 3
     min_confidence: float = 0.0

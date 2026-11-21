@@ -83,6 +83,7 @@ class EventsConfig:
     text_threshold: float = 0.5
     overlap_threshold: float = 0.2
     place_only_window_h: float = 6.0
+    refine_max_km: float = 300.0
     embed_threshold: float = 0.85
     min_shared_tokens: dict[str, int] = field(default_factory=lambda: {"default": 2})
     max_signatures: int = 8
@@ -139,6 +140,7 @@ class EventsConfig:
             place_only_window_h=float(cl.get("place_only_window_h",
                                              base.place_only_window_h)),
             embed_threshold=float(cl.get("embed_threshold", base.embed_threshold)),
+            refine_max_km=float(cl.get("refine_max_km", base.refine_max_km)),
             min_shared_tokens={str(k): int(v) for k, v in
                                (cl.get("min_shared_tokens") or base.min_shared_tokens).items()},
             max_signatures=int(cl.get("max_signatures", base.max_signatures)),

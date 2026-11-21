@@ -5,6 +5,8 @@ article's event is somewhere else / of an incompatible type) or ``supported``.
 """
 
 import re
+import sqlite3
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -167,11 +169,20 @@ def judge(event: dict, ext: dict, *, geocode: Geocoder | None = None,
     return Verdict("mismatch" if reasons else "supported", reasons, distance, geo)
 
 
-def gazetteer_geocoder(gazetteer) -> Geocoder:
-    """Geocoder backed by osint.enrich.gazetteer (LazyGazetteer or Gazetteer)."""
+def gazetteer_geocoder(gazetteer, cities=None) -> Geocoder:
+    """Geocoder backed by osint.enrich.gazetteer (LazyGazetteer or Gazetteer). With
+    ``cities`` (``CountryCities``, GeoNames cities1000) a place in a stated country is first
+    looked up there, so towns below the cities15000 cut-off resolve to city precision."""
     from osint.enrich.gazetteer import best_place
 
     def geocode(place: str, admin1: str, country: str):
+        if cities is not None and country:
+            try:
+                hit = cities.lookup(place, admin1, country)
+            except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile):  # never fatal
+                hit = None
+            if hit is not None:
+                return hit.lat, hit.lon, hit.country, hit.precision
         text = ", ".join(x for x in (place, admin1) if x)
         hits = gazetteer.match(text, "en", country_hint=country)
         if country:

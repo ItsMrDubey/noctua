@@ -48,7 +48,7 @@ from urllib.parse import urlsplit
 
 import h3
 
-from osint.core.geo import valid_coord
+from osint.core.geo import haversine_km, valid_coord
 from osint.enrich.gazetteer import fold
 from osint.pipeline.minhash import LSHIndex, MinHasher, jaccard
 
@@ -661,6 +661,8 @@ class Clusterer:
             self._index_geo(ev, old_cell)
             res.fields.append(self._field(ev, "location", doc.place_name or "", doc,
                                           self._place_quote(doc)))
+        elif role == ROLE_MENTION and not doc.is_gdelt and doc.located:
+            self._refine(ev, doc, res)
         if primary:
             ev.title, ev.summary = doc.title, doc.snippet
             ev.title_score = doc.relevance
@@ -691,6 +693,34 @@ class Clusterer:
             "title": doc.title, "published_at": _iso(doc.published_at),
             "language": doc.language or "", "role": role, "added_at": _iso(now)})
         ev.status, ev.confidence = self.scorer(ev, now)
+
+    def _refine(self, ev: EventState, doc: ClusterDoc, res: ClusterResult) -> None:
+        """A later article whose own text names a finer place (its text-supported best
+        place) refines the event location: same country, within ``refine_max_km`` of the
+        current point, strictly more precise. Never a downgrade, never across countries,
+        never for unlocated events (no country to check against)."""
+        if ev.lat is None or not ev.country or _place_key(doc.place_name or "") == _place_key(
+                ev.place_name or ""):
+            return  # (the same place is not a finer one, whatever its precision label)
+        if PRECISION_RANK.get(doc.place_precision or "", -1) <= PRECISION_RANK.get(
+                ev.precision or "", -1):
+            return
+        country = self._country(doc)
+        if not country or country.upper() != ev.country.upper():
+            return
+        if haversine_km(ev.lat, ev.lon, doc.lat, doc.lon) > self.cfg.refine_max_km:
+            return
+        before = f"{ev.place_name or ''} ({ev.lat}, {ev.lon}, {ev.precision})"
+        old_cell = ev.h3_3
+        ev.lat, ev.lon = doc.lat, doc.lon
+        ev.precision, ev.place_name = doc.place_precision, doc.place_name
+        ev.geo_confidence = doc.place_confidence
+        ev.h3_3, ev.h3_5, ev.h3_7 = doc.h3_3, doc.h3_5, doc.h3_7
+        self._index_geo(ev, old_cell)
+        res.fields.append(self._field(ev, "location_before_refinement", before, doc,
+                                      "refined by a later article naming a finer place"))
+        res.fields.append(self._field(ev, "location", doc.place_name or "", doc,
+                                      self._place_quote(doc)))
 
     @staticmethod
     def _country(doc: ClusterDoc) -> str | None:

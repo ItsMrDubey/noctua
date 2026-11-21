@@ -724,3 +724,134 @@ class LazyGazetteer:
     def match(self, text: str, language: str = "", **kw) -> list[PlaceHit]:
         gz = self.get()
         return gz.match(text, language, **kw) if gz is not None else []
+
+
+# ------------------------------------------------------- cities1000 (extraction geocoder)
+
+CITIES1000 = "cities1000.zip"
+CITIES1000_INDEX = "cities1000.sqlite"
+_C1000_VERSION = "1"
+_C1000_SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS places (country TEXT NOT NULL, k TEXT NOT NULL, name TEXT NOT NULL,
+  admin1 TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, pop INTEGER NOT NULL);
+"""
+
+
+class CountryCities:
+    """Country-constrained exact-name lookup over GeoNames cities1000 (places >= 1,000
+    people, ~150k): ``(name, admin1, ISO2 country) -> PlaceHit`` of the most populous
+    match. Used by article extraction, whose LLM output states the country, to resolve
+    towns below triage's cities15000 cut-off. The index (name, ascii name and Latin
+    alternate names, folded) is an on-disk SQLite file built once from the zip by
+    streaming, so lookups cost no resident memory."""
+
+    def __init__(self, src_dir: Path) -> None:
+        self.src_dir = src_dir
+        self._lock = threading.Lock()
+        self._ready: bool | None = None
+
+    @property
+    def index_path(self) -> Path:
+        return self.src_dir / CITIES1000_INDEX
+
+    def _fingerprint(self) -> str:
+        st = (self.src_dir / CITIES1000).stat()
+        return f"{_C1000_VERSION}:{st.st_size}:{int(st.st_mtime)}"
+
+    def ensure(self) -> bool:
+        """Build the index if missing/stale; False when cities1000.zip is absent."""
+        if self._ready is not None:
+            return self._ready
+        with self._lock:
+            if self._ready is not None:
+                return self._ready
+            if not (self.src_dir / CITIES1000).is_file():
+                log.warning("%s missing in %s (run ONLY=cities1000 scripts/fetch_gazetteer.sh)"
+                            "; extraction geocoding falls back to cities15000",
+                            CITIES1000, self.src_dir)
+                self._ready = False
+                return False
+            fp = self._fingerprint()
+            current = False
+            if self.index_path.is_file():
+                db = sqlite3.connect(f"{self.index_path.resolve().as_uri()}?mode=ro", uri=True)
+                try:
+                    row = db.execute("SELECT v FROM meta WHERE k='fp'").fetchone()
+                    current = row is not None and row[0] == fp
+                except sqlite3.Error:
+                    current = False
+                finally:
+                    db.close()
+            if not current:
+                self._build(fp)
+            self._ready = True
+            return True
+
+    def _build(self, fp: str) -> None:
+        admin1: dict[str, str] = {}
+        a1_path = self.src_dir / "admin1CodesASCII.txt"
+        if a1_path.is_file():
+            with a1_path.open(encoding="utf-8") as f:
+                for line in f:
+                    cols = line.rstrip("\n").split("\t")
+                    if len(cols) >= 3:
+                        admin1[cols[0]] = cols[1]
+        tmp = self.index_path.with_name(self.index_path.name + ".tmp")
+        tmp.unlink(missing_ok=True)
+        db = sqlite3.connect(tmp)
+        db.executescript(_C1000_SCHEMA)
+        rows: list[tuple] = []
+        n = 0
+        with zipfile.ZipFile(self.src_dir / CITIES1000) as z, \
+                z.open("cities1000.txt") as raw:
+            for bline in raw:  # streamed line by line
+                c = bline.decode("utf-8").rstrip("\n").split("\t")
+                if len(c) < 15:
+                    continue
+                try:
+                    lat, lon, pop = float(c[4]), float(c[5]), int(c[14] or 0)
+                except ValueError:
+                    continue
+                cc = c[8]
+                a1 = admin1.get(f"{cc}.{c[10]}", "")
+                keys = {name_key(c[1]), name_key(c[2])}
+                keys |= {name_key(a) for a in c[3].split(",")
+                         if _keep_alt_name(a) and is_latin(a)}
+                rows += [(cc, k, c[1], a1, lat, lon, pop) for k in keys if k]
+                n += 1
+                if len(rows) >= 20000:
+                    db.executemany("INSERT INTO places VALUES (?,?,?,?,?,?,?)", rows)
+                    rows.clear()
+        if rows:
+            db.executemany("INSERT INTO places VALUES (?,?,?,?,?,?,?)", rows)
+        db.execute("CREATE INDEX places_ck ON places(country, k)")
+        db.execute("INSERT INTO meta VALUES ('fp', ?)", (fp,))
+        db.commit()
+        db.close()
+        tmp.replace(self.index_path)
+        log.info("cities1000 index built: %d places", n)
+
+    def lookup(self, place: str, admin1: str = "", country: str = "") -> PlaceHit | None:
+        if not country or not place or not self.ensure():
+            return None
+        cands = [name_key(place)]
+        head = place.split(",")[0]
+        if head != place:
+            cands.append(name_key(head))
+        db = sqlite3.connect(f"{self.index_path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            for key in (k for k in cands if k):
+                rows = db.execute(
+                    "SELECT name, admin1, lat, lon, pop FROM places WHERE country=? AND k=?",
+                    (country.upper(), key)).fetchall()
+                if not rows:
+                    continue
+                want = name_key(admin1) if admin1 else ""
+                best = max(rows, key=lambda r: (bool(want) and name_key(r[1]) == want, r[4]))
+                return PlaceHit(name=best[0], country=country.upper(), lat=best[2],
+                                lon=best[3], precision="city", confidence=0.8,
+                                matched=place, feature="cities1000")
+        finally:
+            db.close()
+        return None

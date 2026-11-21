@@ -48,8 +48,10 @@ def best_document(docs: list[dict]) -> dict | None:
 
 
 def priority_key(e: dict) -> tuple:
-    """Sort key (ascending = first): multi-source, then confidence, then recency."""
-    return (-(1 if (e.get("source_diversity") or 0) >= 2 else 0),
+    """Sort key (ascending = first): on the default map, then multi-source, then
+    confidence, then recency."""
+    return (-(1 if e.get("_map") else 0),
+            -(1 if (e.get("source_diversity") or 0) >= 2 else 0),
             -(e.get("confidence") or 0.0), _neg_ts(e.get("updated_at")))
 
 
@@ -94,10 +96,19 @@ class ExtractionJob:
     def select(self, now: datetime | None = None) -> list[WorkItem]:
         now = now or utcnow()
         cfg = self.cfg
+        since = now - timedelta(hours=cfg.event_age_h)
+        # every map candidate (news events in the window, located or not: extraction can
+        # place an unlocated event), the ones already on the default map first
         events = self.event_store.list_events(
-            since=now - timedelta(hours=cfg.event_age_h), status=",".join(cfg.statuses),
-            min_confidence=cfg.min_confidence or None, limit=1000, slim=False)
+            since=since, status=",".join(cfg.statuses),
+            min_confidence=cfg.min_confidence or None, limit=cfg.select_limit, slim=False,
+            origin="news")
         events = [e for e in events if (e.get("source_diversity") or 0) >= cfg.min_sources]
+        visible = {e["id"] for e in self.event_store.list_events(
+            since=since, limit=cfg.select_limit, include_unlocated=False, map_default=True,
+            origin="news")}
+        for e in events:
+            e["_map"] = e["id"] in visible
         done = self.store.get_many([e["id"] for e in events])
         retry = timedelta(minutes=cfg.retry_after_min)
         due: list[tuple[dict, dict | None]] = []
@@ -294,10 +305,13 @@ def build_job(runtime) -> ExtractionJob:
         kwargs.update(timeout_s=cfg.timeout_s, concurrency=cfg.concurrency,
                       cli_path=cfg.cli_path, cwd=settings.data_dir / "extraction_cwd")
     backend = make_backend(cfg.backend, **kwargs)
+    from osint.enrich.gazetteer import CountryCities
+
     gz = getattr(getattr(runtime, "triage", None), "gazetteer", None)
+    cities = CountryCities(settings.data_dir / "gazetteer")
     return ExtractionJob(
         runtime.store, get_store(runtime), cfg, backend,
-        geocoder=gazetteer_geocoder(gz) if gz is not None else None,
+        geocoder=gazetteer_geocoder(gz, cities) if gz is not None else None,
         alterlab_key=settings.alterlab_api_key,
         snippet_lookup=lake_snippet_lookup(runtime.lake))
 

@@ -220,3 +220,17 @@ def test_config_loads_repo_yaml():
     assert (cfg.max_calls_per_hour, cfg.max_calls_per_day) == (120, 1500)
     assert cfg.min_sources == 1 and cfg.fetch.max_chars == 12000 and cfg.fetch.timeout_s == 15
     assert ExtractionConfig.load(ROOT / "nope.yaml").interval_s == 120
+
+
+async def test_selection_puts_map_visible_events_first(tmp_path):
+    events = [ev("U", div=3, conf=0.9, precision="unlocated", lat=None, lon=None),
+              ev("M", div=1, conf=0.5)]
+    docs = {e: [doc(f"d{e}")] for e in "UM"}
+    job, _ = make_job(tmp_path, events, docs, max_per_run=5)
+
+    def list_events(**kw):
+        rows = [dict(e) for e in events]
+        return [e for e in rows if e["id"] == "M"] if kw.get("map_default") else rows
+
+    job.event_store.list_events = list_events
+    assert [i.event["id"] for i in job.select()] == ["M", "U"]  # unlocated still covered

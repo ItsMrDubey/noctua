@@ -14,8 +14,11 @@ max_calls_per_day: 1500
 
 interval_s: 120            # ExtractionJob pass interval
 initial_delay_s: 60        # first pass this long after boot
-max_per_run: 10            # events extracted per pass (also bounded by the caps above)
-event_age_h: 48            # only events updated within this window
+max_per_run: 20            # events extracted per pass (also bounded by the caps above)
+select_limit: 5000         # candidate events considered per pass
+# every news event updated within this window is a candidate (map-visible ones first;
+# unlocated/coarse ones too: a supported extraction can place them on the map)
+event_age_h: 168
 retry_after_min: 60        # failed extraction retried after this long
 max_attempts: 3
 

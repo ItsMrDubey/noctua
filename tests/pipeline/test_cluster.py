@@ -372,3 +372,49 @@ def test_title_place_beats_snippet_city_and_demonym_ranks_last():
                 place("Russia", 60.0, 90.0, precision="country", country="RU")
                 | {"matched": "Russian"}]
     assert d.text_place(0.65)["name"] == "Poland"
+
+
+def _oblast_then_town(town=("Chuhuiv", *CHUHUIV), town_country="UA"):
+    oblast = place("Kharkiv Oblast", 49.5, 36.5, "admin1")
+    first = art(1, "Missile strike in Kharkiv Oblast overnight", where=None)
+    first.places = [oblast]
+    first.lat, first.lon, first.place_name = 49.5, 36.5, "Kharkiv Oblast"
+    first.place_precision, first.place_confidence = "admin1", 0.9
+    first.__post_init__()
+    name, lat, lon = town
+    second = art(2, f"Missile strike in Kharkiv Oblast overnight hits {name} depot",
+                 where=None, minutes=20)
+    second.places = [oblast, place(name, lat, lon, "city", country=town_country)]
+    return first, second
+
+
+def test_later_article_refines_location_within_country():
+    c = make()
+    first, second = _oblast_then_town()
+    c.process([first], NOW)
+    [ev] = c.events.values()
+    assert ev.precision == "admin1"
+    res = c.process([second], NOW)
+    assert len(c.events) == 1 and ev.precision == "city" and ev.place_name == "Chuhuiv"
+    assert any(f["field"] == "location_before_refinement" for f in res.fields)
+
+
+def test_refinement_never_crosses_countries_or_long_distances():
+    c = make()
+    first, second = _oblast_then_town(town_country="RU")
+    c.process([first], NOW)
+    c.process([second], NOW)
+    [ev] = c.events.values()
+    assert ev.precision == "admin1"
+    c = make()
+    first, second = _oblast_then_town(town=("Lviv", 49.84, 24.03))  # ~900 km away
+    c.process([first], NOW)
+    c.process([second], NOW)
+    assert next(e.place_name for e in c.events.values()) == "Kharkiv Oblast"
+
+
+def test_event_ids_are_deterministic_by_primary_article():
+    a, b = make(), make()
+    a.process([art(1, "Missile strike on Kharkiv")], NOW)
+    b.process([art(1, "Missile strike on Kharkiv")], NOW + timedelta(hours=1))
+    assert list(a.events) == list(b.events) and len(next(iter(a.events))) == 26

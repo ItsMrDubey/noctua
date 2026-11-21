@@ -71,6 +71,9 @@ clustering:
   # a join on the shared place alone (no shared title word: e.g. across languages) is only
   # allowed this close in time to the event; otherwise a shared content word is needed too
   place_only_window_h: 6
+  # a later article whose own text names a finer place (same country, within this
+  # distance of the event's point) refines the event location (never a downgrade)
+  refine_max_km: 300
   # shared tokens needed on the geo path (place counts as one token). Spatially specific
   # categories may join on the place alone; statement-type categories need more evidence.
   min_shared_tokens:
