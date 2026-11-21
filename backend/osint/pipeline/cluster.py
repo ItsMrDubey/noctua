@@ -15,10 +15,18 @@ A relevant document joins an existing event when either
 An optional ``Embedder`` (multilingual sentence embeddings, spec §2.6) adds a semantic path
 among the geo/time candidates; the default is a no-op.
 
-Otherwise a new candidate event is created. GDELT rows only take the geo path (their titles
-are synthetic) and are accepted (attached, or a new event) or rejected with a reason:
-``stale``, ``irrelevant_category``, ``no_location``, ``country_centroid_only``,
-``low_mentions``. Every decision is returned for the ``gdelt_decisions`` table.
+Otherwise a new event is created, but only from a real article whose triage relevance is at
+least ``min_relevance_create`` (gated categories such as ``political`` also need a concrete
+action keyword, ``category_gates``). The event's title and location come from that first
+(primary) article only: the location is the article's best gazetteer hit whose matched text
+occurs in its own title/snippet (country precision only when the country is named in the
+title); without one the event is kept as ``precision='unlocated'`` (no coordinates).
+
+GDELT rows never create events (their titles are synthetic and their SOURCEURL is often
+unrelated): they only take the geo path to attach to an existing article-backed event
+(role ``gdelt``, never changing its title or location) or are rejected with a reason:
+``stale``, ``irrelevant_category``, ``no_location``, ``no_article_backing``. Every decision
+is returned for the ``gdelt_decisions`` table.
 
 Pure CPU and deterministic for a given input order; the caller persists the results.
 """
@@ -47,6 +55,9 @@ if TYPE_CHECKING:
     from osint.pipeline.events import EventsConfig
 
 PRECISION_RANK = {"point": 3, "city": 2, "admin1": 1, "country": 0}
+UNLOCATED = "unlocated"
+# bumped when event semantics change; rows below it are legacy (see events.migrate_events)
+CLUSTER_VERSION = 2
 GDELT_GEO_PRECISION = {1: "country", 2: "admin1", 3: "city", 4: "city", 5: "admin1"}
 ROLE_PRIMARY, ROLE_MENTION, ROLE_GDELT = "primary", "mention", "gdelt"
 
@@ -165,6 +176,48 @@ class ClusterDoc:
         """True when the best place is finer than a country."""
         return self.located and PRECISION_RANK.get(self.place_precision or "", 0) >= 1
 
+    def text_place(self, min_confidence: float) -> dict[str, Any] | None:
+        """Best gazetteer hit supported by this document's own text: its matched text occurs
+        in the title/snippet and its confidence is >= ``min_confidence``; a country-level hit
+        must be named in the title. Title hits first, then non-demonyms, then the most
+        specific, then the most confident."""
+        title = " ".join(fold(self.title or "").split())
+        text = " ".join(fold(f"{self.title} {self.snippet}").split())
+        best, best_key = None, None
+        for p in self.places:
+            matched = " ".join(fold(str(p.get("matched") or "")).split())
+            prec = str(p.get("precision") or "")
+            if not matched or prec not in PRECISION_RANK or not valid_coord(
+                    p.get("lat"), p.get("lon")):
+                continue
+            if float(p.get("confidence") or 0) < min_confidence or matched not in text:
+                continue
+            in_title = matched in title
+            if prec == "country" and not in_title:
+                continue
+            # "Russian strike on X": a demonym names a side, not the place -> ranked last
+            name = " ".join(fold(str(p.get("name") or "")).split())
+            demonym = prec == "country" and len(matched) > len(name) >= 4                 and matched.startswith(name[:4])
+            key = (in_title, not demonym, PRECISION_RANK[prec],
+                   float(p.get("confidence") or 0))
+            if best_key is None or key > best_key:
+                best, best_key = p, key
+        return best
+
+    def relocate(self, min_confidence: float) -> None:
+        """Replace the lake's best place with the text-supported one (or none)."""
+        p = self.text_place(min_confidence)
+        if p is None:
+            self.lat = self.lon = None
+            self.h3_3 = self.h3_5 = self.h3_7 = None
+            self.place_name = self.place_precision = None
+            self.place_confidence = None
+            return
+        self.lat, self.lon = float(p["lat"]), float(p["lon"])
+        self.place_name, self.place_precision = str(p.get("name") or ""), str(p["precision"])
+        self.place_confidence = float(p.get("confidence") or 0)
+        self.h3_3, self.h3_5, self.h3_7 = _cells(self.lat, self.lon)
+
     def place_keys(self) -> set[str]:
         """Script-agnostic place identity tokens (city/admin1 names, H3 res-5 cell)."""
         keys: set[str] = set()
@@ -179,10 +232,16 @@ class ClusterDoc:
         return keys
 
     def words(self) -> set[str]:
+        """Title content words, without the words of the places it names (the place is
+        already one token: "Strait of Hormuz" must not count three times)."""
         if self.is_gdelt:
             a = self.attrs
             return title_tokens(f"{a.get('actor1') or ''} {a.get('actor2') or ''}")
-        return title_tokens(self.title)
+        place_words: set[str] = set()
+        for p in self.places:
+            for t in (p.get("name"), p.get("matched")):
+                place_words |= title_tokens(str(t or ""), limit=64)
+        return title_tokens(self.title) - place_words
 
     def actors(self) -> list[dict[str, str]]:
         if not self.is_gdelt:
@@ -256,6 +315,7 @@ class EventState:
     title_score: float = -1.0
     has_article: bool = False
     vector: list[float] | None = None
+    languages: set[str] = field(default_factory=set)
     # hooks for M3/M4 status levels
     sensor_corroborated: bool = False
     official: bool = False
@@ -287,7 +347,9 @@ class EventState:
                 "places": sorted(self.place_keys), "sigs": [_pack(s) for s in self.sigs],
                 "relevance": self.relevance, "title_score": self.title_score,
                 "has_article": self.has_article, "vector": self.vector,
+                "languages": sorted(self.languages),
                 "sensor_corroborated": self.sensor_corroborated, "official": self.official,
+                "v": CLUSTER_VERSION,
             },
         }
 
@@ -314,6 +376,7 @@ class EventState:
             relevance=float(st.get("relevance") or 0.0),
             title_score=float(st.get("title_score", -1.0)),
             has_article=bool(st.get("has_article")), vector=st.get("vector"),
+            languages=set(st.get("languages") or []),
             sensor_corroborated=bool(st.get("sensor_corroborated")),
             official=bool(st.get("official")),
         )
@@ -381,6 +444,15 @@ class Clusterer:
         self.lsh = LSHIndex(cfg.permutations, cfg.bands)
         self.events: dict[str, EventState] = {}
         self._geo: dict[int, set[str]] = {}
+        from osint.pipeline.triage import Lexicon  # local: triage loads the gazetteer stack
+
+        self._gates = Lexicon()
+        self._gated = set(cfg.category_gates)
+        for cat, terms in cfg.category_gates.items():
+            for t in terms:
+                self._gates.add(cat, t)
+        if not self._gates.terms:
+            self._gates = None
 
     # --------------------------------------------------------------- index upkeep
 
@@ -484,6 +556,13 @@ class Clusterer:
                 continue
             place_shared, shared, ratio = ov
             need = self.cfg.min_shared(ev.category)
+            if place_shared and shared == 1 and (
+                    not self._in_window(ev, doc, self.cfg.place_only_window_h)
+                    or (not doc.is_gdelt and doc.language
+                        and doc.language in ev.languages)):
+                # the place alone only joins close in time, and only across languages
+                # (two same-language reports of one incident share a content word)
+                continue
             ok = (place_shared and shared >= need) or (shared - place_shared) >= max(2, need)
             if not ok or ratio < self.cfg.overlap_threshold:
                 continue
@@ -509,7 +588,8 @@ class Clusterer:
     def _new_event(self, doc: ClusterDoc, category: str, now: datetime) -> EventState:
         ev = EventState(id=new_ulid(now), category=category, t_start=doc.published_at,
                         t_end=doc.published_at, first_seen=now, updated_at=now,
-                        title=doc.title, summary=doc.snippet)
+                        title=doc.title, summary=doc.snippet,
+                        precision=None if doc.located else UNLOCATED)
         self._add_event(ev)
         return ev
 
@@ -519,7 +599,10 @@ class Clusterer:
         cfg = self.cfg
         ev.version += 1
         ev.mention_count += 1
-        ev.domains.add(doc.domain)
+        if not doc.is_gdelt:  # GDELT SOURCEURLs are often unrelated: not independent outlets
+            ev.domains.add(doc.domain)
+            if doc.language:
+                ev.languages.add(doc.language)
         ev.t_start = min(ev.t_start, doc.published_at)
         ev.t_end = max(ev.t_end, doc.published_at)
         ev.updated_at = now
@@ -536,30 +619,26 @@ class Clusterer:
             n = ev.mention_count
             ev.vector = vec if ev.vector is None else [
                 (a * (n - 1) + b) / n for a, b in zip(ev.vector, vec, strict=False)]
-        # location: keep the most specific, then most confident place
-        if doc.located:
-            new_rank = (PRECISION_RANK.get(doc.place_precision or "", 0),
-                        doc.place_confidence or 0.0)
-            old_rank = (PRECISION_RANK.get(ev.precision or "", -1), ev.geo_confidence or 0.0)
-            if ev.lat is None or new_rank > old_rank:
-                old_cell = ev.h3_3
-                ev.lat, ev.lon = doc.lat, doc.lon
-                ev.precision, ev.place_name = doc.place_precision, doc.place_name
-                ev.geo_confidence = doc.place_confidence
-                ev.country = self._country(doc)
-                ev.h3_3, ev.h3_5, ev.h3_7 = doc.h3_3, doc.h3_5, doc.h3_7
-                self._index_geo(ev, old_cell)
-                res.fields.append(self._field(ev, "location", doc.place_name or "", doc,
-                                              self._place_quote(doc)))
-        # title / summary: best article (relevance, English preferred for display)
-        if not doc.is_gdelt:
-            score = doc.relevance + (0.05 if doc.language == "en" else 0.0)
-            if not ev.has_article or score > ev.title_score:
-                ev.title, ev.summary = doc.title, doc.snippet
-                ev.title_score = score
-            ev.has_article = True
-        elif not ev.has_article and not ev.title:
+        # location and title come from the primary (first) article only: a later article
+        # or a GDELT row never moves the event or renames it
+        primary = role == ROLE_PRIMARY and not doc.is_gdelt
+        if primary and doc.located:
+            old_cell = ev.h3_3
+            ev.lat, ev.lon = doc.lat, doc.lon
+            ev.precision, ev.place_name = doc.place_precision, doc.place_name
+            ev.geo_confidence = doc.place_confidence
+            ev.country = self._country(doc)
+            ev.h3_3, ev.h3_5, ev.h3_7 = doc.h3_3, doc.h3_5, doc.h3_7
+            self._index_geo(ev, old_cell)
+            res.fields.append(self._field(ev, "location", doc.place_name or "", doc,
+                                          self._place_quote(doc)))
+        if primary:
             ev.title, ev.summary = doc.title, doc.snippet
+            ev.title_score = doc.relevance
+            if not doc.located:
+                ev.precision = UNLOCATED
+        if not doc.is_gdelt:
+            ev.has_article = True
         if doc.is_gdelt:
             if doc.origin_id and doc.origin_id not in ev.gdelt_ids:
                 ev.gdelt_ids.append(doc.origin_id)
@@ -638,6 +717,11 @@ class Clusterer:
         if doc.relevance < self.cfg.min_relevance or not doc.categories:
             res.skip("irrelevant")
             return
+        doc.categories = self._gate(doc)
+        if not doc.categories:
+            res.skip("no_action")
+            return
+        doc.relocate(self.cfg.min_place_confidence)
         sig = self.hasher.signature(f"{doc.title} {doc.snippet}")
         places, words = doc.place_keys(), doc.words()
         ev = self._text_match(doc, sig, places)
@@ -649,6 +733,9 @@ class Clusterer:
             if self.cfg.require_location and not doc.located:
                 res.skip("unlocated")
                 return
+            if doc.relevance < self.cfg.min_relevance_create:
+                res.skip("below_create_relevance")
+                return
             ev = self._new_event(doc, doc.categories[0], now)
             res.created.add(ev.id)
             role = ROLE_PRIMARY
@@ -657,6 +744,22 @@ class Clusterer:
             role = ROLE_MENTION if ev.has_article else ROLE_PRIMARY
         self._attach(ev, doc, role, now, res, sig, places, words, vec)
         res.clustered += 1
+
+    def _gate(self, doc: ClusterDoc) -> list[str]:
+        """Drop gated categories (e.g. political) that lack a concrete action keyword."""
+        if not self._gates:
+            return doc.categories
+        hits = None
+        out = []
+        for c in doc.categories:
+            if c in self._gated:
+                if hits is None:
+                    hits = {self._gates.terms[t].group
+                            for t in self._gates.find(f"{doc.title} . {doc.snippet}")}
+                if c not in hits:
+                    continue
+            out.append(c)
+        return out
 
     def _gdelt_category(self, doc: ClusterDoc) -> str | None:
         if doc.categories:
@@ -704,22 +807,8 @@ class Clusterer:
             self._decide(doc, "accepted", "duplicate_of_event", now, res, category, ev.id)
             res.clustered += 1
             return
-        geo_type = a.get("geo_type")
-        if geo_type == 1 or doc.place_precision == "country":
-            self._decide(doc, "rejected", "country_centroid_only", now, res, category)
-            return
-        try:
-            mentions = int(a.get("num_mentions") or 0)
-        except (TypeError, ValueError):
-            mentions = 0
-        if mentions < g.gdelt_min_mentions:
-            self._decide(doc, "rejected", "low_mentions", now, res, category)
-            return
-        ev = self._new_event(doc, category, now)
-        res.created.add(ev.id)
-        self._attach(ev, doc, ROLE_GDELT, now, res, None, places, words, None)
-        self._decide(doc, "accepted", "new_event", now, res, category, ev.id)
-        res.clustered += 1
+        # GDELT never creates an event: no matching article-backed event -> rejected
+        self._decide(doc, "rejected", "no_article_backing", now, res, category)
 
     def _old_sqldate(self, doc: ClusterDoc) -> bool:
         raw = str(doc.attrs.get("sqldate") or "")

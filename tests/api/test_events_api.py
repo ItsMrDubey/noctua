@@ -66,22 +66,36 @@ def ids(resp):
 
 
 def test_list_slim_and_filters(client):
-    r = client.get("/api/events")
+    r = client.get("/api/events?all=true")
     assert r.status_code == 200 and r.json()["count"] == 3
     item = r.json()["items"][0]
-    assert set(item) == {"id", "lat", "lon", "precision", "category", "status", "confidence",
-                         "title", "mention_count", "source_diversity", "t_start", "t_end",
-                         "updated_at"}
+    assert set(item) >= {"id", "lat", "lon", "precision", "category", "status", "confidence",
+                          "title", "mention_count", "source_diversity", "t_start", "t_end",
+                          "updated_at", "place_name", "country"}
+    assert item["place_name"] == "P" and item["country"] == "UA"
     assert ids(client.get("/api/events?bbox=30,40,40,60")) == {"1"}
     assert ids(client.get("/api/events?bbox=170,0,-170,20")) == {"3"}  # antimeridian
-    assert ids(client.get("/api/events?category=civil_unrest,disaster")) == {"2", "3"}
+    assert ids(client.get("/api/events?all=true&category=civil_unrest,disaster")) == {"2", "3"}
     assert ids(client.get("/api/events?status=multi-source")) == {"1"}
     assert ids(client.get("/api/events?min_confidence=0.55")) == {"1", "3"}
-    assert ids(client.get("/api/events?since=2026-11-21T00:00:00Z")) == {"1", "3"}
+    assert ids(client.get("/api/events?all=1&since=2026-11-21T00:00:00Z")) == {"1", "3"}
     assert client.get("/api/events?limit=1").json()["count"] == 1
     assert client.get("/api/events?bbox=bad").status_code == 422
     assert client.get("/api/events?since=yesterday").status_code == 422
     assert client.get("/api/events?min_confidence=2").status_code == 422
+
+
+def test_list_default_map_view_and_unlocated(client, store):
+    # default: multi-source, or reported with city/point precision and confidence >= 0.5
+    assert ids(client.get("/api/events")) == {"1", "3"}
+    un = _event(4, lat=None, lon=None, status="multi-source", conf=0.9)
+    un["precision"] = "unlocated"
+    country = _event(5, lat=48.0, lon=31.0, conf=0.9)
+    country["precision"] = "country"
+    store.save_events([un, country])
+    assert ids(client.get("/api/events")) == {"1", "3"}
+    assert ids(client.get("/api/events?include_unlocated=true")) == {"1", "3", "4"}
+    assert ids(client.get("/api/events?all=true")) == {"1", "2", "3", "4", "5"}
 
 
 def test_detail(client):

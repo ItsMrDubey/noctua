@@ -86,10 +86,17 @@ def mount_events(app: FastAPI, runtime) -> None:
         status: str | None = None,
         min_confidence: float | None = Query(None, ge=0.0, le=1.0),
         limit: int = Query(1000, ge=1, le=MAX_LIMIT),
+        all_: bool = Query(False, alias="all"),
+        include_unlocated: bool = False,
     ) -> Response:
+        """Map view by default: multi-source / sensor-corroborated / official events, or
+        reported ones with city/point precision and confidence >= 0.5; located only.
+        ``all=true`` returns everything; ``include_unlocated=true`` adds unlocated events."""
         items = await asyncio.to_thread(
             store.list_events, bbox=parse_bbox(bbox), since=parse_since(since),
-            category=category, status=status, min_confidence=min_confidence, limit=limit)
+            category=category, status=status, min_confidence=min_confidence, limit=limit,
+            include_unlocated=all_ or include_unlocated,
+            map_default=not all_ and not status)
         return _json({"layer": "events", "count": len(items), "items": items})
 
     @app.get("/api/events/stats")

@@ -33,7 +33,13 @@ import yaml
 from osint.config import ROOT
 from osint.core.geo import utcnow
 from osint.core.metrics import Metrics
-from osint.pipeline.cluster import ClusterDoc, Clusterer, Embedder, EventState
+from osint.pipeline.cluster import (
+    CLUSTER_VERSION,
+    ClusterDoc,
+    Clusterer,
+    Embedder,
+    EventState,
+)
 from osint.store.lake import Lake
 from osint.store.sqlite import SqliteStore
 
@@ -44,6 +50,8 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = ROOT / "config" / "events.yaml"
 CURSOR_NAME = "event_builder"
+REBUILD_STATE = "event_rebuild"
+NO_ARTICLE_BACKING = "no_article_backing"
 STATUS_LEVELS = ("reported", "multi-source", "sensor-corroborated", "official")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -55,15 +63,19 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 class EventsConfig:
     interval_s: float = 60.0
     min_relevance: float = 0.35
+    min_relevance_create: float = 0.5
+    min_place_confidence: float = 0.65
+    category_gates: dict[str, list[str]] = field(default_factory=dict)
     cursor_overlap_min: float = 10.0
     batch_limit: int = 20000
-    require_location: bool = True
+    require_location: bool = False
     permutations: int = 128
     shingle: int = 5
     bands: int = 32
     index_window_h: float = 72.0
     text_threshold: float = 0.5
     overlap_threshold: float = 0.2
+    place_only_window_h: float = 6.0
     embed_threshold: float = 0.85
     min_shared_tokens: dict[str, int] = field(default_factory=lambda: {"default": 2})
     max_signatures: int = 8
@@ -100,6 +112,12 @@ class EventsConfig:
         return cls(
             interval_s=float(d.get("interval_s", base.interval_s)),
             min_relevance=float(d.get("min_relevance", base.min_relevance)),
+            min_relevance_create=float(d.get("min_relevance_create",
+                                             base.min_relevance_create)),
+            min_place_confidence=float(d.get("min_place_confidence",
+                                             base.min_place_confidence)),
+            category_gates={str(c): [str(t) for t in _flat_terms(v)]
+                            for c, v in (d.get("category_gates") or {}).items()},
             cursor_overlap_min=float(d.get("cursor_overlap_min", base.cursor_overlap_min)),
             batch_limit=int(d.get("batch_limit", base.batch_limit)),
             require_location=bool(d.get("require_location", base.require_location)),
@@ -109,6 +127,8 @@ class EventsConfig:
             index_window_h=float(cl.get("index_window_h", base.index_window_h)),
             text_threshold=float(cl.get("text_threshold", base.text_threshold)),
             overlap_threshold=float(cl.get("overlap_threshold", base.overlap_threshold)),
+            place_only_window_h=float(cl.get("place_only_window_h",
+                                             base.place_only_window_h)),
             embed_threshold=float(cl.get("embed_threshold", base.embed_threshold)),
             min_shared_tokens={str(k): int(v) for k, v in
                                (cl.get("min_shared_tokens") or base.min_shared_tokens).items()},
@@ -140,6 +160,13 @@ class EventsConfig:
             return cls()
         with path.open(encoding="utf-8") as f:
             return cls.from_dict(yaml.safe_load(f) or {})
+
+
+def _flat_terms(block: Any) -> list[str]:
+    """A term block is a list or {language: list} (triage.yaml syntax)."""
+    if isinstance(block, dict):
+        return [t for terms in block.values() for t in (terms or [])]
+    return list(block or [])
 
 
 def load_cameo_map(triage_yaml: Path) -> Callable[[str, str], str | None]:
@@ -288,6 +315,7 @@ class EventBuilder:
 
     def warm_start(self) -> None:
         """Rebuild the in-memory index (recent events) and the processed-document set."""
+        migrate_events(self.store)
         now = self.clock()
         since = now - timedelta(hours=self.cfg.index_window_h)
         n = self.clusterer.load(self.store.recent_events(since))
@@ -395,6 +423,100 @@ class EventBuilder:
 
     def stop(self) -> None:
         self._stop.set()
+
+
+# ------------------------------------------------------------- migration / rebuild
+
+
+def migrate_events(store: SqliteStore) -> dict[str, int]:
+    """Idempotent clean-up run at every EventBuilder start.
+
+    1. Events backed only by GDELT rows (no article) are deleted with their documents,
+       fields and corroborations: GDELT may only attach to article-backed events.
+    2. After a ``rebuild_events`` run, events written by an older clusterer (e.g. by a
+       server still running old code during the rebuild) are deleted too and the builder
+       cursor is rewound to the rebuild's cursor so their documents are clustered again.
+    3. Accepted GDELT decisions whose event is gone become rejected/no_article_backing.
+    """
+    out = {"gdelt_only": 0, "legacy": 0, "decisions": 0}
+    ids = store.gdelt_only_event_ids()
+    if ids:
+        out["gdelt_only"] = store.delete_events(ids)
+    marker = store.get_cursor(REBUILD_STATE)
+    if marker:
+        legacy = store.legacy_event_ids(CLUSTER_VERSION)
+        if legacy:
+            out["legacy"] = store.delete_events(legacy)
+            cur = store.get_cursor(CURSOR_NAME) or {}
+            if marker.get("fetched_at_us") is not None and int(
+                    cur.get("fetched_at_us") or 0) > int(marker["fetched_at_us"]):
+                store.set_cursor(CURSOR_NAME, {k: marker[k] for k in
+                                               ("fetched_at_us", "fetched_at") if k in marker})
+    out["decisions"] = store.reject_orphan_gdelt_decisions(NO_ARTICLE_BACKING)
+    if any(out.values()):
+        log.info("events migration: %s", out)
+    return out
+
+
+def rebuild_events(store: SqliteStore, lake: Lake, config: EventsConfig | None = None, *,
+                   cameo_category: Callable[[str, str], str | None] | None = None,
+                   step: timedelta = timedelta(minutes=15),
+                   metrics: Metrics | None = None) -> dict[str, Any]:
+    """Re-cluster every lake document from scratch with the current rules.
+
+    Clears news events (and their documents/fields/corroborations) and all GDELT decisions,
+    then replays the documents in fetched_at order in ``step`` slices, each with the clock
+    set to the slice end, so time-dependent rules (GDELT staleness, windows, index pruning)
+    behave as they did live. GDELT decisions are re-derived from the same lake rows. Sets
+    the builder cursor and a rebuild marker (see ``migrate_events``)."""
+    cfg = config or EventsConfig()
+    store.clear_news_events()
+    rows = lake.query(_DOC_SQL, [_EPOCH, _EPOCH, cfg.min_relevance, 2**62])
+    docs = []
+    for r in rows:
+        try:
+            docs.append(row_to_doc(r))
+        except (TypeError, ValueError):
+            continue
+    docs = [d for d in docs if d.fetched_at is not None]
+    sim = [docs[0].fetched_at if docs else utcnow()]
+    builder = EventBuilder(store, lake, metrics or Metrics(), cfg,
+                           cameo_category=cameo_category, clock=lambda: sim[0])
+    builder._warm = True
+    totals = PassStats()
+    i = 0
+    while i < len(docs):
+        end = docs[i].fetched_at + step
+        j = i
+        while j < len(docs) and docs[j].fetched_at < end:
+            j += 1
+        now = docs[j - 1].fetched_at
+        sim[0] = now
+        horizon = now - timedelta(hours=cfg.index_window_h)
+        batch = [d for d in docs[i:j] if d.published_at >= horizon]
+        res = builder.clusterer.process(batch, now)
+        changed = [builder.clusterer.events[e].to_row() for e in res.changed
+                   if e in builder.clusterer.events]
+        store.save_events(changed, res.documents, res.fields, res.decisions)
+        totals.documents += len(batch)
+        totals.clustered += res.clustered
+        totals.created += len(res.created)
+        totals.gdelt_accepted += res.gdelt_accepted
+        for k, v in res.gdelt_rejected.items():
+            totals.gdelt_rejected[k] = totals.gdelt_rejected.get(k, 0) + v
+        for k, v in res.skipped.items():
+            totals.skipped[k] = totals.skipped.get(k, 0) + v
+        i = j
+    cursor: dict[str, Any] = {}
+    if docs:
+        newest = docs[-1].fetched_at
+        cursor = {"fetched_at_us": int((newest - _EPOCH) / timedelta(microseconds=1)),
+                  "fetched_at": newest.isoformat()}
+        store.set_cursor(CURSOR_NAME, cursor)
+    store.set_cursor(REBUILD_STATE, {**cursor, "at": utcnow().isoformat()})
+    return {"documents": totals.documents, "clustered": totals.clustered,
+            "created": totals.created, "gdelt_accepted": totals.gdelt_accepted,
+            "gdelt_rejected": totals.gdelt_rejected, "skipped": totals.skipped}
 
 
 def wire(runtime: Runtime) -> EventBuilder:

@@ -2,10 +2,62 @@
 # status levels and confidence weights. Read by osint.pipeline.events.EventsConfig.
 
 interval_s: 60            # EventBuilder pass interval
-min_relevance: 0.35       # triage relevance a document needs to enter clustering
+min_relevance: 0.35       # triage relevance a document needs to join an existing event
+# relevance an article needs to CREATE an event. 0.5 = a strong category term in the title
+# (one strong title term alone scores 1 - e^-1 = 0.63; a strong term only in the snippet
+# scores 0.45, weak terms 0.30 each), so incidental or snippet-only mentions cannot spawn
+# events, they can only join one.
+min_relevance_create: 0.5
+# an event's location is the primary article's best gazetteer hit whose matched text is in
+# its own title/snippet with at least this confidence (country level: named in the title)
+min_place_confidence: 0.65
 cursor_overlap_min: 10    # re-read documents fetched this long before the cursor (late writes)
 batch_limit: 20000        # max documents read from the lake per pass
-require_location: true    # unlocated documents may join an event but never create one
+# false: an article with no text-supported place still creates an event, with
+# precision 'unlocated' (no coordinates; hidden from the map, listed with include_unlocated)
+require_location: false
+
+# Categories that need a concrete action keyword (triage.yaml term syntax: word* = prefix,
+# {language: [...]}) in the title/snippet; without one the category is dropped from the
+# document (commentary / opinion / "X defends his closeness to Y" is not an event).
+category_gates:
+  political:
+    en: [sanction*, expel*, expulsion*, ceasefire, cease-fire, truce, coup, resign*,
+         arrest*, impeach*, treaty signed, signs treaty, signed treaty, signs a treaty,
+         signed a treaty, talks collapse*, recall* ambassador*, recall* its ambassador*,
+         declares emergency, declared emergency, state of emergency, martial law,
+         military mobili*, partial mobili*, general mobili*, mobilization order,
+         mobilisation order, mobilizes troops, mobilises troops, mobilizes reservists,
+         mobilises reservists, annex*, wins election, won election, wins the election, won the election,
+         wins presidential, wins presidency, election result*, election win, elected president,
+         elected prime minister, sworn in, no-confidence, no confidence vote, ousted, oust*,
+         dissolve* parliament, vetoe*, vetoed, peace deal, peace agreement, signs agreement,
+         signed agreement, severs ties, cuts ties, cut ties, breaks off relations, detain*,
+         travel ban, visa ban, ultimatum, embargo, extradit*, assassinat*, snap election,
+         calls election, referendum result*, wins referendum]
+    ru: [санкци*, выслал*, высыл*, выдвор*, перемири*, переворот*, отставк*, арест*, задержан*,
+         импичмент*, аннекси*, мобилизаци*, чрезвычайное положение, военное положение,
+         отозвал* посла, подписал* договор*, подписал* соглашени*, победил* на выборах,
+         итоги выборов, эмбарго, ультиматум*]
+    uk: [санкці*, вислал*, видвор*, перемир*, переворот*, відставк*, арешт*, затриман*,
+         імпічмент*, анексі*, мобілізаці*, надзвичайний стан, воєнний стан, відкликал* посла,
+         підписал* угод*, переміг* на виборах, підсумки виборів, ембарго, ультиматум*]
+    ar: [عقوبات, طرد, وقف إطلاق النار, هدنة, انقلاب, استقالة, اعتقال, عزل, ضم, تعبئة,
+         حالة الطوارئ, استدعاء السفير, نتائج الانتخابات, فوز, حظر]
+    fa: [تحریم*, اخراج, آتش‌بس, کودتا, استعفا, بازداشت, استیضاح, حالت فوق‌العاده]
+    fr: [sanction*, expuls*, cessez-le-feu, trêve, coup d'état, démission*, arrestation*,
+         interpellé*, destitution, annex*, mobilisation générale, état d'urgence, loi martiale,
+         rappelle son ambassadeur, remporte l'élection, résultats des élections, embargo]
+    es: [sanción, sanciones, sanciona*, expuls*, alto el fuego, tregua, golpe de estado,
+         dimite, dimisión, renuncia*, arrest*, detenid*, destitu*, anexi*, movilización militar,
+         movilización general,
+         estado de emergencia, gana las elecciones, resultados electorales, embargo]
+    de: [sanktion*, ausweis*, waffenstillstand*, waffenruhe, putsch*, rücktritt*, festnahme*,
+         verhaftet*, festgenommen, amtsenthebung*, annexion*, mobilmachung*,
+         ausnahmezustand*, wahl gewonnen, wahlergebnis*, embargo]
+    tr: [yaptırım*, sınır dışı, ateşkes*, darbe*, istifa*, gözaltı*, tutuklan*, azil*,
+         ilhak*, seferberlik*, olağanüstü hal]
+    zh: [制裁, 驱逐, 停火, 政变, 辞职, 逮捕, 弹劾, 吞并, 动员, 紧急状态, 召回大使, 胜选]
 
 minhash:
   permutations: 128
@@ -16,6 +68,9 @@ clustering:
   index_window_h: 72      # events with t_end in this window stay in the in-memory index
   text_threshold: 0.5     # tau_text: estimated Jaccard to join on text alone
   overlap_threshold: 0.2  # tau_overlap: shared tokens / smaller token set (geo path)
+  # a join on the shared place alone (no shared title word: e.g. across languages) is only
+  # allowed this close in time to the event; otherwise a shared content word is needed too
+  place_only_window_h: 6
   # shared tokens needed on the geo path (place counts as one token). Spatially specific
   # categories may join on the place alone; statement-type categories need more evidence.
   min_shared_tokens:

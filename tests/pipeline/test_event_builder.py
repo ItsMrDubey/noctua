@@ -115,3 +115,78 @@ def test_wire_attaches_builder(tmp_path):
     b = wire(rt)
     assert rt.event_builder is b and b.store is rt.store
     rt.store.close()
+
+
+def _gdelt_row(i, *, fetched, lat=50.45, lon=30.52):
+    attrs = {"event_root_code": "19", "event_code": "190", "num_mentions": 10,
+             "geo_type": 4, "geo_lat": lat, "geo_lon": lon, "geo_name": "Kyiv",
+             "actor1": "RUSSIA", "actor2": "UKRAINE", "sqldate": fetched.strftime("%Y%m%d")}
+    place = PlaceHit(name="Kyiv", country="UP", lat=lat, lon=lon, precision="city",
+                     confidence=0.7, matched="gdelt:ActionGeo")
+    return _row(f"g{i}", "RUSSIA — Fight — UKRAINE", kind="gdelt_event", fetched=fetched,
+                attrs=attrs, place=place, relevance=0.6)
+
+
+def test_migration_drops_gdelt_only_events_idempotently(tmp_path):
+    from osint.pipeline.events import migrate_events
+    from osint.store.sqlite import iso
+
+    store = SqliteStore(tmp_path / "s.sqlite")
+    t = iso(NOW)
+    base = {"category": "armed_conflict", "title": "x", "t_start": t, "t_end": t,
+            "status": "reported", "confidence": 0.5, "version": 1, "mention_count": 1,
+            "source_diversity": 1, "first_seen": t, "updated_at": t,
+            "cluster_state": {"v": 2}}
+    doc = {"source": "s", "url": "u", "title": "x", "published_at": t, "added_at": t}
+    store.save_events(
+        [{"id": "EG", **base}, {"id": "EA", **base}],
+        documents=[{"event_id": "EG", "doc_id": "g1", "role": "gdelt", **doc},
+                   {"event_id": "EA", "doc_id": "a1", "role": "primary", **doc},
+                   {"event_id": "EA", "doc_id": "g2", "role": "gdelt", **doc}],
+        decisions=[{"gdelt_event_id": "1", "decision": "accepted", "reason": "new_event",
+                    "event_id": "EG", "doc_id": "g1", "decided_at": t},
+                   {"gdelt_event_id": "2", "decision": "accepted",
+                    "reason": "duplicate_of_event", "event_id": "EA", "doc_id": "g2",
+                    "decided_at": t}])
+    out = migrate_events(store)
+    assert out == {"gdelt_only": 1, "legacy": 0, "decisions": 1}
+    assert [e["id"] for e in store.list_events(limit=10)] == ["EA"]
+    assert store.get_event("EG") is None
+    g = store.event_stats()["gdelt"]
+    assert g["rejected"]["by_reason"] == {"no_article_backing": 1}
+    assert g["accepted"]["by_reason"] == {"duplicate_of_event": 1}
+    assert migrate_events(store) == {"gdelt_only": 0, "legacy": 0, "decisions": 0}
+    store.close()
+
+
+def test_rebuild_reclusters_lake_and_drops_legacy_events(tmp_path):
+    from osint.pipeline.events import REBUILD_STATE, migrate_events, rebuild_events
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    lake.write("documents", [
+        _row(1, "Missile strike on Kyiv power plant", fetched=NOW - timedelta(hours=5)),
+        _row(2, "Missile strike on Kyiv power plant", host="b.example",
+             fetched=NOW - timedelta(hours=4, minutes=50)),
+        _gdelt_row(1, fetched=NOW - timedelta(hours=4, minutes=40)),
+        _gdelt_row(2, fetched=NOW - timedelta(hours=1), lat=10.0, lon=10.0),  # no event there
+    ])
+    cfg = EventsConfig.from_file(ROOT / "config" / "events.yaml")
+    out = rebuild_events(store, lake, cfg)
+    assert out["created"] == 1 and out["gdelt_accepted"] == 1
+    assert out["gdelt_rejected"] == {"no_article_backing": 1}
+    [ev] = store.list_events(limit=10)
+    assert ev["title"] == "Missile strike on Kyiv power plant" and ev["status"] == "multi-source"
+    assert store.get_cursor(REBUILD_STATE)["fetched_at"].startswith("2026-11-21T11:00")
+    # a second rebuild gives the same result (no duplicates)
+    rebuild_events(store, lake, cfg)
+    [ev] = store.list_events(limit=10)
+    # an event written by old code after the rebuild is dropped at the next start
+    legacy = dict(store.list_events(limit=1, slim=False)[0])
+    legacy.update(id="OLD", cluster_state={})
+    store.save_events([legacy], documents=[{
+        "event_id": "OLD", "doc_id": "doc:1", "source": "s", "url": "u", "title": "t",
+        "published_at": legacy["t_start"], "role": "primary", "added_at": legacy["t_start"]}])
+    assert migrate_events(store)["legacy"] == 1
+    assert {e["id"] for e in store.list_events(limit=10)} == {ev["id"]}
+    store.close()

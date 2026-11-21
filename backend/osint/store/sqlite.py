@@ -61,6 +61,30 @@ CREATE TABLE IF NOT EXISTS gdelt_decisions (
 CREATE INDEX IF NOT EXISTS gdelt_decisions_at ON gdelt_decisions(decided_at);
 """
 
+# Sensor corroboration (spec §3 Corroboration, §5 stage 6). corroborations: one row per
+# piece of sensor evidence linked to an event (kind fire|quake|aircraft|ship|ais_gap|imagery;
+# ref_id = observation id, track id or "<track>@<gap start>"). event_corroboration: the
+# per-event roll-up (score, kinds) that the API and the confidence formula read.
+# sensor_events: events created by a sensor detector (source 'sensor'); dedupe_key is
+# "<detector>:<cell>:<window>" and makes detection re-runs idempotent.
+CORROBORATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS corroborations (
+  event_id TEXT NOT NULL, kind TEXT NOT NULL, ref_id TEXT NOT NULL, rule TEXT NOT NULL,
+  distance_km REAL, dt_minutes REAL, score REAL NOT NULL, details TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY (event_id, kind, ref_id));
+CREATE INDEX IF NOT EXISTS corroborations_kind ON corroborations(kind);
+CREATE TABLE IF NOT EXISTS event_corroboration (
+  event_id TEXT PRIMARY KEY, score REAL NOT NULL, kinds TEXT NOT NULL DEFAULT '[]',
+  evidence INTEGER NOT NULL, corroborated INTEGER NOT NULL, evaluated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sensor_events (
+  event_id TEXT PRIMARY KEY, detector TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE,
+  cell TEXT NOT NULL, t_start TEXT NOT NULL, t_end TEXT NOT NULL,
+  details TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS sensor_events_cell ON sensor_events(detector, cell, t_end);
+"""
+CORROBORATION_KINDS = ("fire", "quake", "aircraft", "ship", "ais_gap", "imagery")
+
 EVENT_COLUMNS = (
     "id", "category", "subcategory", "cameo_root", "title", "summary", "actors", "lat", "lon",
     "precision", "place_name", "country", "geo_confidence", "h3_3", "h3_5", "h3_7", "t_start",
@@ -77,7 +101,7 @@ _EVENT_DOC_COLUMNS = ("event_id", "doc_id", "source", "url", "title", "published
                       "language", "role", "added_at")
 SLIM_EVENT_COLUMNS = ("id", "lat", "lon", "precision", "category", "status", "confidence",
                       "title", "mention_count", "source_diversity", "t_start", "t_end",
-                      "updated_at")
+                      "updated_at", "place_name", "country")
 
 
 def iso(dt: datetime) -> str:
@@ -89,6 +113,12 @@ def _json_col(value: object, column: str) -> str:
     if value is None:
         value = _JSON_DEFAULTS[column]
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _event_tuple(e: dict) -> tuple:
+    return tuple(_json_col(e.get(c), c) if c in _JSON_DEFAULTS
+                 else (e.get(c) or "") if c == "summary" else e.get(c)
+                 for c in EVENT_COLUMNS)
 
 
 def _event_out(row: sqlite3.Row, *, keep_state: bool = False) -> dict:
@@ -128,6 +158,7 @@ class SqliteStore:
         self._db.execute("PRAGMA synchronous=NORMAL")
         self._db.executescript(SCHEMA)
         self._db.executescript(EVENTS_SCHEMA)
+        self._db.executescript(CORROBORATION_SCHEMA)
 
     def register_source(self, name: str, domain: str, licence: str, commercial_ok: bool) -> None:
         with self._lock, self._db:
@@ -213,12 +244,7 @@ class SqliteStore:
         """Persist one clustering pass atomically. ``events`` are full event dicts (JSON
         columns as Python objects); first_seen keeps its first value. Documents, fields and
         decisions are insert-if-absent (re-running a pass is harmless)."""
-        ev_rows = [
-            tuple(_json_col(e.get(c), c) if c in _JSON_DEFAULTS
-                  else (e.get(c) or "") if c == "summary" else e.get(c)
-                  for c in EVENT_COLUMNS)
-            for e in events
-        ]
+        ev_rows = [_event_tuple(e) for e in events]
         doc_rows = [tuple(d.get(c, "") for c in _EVENT_DOC_COLUMNS) for d in documents or ()]
         field_rows = [(f["event_id"], f["field"], str(f["value"]), f["doc_id"],
                        f.get("quote") or "") for f in fields or ()]
@@ -280,11 +306,22 @@ class SqliteStore:
     def list_events(self, *, bbox: tuple[float, float, float, float] | None = None,
                     since: datetime | None = None, category: str | None = None,
                     status: str | None = None, min_confidence: float | None = None,
-                    limit: int = 1000, slim: bool = True) -> list[dict]:
+                    limit: int = 1000, slim: bool = True, include_unlocated: bool = True,
+                    map_default: bool = False) -> list[dict]:
         """Events, most recently updated first. bbox = (west, south, east, north); west > east
-        wraps the antimeridian. Comma-separated category/status values match any of them."""
+        wraps the antimeridian. Comma-separated category/status values match any of them.
+
+        ``include_unlocated=False`` drops events without coordinates. ``map_default`` keeps
+        only events worth showing on the map: status multi-source / sensor-corroborated /
+        official, or reported with city/point precision and confidence >= 0.5."""
         where: list[str] = []
         params: list[object] = []
+        if not include_unlocated:
+            where.append("lat IS NOT NULL")
+        if map_default:
+            where.append("(status IN ('multi-source', 'sensor-corroborated', 'official') OR "
+                         "(status = 'reported' AND precision IN ('city', 'point') "
+                         "AND confidence >= 0.5))")
         if bbox is not None:
             w, s, e, n = bbox
             where.append("lat IS NOT NULL AND lat BETWEEN ? AND ?")
@@ -361,6 +398,242 @@ class SqliteStore:
             "gdelt": {**gdelt, "adjudicated": adjudicated,
                       "acceptance_rate": (round(gdelt["accepted"]["total"] / adjudicated, 4)
                                           if adjudicated else None)},
+        }
+
+    # -------------------------------------------------------- event maintenance
+
+    def gdelt_only_event_ids(self) -> list[str]:
+        """News events with no article document (only GDELT rows): never valid."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id FROM events e WHERE NOT EXISTS (SELECT 1 FROM event_documents d "
+                "WHERE d.event_id = e.id AND d.role != 'gdelt') "
+                "AND id NOT IN (SELECT event_id FROM sensor_events)").fetchall()
+        return [r[0] for r in rows]
+
+    def legacy_event_ids(self, version: int) -> list[str]:
+        """News events written by an older clusterer (cluster_state.v < ``version``)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id FROM events WHERE COALESCE(json_extract(cluster_state, '$.v'), 0) < ? "
+                "AND id NOT IN (SELECT event_id FROM sensor_events)", (version,)).fetchall()
+        return [r[0] for r in rows]
+
+    def delete_events(self, event_ids: list[str]) -> int:
+        """Delete events with their documents, fields and corroboration rows."""
+        n = 0
+        with self._lock, self._db:
+            for i in range(0, len(event_ids), 900):
+                chunk = event_ids[i: i + 900]
+                marks = ",".join("?" * len(chunk))
+                for table, col in (("event_documents", "event_id"),
+                                   ("event_fields", "event_id"),
+                                   ("corroborations", "event_id"),
+                                   ("event_corroboration", "event_id"),
+                                   ("sensor_events", "event_id")):
+                    self._db.execute(f"DELETE FROM {table} WHERE {col} IN ({marks})", chunk)
+                n += self._db.execute(f"DELETE FROM events WHERE id IN ({marks})",
+                                      chunk).rowcount
+        return n
+
+    def reject_orphan_gdelt_decisions(self, reason: str) -> int:
+        """Accepted GDELT decisions whose event no longer exists -> rejected/``reason``."""
+        with self._lock, self._db:
+            return self._db.execute(
+                "UPDATE gdelt_decisions SET decision='rejected', reason=?, event_id=NULL "
+                "WHERE decision='accepted' AND (event_id IS NULL OR event_id NOT IN "
+                "(SELECT id FROM events))", (reason,)).rowcount
+
+    def clear_news_events(self) -> int:
+        """Remove every news event (not sensor-derived ones) with its documents, fields,
+        corroborations, and all GDELT decisions (a rebuild re-adjudicates them)."""
+        with self._lock, self._db:
+            keep = "(SELECT event_id FROM sensor_events)"
+            for table in ("event_documents", "event_fields", "corroborations",
+                          "event_corroboration"):
+                self._db.execute(f"DELETE FROM {table} WHERE event_id NOT IN {keep}")
+            self._db.execute("DELETE FROM gdelt_decisions")
+            return self._db.execute(f"DELETE FROM events WHERE id NOT IN {keep}").rowcount
+
+    # ------------------------------------------------------------ corroboration
+
+    def save_corroborations(self, rows: list[dict], *,
+                            replace_for: dict[str, set[str]] | None = None,
+                            summaries: list[dict] | None = None,
+                            events: list[dict] | None = None) -> dict[str, int]:
+        """Upsert corroboration rows (unique per event/kind/ref; created_at is kept), the
+        per-event roll-ups and ``events`` rows in one transaction.
+
+        ``replace_for`` maps event id -> kinds the caller re-evaluated: stored rows of those
+        kinds for that event that are not in ``rows`` are deleted (evidence that no longer
+        matches). Returns the number of newly inserted rows per kind."""
+        now = iso(utcnow())
+        new: dict[str, int] = {}
+        keep = {(r["event_id"], r["kind"], str(r["ref_id"])) for r in rows}
+        with self._lock, self._db:
+            if events:
+                self._db.executemany(_UPSERT_EVENT, [_event_tuple(e) for e in events])
+            for eid, kinds in (replace_for or {}).items():
+                if not kinds:
+                    continue
+                marks = ",".join("?" * len(kinds))
+                old = self._db.execute(
+                    f"SELECT kind, ref_id FROM corroborations WHERE event_id=? "
+                    f"AND kind IN ({marks})", (eid, *sorted(kinds))).fetchall()
+                gone = [(eid, k, ref) for k, ref in old if (eid, k, ref) not in keep]
+                if gone:
+                    self._db.executemany(
+                        "DELETE FROM corroborations WHERE event_id=? AND kind=? AND ref_id=?",
+                        gone)
+            existing: set[tuple[str, str, str]] = set()
+            ids = sorted({k[0] for k in keep})
+            for i in range(0, len(ids), 900):
+                chunk = ids[i: i + 900]
+                existing.update(tuple(r) for r in self._db.execute(
+                    f"SELECT event_id, kind, ref_id FROM corroborations WHERE event_id IN "
+                    f"({','.join('?' * len(chunk))})", chunk).fetchall())
+            for key in keep - existing:
+                new[key[1]] = new.get(key[1], 0) + 1
+            self._db.executemany(
+                "INSERT INTO corroborations VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(event_id, kind, ref_id) DO UPDATE SET rule=excluded.rule, "
+                "distance_km=excluded.distance_km, dt_minutes=excluded.dt_minutes, "
+                "score=excluded.score, details=excluded.details, updated_at=excluded.updated_at",
+                [(r["event_id"], r["kind"], str(r["ref_id"]), r["rule"], r.get("distance_km"),
+                  r.get("dt_minutes"), float(r["score"]),
+                  json.dumps(r.get("details") or {}, ensure_ascii=False,
+                             separators=(",", ":"), default=str), now, now) for r in rows])
+            if summaries:
+                self._db.executemany(
+                    "INSERT INTO event_corroboration VALUES (?,?,?,?,?,?) "
+                    "ON CONFLICT(event_id) DO UPDATE SET score=excluded.score, "
+                    "kinds=excluded.kinds, evidence=excluded.evidence, "
+                    "corroborated=excluded.corroborated, evaluated_at=excluded.evaluated_at",
+                    [(s["event_id"], float(s["score"]), json.dumps(sorted(s["kinds"])),
+                      int(s["evidence"]), int(bool(s["corroborated"])), now)
+                     for s in summaries])
+        return new
+
+    def list_corroborations(self, event_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT kind, ref_id, rule, distance_km, dt_minutes, score, details, "
+                "created_at FROM corroborations WHERE event_id=? "
+                "ORDER BY score DESC, kind, ref_id", (event_id,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["details"] = json.loads(d["details"])
+            out.append(d)
+        return out
+
+    def corroboration_rows(self, event_ids: list[str]) -> dict[str, list[dict]]:
+        """event id -> [{kind, ref_id, score}] (input of the score roll-up)."""
+        out: dict[str, list[dict]] = {}
+        for i in range(0, len(event_ids), 900):
+            chunk = event_ids[i: i + 900]
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT event_id, kind, ref_id, score FROM corroborations WHERE event_id "
+                    f"IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            for r in rows:
+                out.setdefault(r[0], []).append({"kind": r[1], "ref_id": r[2], "score": r[3]})
+        return out
+
+    def corroboration_summaries(self, event_ids: list[str]) -> dict[str, dict]:
+        """event id -> {score, kinds, evidence, corroborated[, detector]} for known ids."""
+        out: dict[str, dict] = {}
+        for i in range(0, len(event_ids), 900):
+            chunk = event_ids[i: i + 900]
+            marks = ",".join("?" * len(chunk))
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT event_id, score, kinds, evidence, corroborated FROM "
+                    f"event_corroboration WHERE event_id IN ({marks})", chunk).fetchall()
+                sensor = self._db.execute(
+                    f"SELECT event_id, detector FROM sensor_events WHERE event_id IN ({marks})",
+                    chunk).fetchall()
+            for r in rows:
+                out[r[0]] = {"score": r[1], "kinds": json.loads(r[2]), "evidence": r[3],
+                             "corroborated": bool(r[4])}
+            for eid, det in sensor:
+                out.setdefault(eid, {"score": 0.0, "kinds": [], "evidence": 0,
+                                     "corroborated": True})["detector"] = det
+        return out
+
+    def sensor_scores_since(self, since: datetime) -> dict[str, float]:
+        """Roll-up score of every event evaluated since ``since`` (scorer warm start)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT event_id, score FROM event_corroboration WHERE evaluated_at >= ?",
+                (iso(since),)).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def sensor_event_ids(self) -> set[str]:
+        with self._lock:
+            rows = self._db.execute("SELECT event_id FROM sensor_events").fetchall()
+        return {r[0] for r in rows}
+
+    @staticmethod
+    def _sensor_out(row: sqlite3.Row | None) -> dict | None:
+        if row is None:
+            return None
+        d = dict(row)
+        d["details"] = json.loads(d["details"])
+        return d
+
+    def find_sensor_event(self, detector: str, cells: list[str],
+                          not_before: datetime) -> dict | None:
+        """Latest sensor event of ``detector`` in one of ``cells`` whose t_end is at or
+        after ``not_before`` (a continuing pattern extends it instead of a new event)."""
+        if not cells:
+            return None
+        marks = ",".join("?" * len(cells))
+        with self._lock:
+            row = self._db.execute(
+                f"SELECT * FROM sensor_events WHERE detector=? AND cell IN ({marks}) "
+                f"AND t_end >= ? ORDER BY t_end DESC LIMIT 1",
+                (detector, *cells, iso(not_before))).fetchone()
+        return self._sensor_out(row)
+
+    def get_sensor_event_by_key(self, dedupe_key: str) -> dict | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM sensor_events WHERE dedupe_key=?",
+                                   (dedupe_key,)).fetchone()
+        return self._sensor_out(row)
+
+    def save_sensor_event(self, event: dict, sensor: dict, corroborations: list[dict],
+                          summary: dict) -> dict[str, int]:
+        """Upsert a sensor-derived event: its sensor_events row (dedupe_key unique), then
+        the events row, evidence rows and roll-up (see save_corroborations)."""
+        now = iso(utcnow())
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO sensor_events VALUES (?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(event_id) DO UPDATE SET t_start=excluded.t_start, "
+                "t_end=excluded.t_end, details=excluded.details, "
+                "updated_at=excluded.updated_at",
+                (event["id"], sensor["detector"], sensor["dedupe_key"], sensor["cell"],
+                 event["t_start"], event["t_end"],
+                 json.dumps(sensor.get("details") or {}, default=str), now, now))
+        return self.save_corroborations(corroborations, events=[event], summaries=[summary])
+
+    def corroboration_stats(self) -> dict:
+        with self._lock:
+            kinds = self._db.execute(
+                "SELECT kind, COUNT(*), COUNT(DISTINCT event_id) FROM corroborations "
+                "GROUP BY kind").fetchall()
+            corr = self._db.execute(
+                "SELECT COUNT(*) FROM event_corroboration WHERE corroborated=1 AND event_id "
+                "NOT IN (SELECT event_id FROM sensor_events)").fetchone()[0]
+            det = self._db.execute(
+                "SELECT detector, COUNT(*) FROM sensor_events GROUP BY detector").fetchall()
+        by_det = {r[0]: r[1] for r in det}
+        return {
+            "corroborations_by_kind": {r[0]: r[1] for r in kinds},
+            "events_with_evidence_by_kind": {r[0]: r[2] for r in kinds},
+            "news_events_sensor_corroborated": corr,
+            "sensor_derived": {"total": sum(by_det.values()), "by_detector": by_det},
         }
 
     def close(self) -> None:

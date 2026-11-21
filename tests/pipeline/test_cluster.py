@@ -38,6 +38,8 @@ def place(name, lat, lon, precision="city", country="UA", conf=0.9):
 def art(i, title, *, url=None, where=("Kharkiv", *KHARKIV), cat="armed_conflict",
         minutes=0, lang="en", rel=0.8, precision="city", snippet=""):
     name, lat, lon = where if where else (None, None, None)
+    if name and name not in title and name not in snippet:
+        snippet = f"{snippet} {name}".strip()  # the place must be named in the text
     return ClusterDoc(
         id=f"doc:{i}", source="rss:test", url=url or f"https://outlet{i}.example/a/{i}",
         title=title, snippet=snippet, language=lang,
@@ -123,7 +125,7 @@ def test_category_and_time_window_separate():
 
 
 def test_text_path_joins_unlocated_copy_and_unlocated_new_is_skipped():
-    c = make()
+    c = make(cfg(require_location=True))
     title = "Huge blast at chemical plant in Kharkiv region injures dozens of workers"
     c.process([art(1, title, snippet="Emergency services said the fire was contained.")],
               NOW)
@@ -136,13 +138,21 @@ def test_text_path_joins_unlocated_copy_and_unlocated_new_is_skipped():
     assert next(iter(c.events.values())).mention_count == 2
 
 
+def test_unlocated_article_creates_unlocated_event_by_default():
+    c = make()
+    res = c.process([art(1, "Missile strike kills five", where=None)], NOW)
+    [ev] = c.events.values()
+    assert res.created and ev.precision == "unlocated" and ev.lat is None
+    assert ev.to_row()["precision"] == "unlocated"
+
+
 def test_irrelevant_documents_skipped():
     c = make()
     res = c.process([art(1, "Kharkiv strike", rel=0.1), art(2, "x", cat=None)], NOW)
     assert res.skipped == {"irrelevant": 2} and not c.events
 
 
-def test_bookkeeping_same_domain_and_location_upgrade():
+def test_bookkeeping_same_domain_location_stays_with_primary():
     c = make()
     c.process([art(1, "Russian strike on Kharkiv region",
                    where=("Kharkiv Oblast", *KHARKIV), precision="admin1",
@@ -155,9 +165,9 @@ def test_bookkeeping_same_domain_and_location_upgrade():
     assert res.updated == {ev.id} and not res.created
     assert ev.version == 2 and ev.mention_count == 2
     assert ev.source_diversity == 1 and ev.status == "reported"  # same outlet
-    assert ev.precision == "city"
+    assert ev.precision == "admin1"  # location and title only from the primary article
     assert ev.t_end - ev.t_start == timedelta(minutes=30)
-    assert any(f["field"] == "location" for f in res.fields)
+    assert not any(f["field"] == "location" for f in res.fields)
 
 
 def test_warm_start_roundtrip_through_row():
@@ -207,23 +217,32 @@ def test_gdelt_attaches_to_news_event():
     assert ev.gdelt_ids == ["100"] and ev.cameo_root == "19" and ev.subcategory == "190"
     assert {a["name"] for a in ev.actors} == {"Russia", "Ukraine"}
     assert ev.title == "Russian drone strike hits Kharkiv"  # article title wins
-    assert ev.status == "multi-source" and res.gdelt_accepted == 1
+    assert ev.status == "reported" and res.gdelt_accepted == 1  # GDELT is no outlet
     assert [x["role"] for x in res.documents if x["doc_id"] == "doc:g100"] == ["gdelt"]
 
 
-def test_gdelt_new_event_then_duplicate():
+def test_gdelt_never_creates_events():
     c = make()
     res = c.process([gdelt(1), gdelt(2, url="https://gdeltsrc1.example/story")], NOW)
-    assert _decision(res, 1)["reason"] == "new_event"
-    assert _decision(res, 2)["reason"] == "duplicate_of_event"
+    assert _decision(res, 1)["reason"] == "no_article_backing"
+    assert _decision(res, 2)["reason"] == "no_article_backing"
+    assert not c.events and not res.created and res.gdelt_accepted == 0
+
+
+def test_gdelt_attach_keeps_article_title_and_location():
+    c = make()
+    c.process([art(1, "Russian drone strike hits Kharkiv")], NOW)
     ev = next(iter(c.events.values()))
-    assert ev.gdelt_ids == ["1", "2"] and ev.source_diversity == 1
+    res = c.process([gdelt(3, where=("Kharkiv, Ukraine", *CHUHUIV))], NOW)
+    assert _decision(res, 3)["reason"] == "duplicate_of_event"
+    assert ev.title == "Russian drone strike hits Kharkiv" and ev.place_name == "Kharkiv"
+    assert (ev.lat, ev.lon) == KHARKIV
 
 
 @pytest.mark.parametrize("doc,reason", [
     (gdelt(1, root="04", code="042", cat="political"), "irrelevant_category"),
-    (gdelt(2, geo_type=1, where=("Ukraine", 49.0, 32.0)), "country_centroid_only"),
-    (gdelt(3, mentions=1), "low_mentions"),
+    (gdelt(2, geo_type=1, where=("Ukraine", 49.0, 32.0)), "no_article_backing"),
+    (gdelt(3, mentions=1), "no_article_backing"),
     (gdelt(4, published=NOW - timedelta(hours=30)), "stale"),
     (gdelt(5, sqldate="20251121"), "stale"),
 ])
@@ -243,8 +262,65 @@ def test_gdelt_low_mentions_accepted_when_corroborated():
 
 def test_gdelt_category_from_cameo_map_when_triage_empty():
     c = make(cameo_category=lambda code, root: "armed_conflict" if root == "19" else None)
+    c.process([art(1, "Russian drone strike hits Kharkiv")], NOW)
     res = c.process([gdelt(7, cat=None)], NOW)
-    assert _decision(res, 7)["reason"] == "new_event"
+    assert _decision(res, 7)["reason"] == "duplicate_of_event"
+
+
+# ------------------------------------------------- article evidence / gates
+
+
+def test_location_needs_text_evidence_and_country_in_title():
+    c = make()
+    d = art(1, "EU bans plastic waste exports outside OECD", cat="economic",
+            where=("Turkey", 39.0, 35.0), precision="country",
+            snippet="The biggest recipient so far was Turkey.")
+    c.process([d], NOW)
+    ev = next(iter(c.events.values()))
+    assert ev.precision == "unlocated" and ev.lat is None  # country only in the snippet
+    c2 = make()
+    d2 = art(2, "Turkey bans plastic waste imports", cat="economic",
+             where=("Turkey", 39.0, 35.0), precision="country")
+    c2.process([d2], NOW)
+    assert next(iter(c2.events.values())).precision == "country"
+    # a hit whose matched text is not in the document is ignored
+    c3 = make()
+    d3 = art(3, "Drone strike on a city", snippet="")
+    d3.places = [place("Kharkiv", *KHARKIV) | {"matched": "Харків"}]
+    c3.process([d3], NOW)
+    assert next(iter(c3.events.values())).precision == "unlocated"
+
+
+def test_low_confidence_place_is_not_used():
+    c = make()
+    d = art(1, "Missile strike reported in Plaza")
+    d.places = [place("Laudio", 43.1, -2.9, conf=0.55) | {"matched": "Plaza"}]
+    c.process([d], NOW)
+    assert next(iter(c.events.values())).lat is None
+
+
+def test_create_needs_higher_relevance_but_join_does_not():
+    c = make(cfg(min_relevance_create=0.5))
+    res = c.process([art(1, "Kharkiv shelling", rel=0.45)], NOW)
+    assert not c.events and res.skipped == {"below_create_relevance": 1}
+    c.process([art(2, "Russian drone strike hits Kharkiv")], NOW)
+    res = c.process([art(3, "Russian drone strike hits Kharkiv overnight", rel=0.4,
+                         minutes=5)], NOW)
+    assert res.updated and next(iter(c.events.values())).mention_count == 2
+
+
+def test_political_needs_action_keyword():
+    gates = {"political": ["sanction*", "expel*", "resign*", "выслал*"]}
+    c = make(cfg(category_gates=gates, min_shared_tokens={"default": 2}))
+    res = c.process([art(1, "Trump defends his closeness to Putin and Xi", cat="political",
+                         where=("Washington", 38.9, -77.0))], NOW)
+    assert not c.events and res.skipped == {"no_action": 1}
+    res = c.process([art(2, "EU imposes new sanctions on Russian banks", cat="political",
+                         where=("Brussels", 50.85, 4.35))], NOW)
+    assert len(c.events) == 1
+    res = c.process([art(3, "Россия выслала дипломатов", cat="political", lang="ru",
+                         where=("Moscow", 55.75, 37.6))], NOW)
+    assert len(c.events) == 2
 
 
 # ------------------------------------------------------------ status/confidence
@@ -278,3 +354,21 @@ def test_confidence_components_and_monotonicity():
     assert comps["recency"] == 1.0
     assert 0 <= event_confidence(lo, c, NOW) < event_confidence(hi, c, NOW) <= 1
     assert event_confidence(hi, c, NOW + timedelta(days=3)) < event_confidence(hi, c, NOW)
+
+
+def test_place_only_join_needs_time_proximity():
+    c = make()
+    c.process([art(1, "Russian drone strike hits Kharkiv")], NOW)
+    later = art(2, "Обстріл міста", lang="uk", minutes=60 * 8)  # place only, 8 h later
+    res = c.process([later], NOW + timedelta(hours=8))
+    assert res.created and len(c.events) == 2
+
+
+def test_title_place_beats_snippet_city_and_demonym_ranks_last():
+    d = art(1, "Russian missiles hit Poland", where=None,
+            snippet="Moscow denied the strike.")
+    d.places = [place("Moscow", 55.75, 37.6, country="RU"),
+                place("Poland", 52.0, 19.0, precision="country", country="PL"),
+                place("Russia", 60.0, 90.0, precision="country", country="RU")
+                | {"matched": "Russian"}]
+    assert d.text_place(0.65)["name"] == "Poland"
