@@ -111,7 +111,8 @@ class Scheduler:
         while True:
             t0 = time.monotonic()
             try:
-                batch = await asyncio.wait_for(c.poll(self.ctx), timeout=self.poll_timeout_s)
+                timeout = c.effective_poll_timeout_s(self.poll_timeout_s)
+                batch = await asyncio.wait_for(c.poll(self.ctx), timeout=timeout)
                 await self.submit(batch)
                 self._ok(c, batch, time.monotonic() - t0)
                 delay = c.interval_s

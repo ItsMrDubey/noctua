@@ -233,3 +233,41 @@ def test_build_collectors_treats_none_cfg_as_empty():
         assert c.cfg == {}
     finally:
         REGISTRY.pop("okpoll", None)
+
+
+class PatientPoll(PollCollector):
+    name, domain, licence, commercial_ok = "patient", "test", "test", True
+    default_interval_s = 0.01
+    poll_timeout_s = 5.0
+
+    async def poll(self, ctx):
+        await asyncio.sleep(0.05)
+        return Batch(source=self.name)
+
+
+async def test_collector_poll_timeout_overrides_scheduler_default():
+    sched, submitted, _ = await _run([PatientPoll({})], seconds=0.3, poll_timeout_s=0.02)
+    assert sched.health["patient"].status == "healthy"
+    assert submitted
+
+
+async def test_cfg_poll_timeout_overrides_class_value():
+    sched, submitted, _ = await _run([PatientPoll({"poll_timeout_s": 0.01})], seconds=0.3,
+                                     breaker_threshold=100)
+    assert sched.health["patient"].last_error == "TimeoutError: (no message)"
+    assert submitted == []
+
+
+def test_effective_poll_timeout():
+    assert OkPoll({}).effective_poll_timeout_s(120.0) == 120.0
+    assert PatientPoll({}).effective_poll_timeout_s(120.0) == 5.0
+    assert OkPoll({"poll_timeout_s": 7}).effective_poll_timeout_s(120.0) == 7.0
+
+
+def test_firms_has_long_timeouts():
+    import httpx
+
+    from osint.collectors import firms
+
+    assert firms.FirmsCollector({}).effective_poll_timeout_s(120.0) == 600.0
+    assert firms.REQUEST_TIMEOUT == httpx.Timeout(600, connect=30)

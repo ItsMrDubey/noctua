@@ -37,10 +37,16 @@ class BaseCollector(ABC):
 
 class PollCollector(BaseCollector):
     default_interval_s: ClassVar[float] = 60.0
+    # per-collector poll timeout; None -> the scheduler's default. cfg `poll_timeout_s` wins.
+    poll_timeout_s: ClassVar[float | None] = None
 
     @property
     def interval_s(self) -> float:
         return float(self.cfg.get("interval_s", self.default_interval_s))
+
+    def effective_poll_timeout_s(self, default: float) -> float:
+        value = self.cfg.get("poll_timeout_s", self.poll_timeout_s)
+        return default if value is None else float(value)
 
     @abstractmethod
     async def poll(self, ctx: CollectorContext) -> Batch: ...

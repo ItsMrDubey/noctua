@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
 DEFAULT_PRODUCTS = ["VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT", "MODIS_NRT"]
+# world CSVs are large and FIRMS is slow; keep connect short but allow long reads
+REQUEST_TIMEOUT = httpx.Timeout(600, connect=30)
 
 
 def confidence_label(conf: str) -> str:
@@ -85,12 +87,13 @@ class FirmsCollector(PollCollector):
     licence = "NASA open data (attribution: NASA FIRMS)"
     commercial_ok = True
     default_interval_s = 900.0
+    poll_timeout_s = 600.0
 
     async def _fetch(self, ctx: CollectorContext, key: str, product: str) -> list[Observation]:
         area = self.cfg.get("area", "world")
         days = int(self.cfg.get("days", 1))
         try:
-            r = await ctx.http.get(f"{BASE_URL}/{key}/{product}/{area}/{days}", timeout=120)
+            r = await ctx.http.get(f"{BASE_URL}/{key}/{product}/{area}/{days}", timeout=REQUEST_TIMEOUT)
             r.raise_for_status()
         except httpx.HTTPStatusError as e:  # message would contain the URL (and key)
             raise RuntimeError(f"FIRMS {product}: HTTP {e.response.status_code}") from None
