@@ -1,0 +1,14 @@
+# Public webcams: ONLY cameras their owners openly publish (open-data / operator-published APIs).
+# Never add unsecured/private CCTV, IP-camera search engines or anything not intentionally published.
+refresh_hours: 6
+snapshot_ttl_s: 30
+# windy_webcams_key: ""        # or WINDY_WEBCAMS_KEY in .env
+windy_max_pages: 20            # 50 cams per page
+sources:
+  tfl: {enabled: true}
+  caltrans: {enabled: true}
+  nyc: {enabled: false}        # webcams.nyctmc.org unreachable from the dev host when verified; parser unverified
+  digitraffic: {enabled: true}
+  sg: {enabled: true}
+  hk: {enabled: true}
+  windy: {enabled: true}       # still skipped unless a key is set
