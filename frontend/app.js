@@ -6,11 +6,13 @@ import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $, esc, detailsHtml } from "/static/js/ui.js";
+import { $, esc } from "/static/js/ui.js";
 import { createViewer, setupImagery } from "/static/js/theme/globe.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
 import { LayerTree } from "/static/js/panels/layertree.js";
 import { setupHud, setupFps } from "/static/js/panels/hud.js";
+import { Inspector } from "/static/js/panels/inspector.js";
+import { AlertCenter } from "/static/js/panels/alerts.js";
 
 const errors = {};
 let lastStatus = null;
@@ -65,43 +67,43 @@ async function main() {
     const items = Array.isArray(data && data.items) ? data.items : [];
     layer.sync(items);
     setCount(kind, items.length, data && data.truncated);
+    if (kind === "aircraft") alerts.aircraft(items);
+    if (kind === "quakes") alerts.quakes(items);
     if (selected && selected.kind === kind) refreshSelected();
   };
   const trailSelected = (force) => {
-    if (!selected || (selected.kind !== "aircraft" && selected.kind !== "ships")) return;
+    if (!selected || !isTrack(selected.kind) || !trailOn) return;
     trails.showSelected(selected.kind, selected.id, byKind[selected.kind].items.get(selected.id), force);
   };
 
-  // ---- Selection / details ----
-  let selected = null, following = false, detail = null;
+  // ---- Selection / inspector ----
+  let selected = null, following = false, detail = null, trailOn = true, refSel = null;
+  const pins = new Set(JSON.parse(localStorage.getItem("noctua.pins") || "[]"));
+  const savePins = () => localStorage.setItem("noctua.pins", JSON.stringify([...pins]));
   const tracker = viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(0, 0, 0) });
-  const followBtn = $("d-follow");
+  const isTrack = (k) => k === "aircraft" || k === "ships";
+  const fx = { setTarget() {} }; // replaced by the selection reticle when available
+  const buttons = () => {
+    const t = !!(selected && isTrack(selected.kind));
+    inspector.setButtons({ follow: t, following, trail: t, trailOn, pin: t, pinned: t && pins.has(selected.id) });
+  };
 
   function setFollow(on) {
-    following = on;
-    followBtn.textContent = "Follow: " + (on ? "on" : "off");
-    followBtn.classList.toggle("on", on);
-    if (on && selected) {
+    following = !!(on && selected);
+    if (following) {
       const p = byKind[selected.kind].positionOf(selected.id);
       if (p) { tracker.position = p.clone(); viewer.trackedEntity = tracker; }
-    } else {
-      viewer.trackedEntity = undefined;
-    }
-    viewer.setContinuous("follow", on && !!selected);
+    } else viewer.trackedEntity = undefined;
+    viewer.setContinuous("follow", following);
+    buttons();
   }
-  // Slim list items carry no `extra`; merge it from GET /api/track/{id} when available.
-  const withDetail = (it) => {
-    if (!detail || !selected || detail.id !== selected.id) return it;
-    const tr = detail.track || {};
-    return { ...tr, ...it, extra: { ...(tr.extra || {}), ...(it.extra || {}) }, source: detail.position && detail.position.source };
-  };
+  const withExtra = (it) => (detail && detail.id === it.id && detail.track ? { ...it, extra: detail.track.extra || {} } : it);
   function refreshSelected() {
     if (!selected) return;
     const it = byKind[selected.kind].items.get(selected.id);
     if (!it) return;
-    const [title, body] = detailsHtml(selected.kind, withDetail(it));
-    if ($("d-title").textContent !== title) $("d-title").textContent = title;
-    if ($("d-body")._h !== body) { $("d-body")._h = body; $("d-body").innerHTML = body; }
+    if (isTrack(selected.kind)) { inspector.track(selected.kind, it, detail && detail.id === selected.id ? detail : null); alerts.squawk(withExtra(it)); }
+    else inspector.observation(selected.kind, it);
     if (following) {
       const p = byKind[selected.kind].positionOf(selected.id);
       if (p) tracker.position = p.clone();
@@ -109,44 +111,73 @@ async function main() {
   }
   async function loadDetail(kind, id) {
     detail = null;
-    if (kind !== "aircraft" && kind !== "ships") return;
+    if (!isTrack(kind)) return;
     try {
       const d = await fetchJson("/api/track/" + encodeURIComponent(id), 8000);
       if (selected && selected.id === id) { detail = d; refreshSelected(); }
-    } catch (e) { /* older backend or unknown track: list item is enough */ }
+    } catch (e) { /* older backend or unknown track: the list item is enough */ }
   }
   function select(kind, id) {
     setFollow(false);
     refSel = null;
     selected = { kind, id };
-    $("right").classList.remove("hidden");
-    followBtn.classList.toggle("hidden", kind !== "aircraft" && kind !== "ships");
+    inspector.points = null;
     refreshSelected();
+    buttons();
     loadDetail(kind, id);
     tracklist.setSelected(id);
+    fx.setTarget(() => (selected ? byKind[selected.kind].positionOf(selected.id) : null), kind);
     trails.clearSelected();
     trailSelected(true);
   }
   function clearSelection() {
     setFollow(false); selected = null; refSel = null; detail = null;
-    trails.clearSelected(); tracklist.setSelected(null);
-    $("right").classList.add("hidden");
+    trails.clearSelected(); tracklist.setSelected(null); fx.setTarget(null);
+    inspector.hide();
   }
+  const flyTo = (lat, lon, alt) => viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt), duration: 1.6 });
   function flyToItem(kind, id) {
     const it = byKind[kind].items.get(id);
-    if (!it) return;
-    const alt = (kind === "aircraft" ? 4e5 : kind === "ships" ? 2e5 : 1.5e6);
-    viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(it.lon, it.lat, alt), duration: 1.8 });
+    if (it) flyTo(it.lat, it.lon, kind === "aircraft" ? 4e5 : kind === "ships" ? 2e5 : 1.5e6);
   }
-  $("d-fly").addEventListener("click", () => {
-    if (refSel) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(refSel.item.lon, refSel.item.lat, /airport|runway/.test(refSel.kind) ? 8e4 : 4e5), duration: 1.8 });
-    else if (selected) flyToItem(selected.kind, selected.id);
+  const inspector = new Inspector({
+    close: clearSelection,
+    fly: () => {
+      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : 4e5);
+      else if (selected) flyToItem(selected.kind, selected.id);
+    },
+    follow: () => setFollow(!following),
+    trail: () => { trailOn = !trailOn; if (trailOn) trailSelected(true); else trails.clearSelected(); buttons(); },
+    pin: () => {
+      if (!selected) return;
+      if (pins.has(selected.id)) pins.delete(selected.id); else pins.add(selected.id);
+      savePins(); tracklist.dirty = true; tracklist.render(true); buttons();
+    },
   });
-  followBtn.addEventListener("click", () => setFollow(!following));
-  $("close-details").addEventListener("click", clearSelection);
+  trails.onPoints = (key, pts) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrail(pts); };
 
-  const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); });
+  // ---- Alerts ----
+  const alerts = new AlertCenter((t) => {
+    if (t.kind && byKind[t.kind] && byKind[t.kind].items.has(t.id)) { select(t.kind, t.id); flyToItem(t.kind, t.id); }
+    else if (t.lat != null) flyTo(t.lat, t.lon, 1.2e6);
+  });
+  const renderAlerts = () => {
+    const c = $("alerts-count");
+    const n = alerts.unread ? String(Math.min(99, alerts.unread)) : "";
+    if (c.textContent !== n) c.textContent = n;
+    c.classList.toggle("hot", alerts.unread > 0 && alerts.list.slice(0, alerts.unread).some((a) => a.sev === "high"));
+    if (tracklist && tracklist.pane === "alerts") $("alerts-pane").innerHTML = alerts.html();
+  };
+  alerts.onChange = renderAlerts;
+  $("alerts-pane").addEventListener("click", (e) => { const li = e.target.closest("li[data-n]"); if (li) alerts.pick(+li.dataset.n); });
+  statusBar.onTransition = (n, from, to, s) => alerts.source(n, from, to, s);
+
+  const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); }, {
+    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } },
+  });
   tracklist.render(true);
+
+  // ---- Picking ----
   const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
   handler.setInputAction((click) => {
     let hits = [];
@@ -174,12 +205,11 @@ async function main() {
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
   viewer.trackedEntityChanged.addEventListener(() => {
-    if (following && !viewer.trackedEntity) { following = false; followBtn.textContent = "Follow: off"; followBtn.classList.remove("on"); viewer.setContinuous("follow", false); }
+    if (following && !viewer.trackedEntity) { following = false; viewer.setContinuous("follow", false); buttons(); }
   });
 
   // ---- Reference geography ----
   const refLayers = new ReferenceLayers(viewer, null);
-  let refSel = null;
   const baseOn = new Set(BASE_CHIPS.map((c) => c[0]));
   refLayers.baseTypes = baseOn;
   $("r-chips").innerHTML = BASE_CHIPS.map(([k, c]) => '<button class="chip on" data-k="' + k + '" style="--c:' + c + '">' + k + "</button>").join("");
@@ -199,18 +229,18 @@ async function main() {
     setFollow(false);
     selected = null; detail = null; trails.clearSelected(); tracklist.setSelected(null);
     refSel = ref;
-    $("right").classList.remove("hidden");
-    followBtn.classList.add("hidden");
+    const it = ref.item || {};
+    if (it.lat != null) { const p = Cesium.Cartesian3.fromDegrees(it.lon, it.lat); fx.setTarget(() => p, "ref"); } else fx.setTarget(null);
     const [title, body] = refDetails(ref);
-    $("d-title").textContent = title;
-    $("d-body").innerHTML = body; $("d-body")._h = null;
+    inspector.reference(ref, title, body);
+    buttons();
     if (ref.kind === "airport" || ref.kind === "medairport") {
-      const rw = await airportRunwaysHtml(ref.item);
-      if (refSel === ref && rw) { const [, b2] = refDetails(ref, rw); $("d-body").innerHTML = b2; }
+      const rw = await airportRunwaysHtml(it);
+      if (refSel === ref && rw) { const [, b2] = refDetails(ref, rw); inspector.reference(ref, title, b2); }
     }
   }
 
-  // ---- Search ----
+  // ---- Search (quick results; the command palette takes over when present) ----
   const sIn = $("search"), sOut = $("results");
   const matches = () => {
     const q = sIn.value.trim().toLowerCase();
@@ -235,18 +265,6 @@ async function main() {
   sIn.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { const m = matches(); if (m.length) go(m[0]); }
     else if (e.key === "Escape") { sOut.classList.add("hidden"); sIn.blur(); }
-  });
-
-  // ---- Keyboard ----
-  document.addEventListener("keydown", (e) => {
-    const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); sIn.focus(); sIn.select(); return; }
-    if (typing) return;
-    if (e.key === "/") { e.preventDefault(); sIn.focus(); }
-    else if (e.key === "Escape") clearSelection();
-    else if (e.key === "f" || e.key === "F") fps.toggle();
-    else if (e.key === "h" || e.key === "H") hud.home();
-    else if (e.key === "[") tree.toggleCollapsed();
   });
 
   // ---- Feature detection: older backends lack the v2 routes; disable those controls ----
@@ -289,15 +307,11 @@ async function main() {
       if (replayPending && replayAt) { const n = replayPending; replayPending = null; renderReplay(n); }
     }
   }
-  new Timeline((at) => {
+  const timeline = new Timeline((at) => {
     replayAt = at;
-    document.body.classList.toggle("replay", !!at);
-    const pill = $("mode-pill");
-    pill.classList.toggle("replay", !!at);
-    $("mode-text").textContent = at ? "REPLAY" : "LIVE";
     if (at) renderReplay(at);
     else { replayPending = null; ticks.forEach((t) => t().catch(() => {})); }
-  });
+  }, (playing) => viewer.setContinuous("replay", playing));
 
   // ---- WebSocket live push (falls back to polling while closed) ----
   live = new LiveSocket((m) => {
@@ -309,7 +323,23 @@ async function main() {
       air.removeIds(rm); ships.removeIds(rm);
     } else return;
     setCount("aircraft", air.items.size); setCount("ships", ships.items.size);
-    if (selected && (selected.kind === "aircraft" || selected.kind === "ships")) { refreshSelected(); trailSelected(false); }
+    alerts.aircraft(m.aircraft || []);
+    if (selected && isTrack(selected.kind)) { refreshSelected(); trailSelected(false); }
+  });
+
+  // ---- Keyboard ----
+  const ctx = { viewer, scene, air, ships, byKind, refLayers, tree, timeline, hud, fps, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
+  document.addEventListener("keydown", (e) => {
+    const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (ctx.palette) ctx.palette.open(); else { sIn.focus(); sIn.select(); } return; }
+    if (typing) return;
+    if (e.key === "/") { e.preventDefault(); if (ctx.palette) ctx.palette.open(); else sIn.focus(); }
+    else if (e.key === "Escape") clearSelection();
+    else if (e.key === "f" || e.key === "F") fps.toggle();
+    else if (e.key === "h" || e.key === "H") hud.home();
+    else if (e.key === "[") tree.toggleCollapsed();
+    else if (e.key === "l" || e.key === "L") timeline.goLive();
+    else if (e.key === " " && e.target === document.body) { e.preventDefault(); timeline.togglePlay(); }
   });
 
   // ---- Polling ----
@@ -322,9 +352,10 @@ async function main() {
   poll("ships", 30000, ticks[1], onErr);
   poll("fires", 300000, ticks[2], onErr);
   poll("quakes", 300000, ticks[3], onErr);
-  // refresh relative "last seen" in the details panel
+  // refresh relative "last seen" in the inspector
   setInterval(() => { if (selected) { refreshSelected(); if (!replayAt) trailSelected(false); } }, 5000);
-  window.__osint = { viewer, air, ships, refLayers };
+  window.__osint = ctx;
+  return ctx;
 }
 
 main().catch((e) => { console.error(e); const s = document.getElementById("sources"); if (s) s.textContent = "UI error: " + e.message; });

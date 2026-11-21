@@ -96,19 +96,30 @@
 <div id="rightcol">
   <aside id="right" class="glass hidden" aria-label="Inspector">
     <button id="close-details" class="ghost close" title="Close (Esc)" aria-label="Close inspector">&times;</button>
-    <h3 id="d-title">Details</h3>
-    <div id="d-body"></div>
+    <div id="dz"></div>
     <div class="actions">
-      <button id="d-fly">Fly to</button>
-      <button id="d-follow" class="hidden">Follow: off</button>
+      <button id="d-fly" title="Fly the camera to this object">Fly to</button>
+      <button id="d-follow" title="Keep the camera on this track">Follow</button>
+      <button id="d-trail" title="Show / hide the 6 h trail">Trail</button>
+      <button id="d-pin" title="Pin to the top of the track list">Pin</button>
     </div>
   </aside>
 
   <aside id="tracks" class="glass">
-    <div class="tk-head"><b>Tracks</b> <span id="tracks-count" class="num"></span>
-      <span class="tabs"><button class="tab on" data-tab="aircraft">Aircraft</button><button class="tab" data-tab="ships">Ships</button></span>
-      <button id="tl-collapse" class="ghost" title="Collapse">–</button></div>
-    <div class="tk-body"><table id="tracks-table"></table></div>
+    <div class="tk-head" role="tablist">
+      <button class="ptab on" data-p="tracks" role="tab">Tracks<sup id="tracks-count"></sup></button>
+      <button class="ptab" data-p="events" role="tab">Events</button>
+      <button class="ptab" data-p="alerts" role="tab">Alerts<sup id="alerts-count"></sup></button>
+      <span class="grow"></span>
+      <button id="tl-collapse" class="ghost" title="Collapse">–</button>
+    </div>
+    <div class="tk-tools" data-pane="tracks">
+      <span class="seg"><button class="tab on" data-tab="aircraft">Air</button><button class="tab" data-tab="ships">Sea</button></span>
+      <input id="tk-filter" type="search" placeholder="Filter callsign, type, reg…" autocomplete="off" spellcheck="false" aria-label="Filter tracks">
+    </div>
+    <div class="tk-body" data-pane="tracks" aria-label="Track list (arrow keys to move, Enter to select)"></div>
+    <div class="tk-body hidden" data-pane="events"><div class="empty"><b>Event fusion not connected</b>Fused news events (GDELT, RSS, web) with confidence and status levels will list here once the event API ships. Live tracks, fires and quakes are on the globe now.</div></div>
+    <div class="tk-body hidden" data-pane="alerts" id="alerts-pane"></div>
   </aside>
 </div>
 

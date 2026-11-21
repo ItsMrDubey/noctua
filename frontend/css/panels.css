@@ -5,7 +5,6 @@
 /* ---- inspector ---- */
 #right { flex: 0 1 auto; max-height: 64%; overflow: auto; padding: 0 0 10px; animation: slide-r var(--t-med) var(--ease) both; }
 #right .close { position: absolute; top: 8px; right: 6px; width: 26px; height: 26px; padding: 0; font: 300 20px/1 var(--f-body); letter-spacing: 0; z-index: 2; }
-#right > h3 { padding: 12px 14px 0; }
 .dz-head { --threat: var(--acc); position: relative; display: flex; gap: 12px; padding: 14px 40px 12px 14px; border-bottom: 1px solid var(--line);
   background: linear-gradient(90deg, color-mix(in srgb, var(--threat) 14%, transparent), transparent 70%); }
 .dz-head::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--threat); box-shadow: 0 0 10px var(--threat); }
@@ -40,7 +39,6 @@
 .prov i { width: 5px; height: 5px; background: var(--acc); flex: none; }
 .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 12px 14px 0; }
 .actions button { padding: 7px 0; }
-#right > .actions { grid-template-columns: repeat(2, 1fr); }
 
 /* ---- tracks / events / alerts ---- */
 #tracks { flex: 1 1 0; min-height: 150px; display: flex; flex-direction: column; padding: 0; overflow: hidden; animation: slide-r var(--t-med) var(--ease) 60ms both; }
@@ -96,3 +94,8 @@
 .alist b { font: 600 12px var(--f-head); letter-spacing: .03em; color: var(--fg); font-weight: 600; }
 .alist small { font: 10.5px var(--f-mono); color: var(--fg-2); }
 .tabs { margin-left: auto; display: flex; } .tabs .tab { padding: 4px 8px; font-size: 9.5px; margin-left: -1px; }
+.gi { display: inline-block; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--g) center / contain no-repeat; mask: var(--g) center / contain no-repeat; }
+.dz-glyph .gi { width: 30px; height: 30px; filter: drop-shadow(0 0 4px currentColor); }
+.vrow .g .gi { width: 14px; height: 14px; }
+#right .actions { position: sticky; bottom: -10px; padding-bottom: 10px; background: linear-gradient(180deg, transparent, var(--glass-hi) 30%); }
+.dk-unit { color: var(--dim); opacity: .7; }

@@ -1,6 +1,7 @@
 // Virtualised, sortable, filterable track table. Renders only the rows in view, and only
 // re-sorts when the underlying layer changed and the panel is visible (≤ 1/s).
 import { $, esc } from "/static/js/ui.js";
+import { uiGlyph, threatColor } from "/static/js/symbology.js";
 
 const ROW_H = 24;
 const OVERSCAN = 8;
@@ -20,6 +21,7 @@ const cell = (it, key) => {
 export class TrackList {
   constructor(layers, onPick, opts = {}) {
     this.layers = layers; this.onPick = onPick; this.opts = opts;
+    this.pane = "tracks";
     this.tab = "aircraft"; this.sort = { aircraft: ["high_priority", -1], ships: ["name", 1] };
     this.open = true; this.dirty = true; this.rows = []; this.active = -1; this.q = ""; this.selId = null;
     this.body = document.querySelector("#tracks .tk-body");
@@ -32,6 +34,7 @@ export class TrackList {
     }
     $("tl-collapse").addEventListener("click", () => { this.open = !this.open; this.dirty = true; this.render(true); });
     for (const b of document.querySelectorAll("#tracks .tab")) b.addEventListener("click", () => this.setTab(b.dataset.tab));
+    for (const b of document.querySelectorAll("#tracks .ptab")) b.addEventListener("click", () => this.setPane(b.dataset.p));
     const filter = $("tk-filter");
     if (filter) filter.addEventListener("input", () => { this.q = filter.value.trim().toLowerCase(); this.dirty = true; this.render(true); });
     this.head.addEventListener("click", (e) => {
@@ -49,10 +52,18 @@ export class TrackList {
     this.body.addEventListener("keydown", (e) => this.key(e));
     setInterval(() => this.render(false), 1000);
   }
+  setPane(p) {
+    this.pane = p;
+    if (!this.open) this.open = true;
+    for (const b of document.querySelectorAll("#tracks .ptab")) b.classList.toggle("on", b.dataset.p === p);
+    for (const el of document.querySelectorAll("#tracks [data-pane]")) el.classList.toggle("hidden", el.dataset.pane !== p);
+    if (this.opts.onPane) this.opts.onPane(p);
+    this.dirty = true; this.render(true);
+  }
   setTab(t) { this.tab = t; this.active = -1; this.dirty = true; this.body.scrollTop = 0; this.render(true); }
   setVisible(v) { $("tracks").classList.toggle("hidden", !v); if (v) this.render(true); }
   setSelected(id) { this.selId = id; this.paint(); }
-  visible() { return this.open && !$("tracks").classList.contains("hidden") && !$("tracks").classList.contains("off"); }
+  visible() { return this.open && this.pane === "tracks" && !$("tracks").classList.contains("hidden") && !$("tracks").classList.contains("off"); }
   key(e) {
     if (!this.rows.length) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -88,10 +99,10 @@ export class TrackList {
     });
     this.rows = rows;
     const spec = COLS[this.tab];
-    const headHtml = spec.cols.map(([key, label, cls]) => '<div data-k="' + key + '"' + (key === k ? ' class="s' + (cls ? " " + cls : "") + '"' : cls ? ' class="' + cls + '"' : "") +
+    const headHtml = "<div></div>" + spec.cols.map(([key, label, cls]) => '<div data-k="' + key + '"' + (key === k ? ' class="s' + (cls ? " " + cls : "") + '"' : cls ? ' class="' + cls + '"' : "") +
       ' style="' + (cls === "r" ? "text-align:right" : "") + '">' + label + (key === k ? (dir > 0 ? " ▲" : " ▼") : "") + "</div>").join("");
     if (this.head._h !== headHtml) { this.head._h = headHtml; this.head.innerHTML = headHtml; }
-    this.head.style.gridTemplateColumns = spec.grid;
+    this.head.style.gridTemplateColumns = "20px " + spec.grid;
     this.space.style.height = rows.length * ROW_H + "px";
     const c = $("tracks-count");
     const txt = rows.length.toLocaleString();
@@ -110,7 +121,7 @@ export class TrackList {
     for (let i = a; i < b; i++) {
       const it = this.rows[i];
       const cls = "vrow" + (it.high_priority ? " hp" : "") + (i === this.active ? " act" : "") + (it.id === this.selId ? " sel" : "");
-      html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + "px;grid-template-columns:" + spec.grid + '">' +
+      html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + "px;grid-template-columns:20px " + spec.grid + '"><div class="g" style="color:' + threatColor(this.tab, it) + '">' + uiGlyph(this.tab, it) + "</div>" +
         spec.cols.map(([key, , c2], j) => "<div" + (c2 ? ' class="' + c2 + '"' : "") + ">" + (j === 0 && pins && pins.has(it.id) ? '<span class="pin">◆</span> ' : "") + esc(cell(it, key)) + "</div>").join("") + "</div>";
     }
     if (html !== this._painted) { this._painted = html; this.space.innerHTML = html; }
