@@ -3,7 +3,11 @@ import asyncio
 import pytest
 
 from osint.core.collector import (
-    REGISTRY, PollCollector, StreamCollector, build_collectors, register,
+    REGISTRY,
+    PollCollector,
+    StreamCollector,
+    build_collectors,
+    register,
 )
 from osint.core.metrics import Metrics
 from osint.core.models import Batch
@@ -57,7 +61,7 @@ async def test_poll_success_marks_healthy():
 
 
 async def test_repeated_failures_open_breaker():
-    sched, submitted, metrics = await _run([FailPoll({})], breaker_threshold=3)
+    sched, submitted, _metrics = await _run([FailPoll({})], breaker_threshold=3)
     h = sched.health["failpoll"]
     assert h.status == "down"
     assert h.consecutive_failures == 3  # breaker cooldown (60 s) stops further attempts
