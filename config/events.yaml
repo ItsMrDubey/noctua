@@ -111,10 +111,11 @@ status:
 confidence:
   # confidence = sum(weight * component), each component in 0..1; weights sum to 1
   weights:
-    source_diversity: 0.35   # 1 - 0.5^(domains - 1): 1 outlet 0, 2 -> 0.5, 3 -> 0.75
+    source_diversity: 0.25   # 1 - 0.5^(domains - 1): 1 outlet 0, 2 -> 0.5, 3 -> 0.75
     geo: 0.20                # precision score x geo confidence
     relevance: 0.25          # best triage relevance among the event's documents
     recency: 0.10            # 0.5^(hours since t_end / recency_half_life_h)
-    gdelt: 0.10              # 1 if a GDELT row was accepted onto the event
+    gdelt: 0.05              # 1 if a GDELT row was accepted onto the event
+    sensor: 0.15             # corroboration score 0..1 (config/corroboration.yaml)
   precision_score: {point: 1.0, city: 1.0, admin1: 0.6, country: 0.2}
   recency_half_life_h: 24

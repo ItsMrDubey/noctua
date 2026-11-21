@@ -1,0 +1,89 @@
+# Sensor corroboration (pipeline stage 6) and sensor-derived events.
+# Read by osint.pipeline.corroborate.CorroborationConfig and
+# osint.pipeline.sensor_events.SensorEventsConfig.
+
+interval_s: 300           # corroboration runs at most this often (inside the EventBuilder pass)
+reeval_window_h: 48       # events updated within this window are (re-)evaluated when dirty
+threshold: 0.5            # event corroboration score at which status -> sensor-corroborated
+top_per_kind: 5           # strongest rows per kind combined (noisy-OR) into the kind score
+max_rows_per_kind: 25     # at most this many evidence rows stored per event and kind
+# corroboration needs at least city precision; admin1 is discounted, country is skipped
+precision_factor: {point: 1.0, city: 1.0, admin1: 0.5, country: 0.0}
+h3:
+  res5_max_k: 6           # use res-5 cells when the radius fits in grid_disk(k <= this), else res 3
+
+# Per-category rules. Window = [t_start - before_h, t_end + after_h].
+# Every rule: kind, radius_km, before_h, after_h, weight (scales each evidence score).
+# keywords (optional): the rule only applies when the event title/summary contains one
+# of these (case-insensitive prefixes): "explosion-type" armed_conflict/infrastructure.
+explosion_keywords: &boom [strike, airstrike, explos, blast, bomb, missile, rocket, drone,
+  shell, artillery, attack, fire, burn, hit, destroy, detonat, ammunition, depot, refiner,
+  "удар", "взрыв", "обстрел", "ракет", "дрон", "انفجار", "غارة", "قصف", "صاروخ"]
+
+categories:
+  armed_conflict:
+    - {kind: fire, radius_km: 25, before_h: 6, after_h: 12, weight: 1.0, keywords: *boom}
+    # seismic: USGS explosion / quarry-blast types, or shallow small quakes near strikes
+    - {kind: quake, radius_km: 50, before_h: 6, after_h: 12, weight: 1.0, keywords: *boom,
+       max_shallow_depth_km: 5, max_shallow_mag: 3.5}
+  infrastructure:
+    - {kind: fire, radius_km: 25, before_h: 6, after_h: 12, weight: 1.0, keywords: *boom}
+    - {kind: quake, radius_km: 50, before_h: 6, after_h: 12, weight: 1.0, keywords: *boom,
+       max_shallow_depth_km: 5, max_shallow_mag: 3.5}
+  air_activity:
+    - {kind: aircraft, radius_km: 150, before_h: 3, after_h: 3, weight: 1.0}
+  maritime_security:
+    - {kind: ship, radius_km: 50, before_h: 6, after_h: 6, weight: 1.0,
+       loiter_radius_km: 5, loiter_min_h: 2, loiter_max_kts: 3}
+    - {kind: ais_gap, radius_km: 100, before_h: 12, after_h: 12, weight: 1.0, min_gap_h: 2}
+    - {kind: aircraft, radius_km: 150, before_h: 3, after_h: 3, weight: 0.5}
+  disaster:
+    - {kind: quake, radius_km: 300, before_h: 24, after_h: 6, weight: 1.0, min_mag: 4.0}
+    - {kind: fire, radius_km: 50, before_h: 12, after_h: 24, weight: 0.8}
+
+# evidence scoring constants (see osint.pipeline.corroborate for the formulas)
+scoring:
+  fire_confidence: {high: 1.0, h: 1.0, nominal: 0.7, n: 0.7, low: 0.3, l: 0.3}
+  seismic_types: {explosion: 0.9, "chemical explosion": 0.9, "nuclear explosion": 1.0,
+                  "mining explosion": 0.5, "quarry blast": 0.4}
+  shallow_quake: 0.4
+  aircraft: 0.25            # a military aircraft in range
+  aircraft_high_priority: 0.45
+  ship: 0.15
+  ship_military: 0.4
+  ship_loiter: 0.5
+  ais_gap: 0.6              # x min(1, gap_h / 6)
+
+# ------------------------------------------------------------------ sensor-derived events
+sensor_events:
+  interval_s: 300
+  orbit:
+    lookback_min: 120         # positions read per pass
+    window_min: 60            # sliding window for the cumulative heading change
+    min_turn_deg: 540         # >= 1.5 full turns
+    max_radius_km: 100        # all window positions within this of their centroid
+    min_points: 8
+    max_gap_min: 10           # heading changes across larger gaps are not counted
+    merge_gap_h: 2            # a later orbit in the same cell extends the event
+    types: [K35R, K35E, KC46, KC10, A332, A310, KC2, KC39, MRTT, E3CF, E3TF, E6, E737, R135,
+            P8, P3, E2, U2, Q4, Q9, GLF5, GLEX, CL60, DH8C, B350, PC12]
+    categories: ["ISR/Surveillance"]
+  concentration:
+    window_min: 30
+    min_aircraft: 6           # distinct airborne military aircraft in cell + neighbours
+    ratio: 2.0                # ... and >= ratio x 7-day baseline + min_excess
+    min_excess: 3
+    baseline_days: 7
+    baseline_refresh_min: 60
+    min_alt_ft: 500           # airborne only (parked aircraft at bases are ignored)
+    merge_gap_h: 1
+  ais_gap:
+    lookback_h: 24
+    min_gap_h: 6              # a standalone dark-gap event needs a longer gap than corroboration
+    max_drift_kts: 20         # implied speed across the gap above this = position error, skipped
+    min_coverage_tracks: 1    # other ships reporting nearby during the gap (coverage evidence)
+  seismic:
+    lookback_h: 48
+    types: {explosion: 0.8, "chemical explosion": 0.8, "nuclear explosion": 1.0,
+            "mining explosion": 0.4, "quarry blast": 0.3}
+    category: infrastructure

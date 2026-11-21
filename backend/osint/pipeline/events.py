@@ -8,8 +8,10 @@ GDELT decisions to SQLite in one transaction. The cursor (``source_state`` row
 window to catch late lake writes and skips documents it has already handled.
 
 Status levels (spec §3): ``reported`` (1 outlet) -> ``multi-source`` (>= 2 independent
-outlets, i.e. distinct URL domains) -> ``sensor-corroborated`` (M3) -> ``official`` (M4).
-The last two are hooks: ``EventState.sensor_corroborated`` / ``.official``.
+outlets, i.e. distinct article URL domains) -> ``sensor-corroborated`` (corroboration score
+>= threshold, ``osint.pipeline.corroborate``, run inside the builder pass) -> ``official``
+(M4 hook: ``EventState.official``). Sensor-derived events (``osint.pipeline.sensor_events``)
+are not loaded into the clusterer.
 
 Confidence is a weighted sum of components in 0..1, weights in ``config/events.yaml``.
 """
@@ -40,6 +42,7 @@ from osint.pipeline.cluster import (
     Embedder,
     EventState,
 )
+from osint.pipeline.corroborate import CorroborationConfig, Corroborator
 from osint.store.lake import Lake
 from osint.store.sqlite import SqliteStore
 
@@ -89,8 +92,8 @@ class EventsConfig:
     gdelt_stale_event_days: float = 7.0
     multi_source_min_domains: int = 2
     weights: dict[str, float] = field(default_factory=lambda: {
-        "source_diversity": 0.35, "geo": 0.2, "relevance": 0.25, "recency": 0.1,
-        "gdelt": 0.1})
+        "source_diversity": 0.25, "geo": 0.2, "relevance": 0.25, "recency": 0.1,
+        "gdelt": 0.05, "sensor": 0.15})
     precision_score: dict[str, float] = field(default_factory=lambda: {
         "point": 1.0, "city": 1.0, "admin1": 0.6, "country": 0.2})
     recency_half_life_h: float = 24.0
@@ -198,7 +201,8 @@ def event_status(ev: EventState, cfg: EventsConfig) -> str:
     return "reported"
 
 
-def confidence_components(ev: EventState, cfg: EventsConfig, now: datetime) -> dict[str, float]:
+def confidence_components(ev: EventState, cfg: EventsConfig, now: datetime,
+                          sensor: float = 0.0) -> dict[str, float]:
     age_h = max(0.0, (now - ev.t_end).total_seconds() / 3600)
     geo = 0.0
     if ev.lat is not None:
@@ -209,18 +213,23 @@ def confidence_components(ev: EventState, cfg: EventsConfig, now: datetime) -> d
         "relevance": min(1.0, max(0.0, ev.relevance)),
         "recency": 0.5 ** (age_h / cfg.recency_half_life_h) if cfg.recency_half_life_h else 1.0,
         "gdelt": 1.0 if ev.gdelt_accepted else 0.0,
+        "sensor": min(1.0, max(0.0, sensor)),  # corroboration score (pipeline.corroborate)
     }
 
 
-def event_confidence(ev: EventState, cfg: EventsConfig, now: datetime) -> float:
-    comps = confidence_components(ev, cfg, now)
+def event_confidence(ev: EventState, cfg: EventsConfig, now: datetime,
+                     sensor: float = 0.0) -> float:
+    comps = confidence_components(ev, cfg, now, sensor)
     total = sum(cfg.weights.get(k, 0.0) * v for k, v in comps.items())
     return round(min(1.0, max(0.0, total)), 4)
 
 
-def make_scorer(cfg: EventsConfig) -> Callable[[EventState, datetime], tuple[str, float]]:
+def make_scorer(cfg: EventsConfig, sensor: Callable[[str], float] | None = None
+                ) -> Callable[[EventState, datetime], tuple[str, float]]:
+    """``sensor(event_id)`` gives the event's corroboration score (0 when absent)."""
     def score(ev: EventState, now: datetime) -> tuple[str, float]:
-        return event_status(ev, cfg), event_confidence(ev, cfg, now)
+        s = sensor(ev.id) if sensor is not None else 0.0
+        return event_status(ev, cfg), event_confidence(ev, cfg, now, s)
     return score
 
 
@@ -275,6 +284,8 @@ class PassStats:
     gdelt_accepted: int = 0
     gdelt_rejected: dict[str, int] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
+    corroboration_evaluated: int = 0
+    sensor_corroborated: int = 0
     seconds: float = 0.0
 
 
@@ -285,13 +296,18 @@ class EventBuilder:
                  config: EventsConfig | None = None, *,
                  cameo_category: Callable[[str, str], str | None] | None = None,
                  embedder: Embedder | None = None,
+                 corroborator: Corroborator | None = None,
                  clock: Callable[[], datetime] = utcnow) -> None:
         self.store = store
         self.lake = lake
         self.metrics = metrics or Metrics()
         self.cfg = config or EventsConfig()
         self.clock = clock
-        self.clusterer = Clusterer(self.cfg, make_scorer(self.cfg),
+        self.corroborator = corroborator
+        self.sensor_scores: dict[str, float] = (
+            corroborator.scores if corroborator is not None else {})
+        self.clusterer = Clusterer(self.cfg, make_scorer(
+            self.cfg, lambda eid: self.sensor_scores.get(eid, 0.0)),
                                    cameo_category=cameo_category, embedder=embedder)
         self._seen: dict[str, datetime] = {}  # doc id -> fetched_at (overlap window)
         try:
@@ -308,8 +324,13 @@ class EventBuilder:
     def from_settings(cls, settings: Any, store: SqliteStore, lake: Lake,
                       metrics: Metrics | None = None) -> EventBuilder:
         cfg_dir = Path(settings.config_dir)
+        metrics = metrics or Metrics()
+        corroborator = Corroborator(
+            store, lake, metrics,
+            CorroborationConfig.from_file(cfg_dir / "corroboration.yaml"))
         return cls(store, lake, metrics, EventsConfig.from_file(cfg_dir / "events.yaml"),
-                   cameo_category=load_cameo_map(cfg_dir / "triage.yaml"))
+                   cameo_category=load_cameo_map(cfg_dir / "triage.yaml"),
+                   corroborator=corroborator)
 
     # ---------------------------------------------------------------- state
 
@@ -318,7 +339,11 @@ class EventBuilder:
         migrate_events(self.store)
         now = self.clock()
         since = now - timedelta(hours=self.cfg.index_window_h)
-        n = self.clusterer.load(self.store.recent_events(since))
+        sensor_ids = self.store.sensor_event_ids()  # owned by pipeline.sensor_events
+        n = self.clusterer.load(r for r in self.store.recent_events(since)
+                                if r["id"] not in sensor_ids)
+        if self.corroborator is not None:
+            self.corroborator.warm_start(now)
         cursor = self._cursor()
         if cursor is not None:
             horizon = cursor - timedelta(minutes=self.cfg.cursor_overlap_min)
@@ -376,6 +401,14 @@ class EventBuilder:
                 "fetched_at": newest.isoformat()})
         for d in fresh:
             self._seen[d.id] = d.fetched_at or now
+        cres = None
+        if self.corroborator is not None:
+            try:
+                cres = self.corroborator.maybe_run(self.clusterer.events, now,
+                                                   self.clusterer.scorer)
+            except Exception:  # corroboration must never stop event building
+                self.metrics.inc("corroboration_errors_total")
+                log.exception("corroboration pass failed")
         if cursor is not None:  # forget ids older than the next overlap window
             horizon = cursor - timedelta(minutes=self.cfg.cursor_overlap_min)
             self._seen = {k: v for k, v in self._seen.items() if v >= horizon}
@@ -383,6 +416,8 @@ class EventBuilder:
                           created=len(res.created), updated=len(res.updated),
                           gdelt_accepted=res.gdelt_accepted,
                           gdelt_rejected=dict(res.gdelt_rejected), skipped=dict(res.skipped),
+                          corroboration_evaluated=cres.evaluated if cres else 0,
+                          sensor_corroborated=len(cres.newly_corroborated) if cres else 0,
                           seconds=time.perf_counter() - t0)
         self._record(stats)
         return stats
