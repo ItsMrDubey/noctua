@@ -4,10 +4,15 @@ import asyncio
 import csv
 import hashlib
 import io
+import logging
 from datetime import UTC, datetime
+
+import httpx
 
 from osint.core.collector import CollectorContext, PollCollector, register
 from osint.core.models import Batch, Observation
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
 DEFAULT_PRODUCTS = ["VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT", "MODIS_NRT"]
@@ -56,6 +61,23 @@ def parse_row(row: dict, product: str) -> Observation | None:
     )
 
 
+def parse_csv(text: str, product: str) -> list[Observation]:
+    """Sync CSV parsing (run in a thread); malformed rows are skipped and counted."""
+    out: list[Observation] = []
+    skipped = 0
+    for row in csv.DictReader(io.StringIO(text)):
+        try:
+            obs = parse_row(row, product)
+        except (ValueError, TypeError, KeyError):
+            skipped += 1
+            continue
+        if obs is not None:
+            out.append(obs)
+    if skipped:
+        log.warning("FIRMS %s: skipped %d malformed row(s)", product, skipped)
+    return out
+
+
 @register
 class FirmsCollector(PollCollector):
     name = "firms"
@@ -67,13 +89,17 @@ class FirmsCollector(PollCollector):
     async def _fetch(self, ctx: CollectorContext, key: str, product: str) -> list[Observation]:
         area = self.cfg.get("area", "world")
         days = int(self.cfg.get("days", 1))
-        r = await ctx.http.get(f"{BASE_URL}/{key}/{product}/{area}/{days}", timeout=120)
-        r.raise_for_status()
+        try:
+            r = await ctx.http.get(f"{BASE_URL}/{key}/{product}/{area}/{days}", timeout=120)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:  # message would contain the URL (and key)
+            raise RuntimeError(f"FIRMS {product}: HTTP {e.response.status_code}") from None
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"FIRMS {product}: {type(e).__name__}") from None
         text = r.text
         if not text.startswith("latitude"):
-            raise RuntimeError(f"FIRMS {product}: {text[:200].strip()}")
-        rows = csv.DictReader(io.StringIO(text))
-        return [o for o in (parse_row(row, product) for row in rows) if o is not None]
+            raise RuntimeError(f"FIRMS {product}: {text[:200].strip().replace(key, '***')}")
+        return await asyncio.to_thread(parse_csv, text, product)
 
     async def poll(self, ctx: CollectorContext) -> Batch:
         key = ctx.settings.firms_map_key
@@ -83,8 +109,11 @@ class FirmsCollector(PollCollector):
         results = await asyncio.gather(
             *(self._fetch(ctx, key, p) for p in products), return_exceptions=True
         )
-        errors = [f"{p}: {r}" for p, r in zip(products, results, strict=True)
+        errors = [f"{p}: {str(r).replace(key, '***')}"
+                  for p, r in zip(products, results, strict=True)
                   if isinstance(r, BaseException)]
+        for err in errors:
+            log.warning("FIRMS product failed: %s", err)
         if len(errors) == len(products):
             raise RuntimeError("all FIRMS products failed: " + "; ".join(errors))
         batch = Batch(source=self.name)
