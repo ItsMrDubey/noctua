@@ -1,0 +1,38 @@
+# Article extraction & verification (pipeline stage 4, spec §5). Read by
+# osint.pipeline.extract.config.ExtractionConfig. One LLM call per event, on its best article.
+
+enabled: true
+backend: claude_cli        # claude_cli (local `claude -p`, user's plan) | anthropic_api | alterlab_byok (stubs)
+model: haiku
+cli_path: null             # null = resolve `claude` on PATH (npm .cmd shim -> real claude.exe)
+timeout_s: 90
+concurrency: 2
+
+# usage caps (the CLI bills the user's Claude plan); failed calls count too
+max_calls_per_hour: 120
+max_calls_per_day: 1500
+
+interval_s: 120            # ExtractionJob pass interval
+initial_delay_s: 60        # first pass this long after boot
+max_per_run: 10            # events extracted per pass (also bounded by the caps above)
+event_age_h: 48            # only events updated within this window
+retry_after_min: 60        # failed extraction retried after this long
+max_attempts: 3
+
+# minimum event priority to extract
+min_priority:
+  min_confidence: 0.0
+  min_sources: 1           # source_diversity
+  statuses: [reported, multi-source, sensor-corroborated, official]
+
+# verdict: extracted place further than this from the event's point = mismatch
+mismatch_km: 300
+
+# article fetch
+fetch:
+  timeout_s: 15
+  max_bytes: 2000000
+  max_chars: 12000
+  min_chars: 400           # below this the page text counts as failed (paywall / JS shell)
+  alterlab_fallback: true  # only when ALTERLAB_API_KEY is set
+  alterlab_max_credits: 5
