@@ -1,13 +1,15 @@
 """HTTP API: health, metrics, sources and live summary."""
 
-from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from osint.api import layers
 from osint.api.m1 import mount_m1
+from osint.api.security import TokenAuthMiddleware
 from osint.runtime import Runtime
 
 
@@ -21,6 +23,10 @@ def create_app(runtime: Runtime) -> FastAPI:
             await runtime.stop()
 
     app = FastAPI(title="OSINT", version="0.1.0", lifespan=lifespan)
+    settings = runtime.settings
+    # last added runs first: reject foreign Host headers (DNS rebinding) before auth
+    app.add_middleware(TokenAuthMiddleware, token=settings.api_token)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 
     @app.get("/health")
     def health() -> dict:
@@ -51,8 +57,8 @@ def create_app(runtime: Runtime) -> FastAPI:
 
     @app.get("/api/live/summary")
     def live_summary() -> dict:
-        kinds = Counter(p.kind for p in list(runtime.ingestor.live.values()))
-        return {"tracks": dict(kinds), "quarantined": runtime.store.quarantine_count()}
+        return {"tracks": layers.live_counts(runtime),
+                "quarantined": runtime.store.quarantine_count()}
 
     mount_m1(app, runtime)
     return app

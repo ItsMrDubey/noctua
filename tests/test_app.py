@@ -28,7 +28,7 @@ class FakeCollector(PollCollector):
 def test_app_runs_collectors_and_reports(tmp_path):
     settings = Settings(_env_file=None, data_dir=tmp_path)
     runtime = Runtime(settings, [FakeCollector({})])
-    with TestClient(create_app(runtime)) as client:
+    with TestClient(create_app(runtime), base_url="http://127.0.0.1") as client:
         for _ in range(100):
             if client.get("/health").json()["sources"]["fake"]["status"] == "healthy":
                 break
@@ -67,7 +67,7 @@ def _wait(client, pred, timeout=10.0):
 
 def test_health_reports_ingestor(tmp_path):
     runtime = Runtime(Settings(_env_file=None, data_dir=tmp_path), [FakeCollector({})])
-    with TestClient(create_app(runtime)) as client:
+    with TestClient(create_app(runtime), base_url="http://127.0.0.1") as client:
         health = _wait(client, lambda h: h["sources"]["fake"]["status"] == "healthy")
         assert health["status"] == "ok"
         assert health["ingestor"]["alive"] is True
@@ -82,7 +82,7 @@ def test_health_degraded_when_ingestor_dead(tmp_path, monkeypatch):
         raise RuntimeError("ingestor crashed")
 
     monkeypatch.setattr(runtime.ingestor, "run", dying_run)
-    with TestClient(create_app(runtime)) as client:
+    with TestClient(create_app(runtime), base_url="http://127.0.0.1") as client:
         health = _wait(client, lambda h: h.get("ingestor", {}).get("alive") is False)
         assert health["status"] == "degraded"
 
@@ -91,7 +91,7 @@ def test_health_degraded_when_all_sources_down(tmp_path):
     runtime = Runtime(Settings(_env_file=None, data_dir=tmp_path), [FailingCollector({})])
     runtime.scheduler.base_backoff_s = 0.001
     runtime.scheduler.breaker_threshold = 2
-    with TestClient(create_app(runtime)) as client:
+    with TestClient(create_app(runtime), base_url="http://127.0.0.1") as client:
         health = _wait(client, lambda h: h["sources"]["failing"]["status"] == "down")
         assert health["status"] == "degraded"
         assert health["ingestor"]["alive"] is True
@@ -99,7 +99,7 @@ def test_health_degraded_when_all_sources_down(tmp_path):
 
 def test_lifespan_stops_runtime_when_start_fails(tmp_path):
     runtime = Runtime(Settings(_env_file=None, data_dir=tmp_path), [NotACollector({})])
-    with pytest.raises(TypeError, match="weird"), TestClient(create_app(runtime)):
+    with pytest.raises(TypeError, match="weird"), TestClient(create_app(runtime), base_url="http://127.0.0.1"):
         pass
     assert runtime.http.is_closed
     assert not runtime.ingestor_alive

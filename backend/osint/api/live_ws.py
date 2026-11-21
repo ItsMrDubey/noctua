@@ -7,7 +7,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from osint.api import layers
 from osint.core.geo import utcnow
-from osint.core.models import Position
 from osint.runtime import Runtime
 
 INTERVAL_S = 2.0
@@ -15,54 +14,51 @@ _KIND_KEY = {"air": "aircraft", "sea": "ships"}
 
 
 class Differ:
-    """Per-connection state: last-sent ts per id and cached track metadata."""
+    """Per-connection state: last-sent ts per id. Track metadata comes from the shared
+    TrackMetaCache, so connections don't each query the store."""
 
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(self, runtime: Runtime, meta: layers.TrackMetaCache | None = None) -> None:
         self.rt = runtime
+        self.meta = meta or layers.TrackMetaCache(runtime)
         self.sent: dict[str, object] = {}
-        self.tracks: dict[str, dict] = {}
-
-    def _copy_live(self) -> list[Position]:
-        with self.rt.ingestor._lock:
-            return list(self.rt.ingestor.live.values())
 
     def step(self, full: bool) -> dict:
         now = utcnow()
         cur = {}
-        for p in self._copy_live():
+        for p in layers.copy_live(self.rt):
             key = _KIND_KEY.get(p.kind)
             if key and p.ts >= now - layers.MAX_AGE[key]:
                 cur[p.track_id] = p
         changed = [p for tid, p in cur.items() if full or self.sent.get(tid) != p.ts]
-        new_ids = [p.track_id for p in changed if p.track_id not in self.tracks]
-        if new_ids:
-            fetched = self.rt.store.get_tracks(new_ids)
-            for tid in new_ids:
-                self.tracks[tid] = fetched.get(tid) or {}
+        tracks = self.meta.get_many([p.track_id for p in changed]) if changed else {}
         msg: dict = {"type": "snapshot" if full else "delta"}
         for kind, key in _KIND_KEY.items():
-            ps = [p for p in changed if p.kind == kind]
-            msg[key] = layers.position_items(self.rt, ps, self.tracks)
+            msg[key] = [layers.slim_item(p, tracks.get(p.track_id))
+                        for p in changed if p.kind == kind]
         msg["removed"] = [] if full else [t for t in self.sent if t not in cur]
         for t in msg["removed"]:
             del self.sent[t]
-            self.tracks.pop(t, None)
         for p in changed:
             self.sent[p.track_id] = p.ts
         msg["generated_at"] = now.isoformat()
         return msg
 
+    def step_encoded(self, full: bool) -> str:
+        return layers.encode(self.step(full)).decode()
 
-def mount(app: FastAPI, runtime: Runtime) -> None:
+
+def mount(app: FastAPI, runtime: Runtime, meta: layers.TrackMetaCache | None = None) -> None:
+    shared = meta or layers.TrackMetaCache(runtime)
+
     @app.websocket("/ws/live")
     async def ws_live(ws: WebSocket) -> None:
         await ws.accept()
-        diff = Differ(runtime)
+        diff = Differ(runtime, shared)
         try:
-            await ws.send_json(await asyncio.to_thread(diff.step, True))
+            await ws.send_text(await asyncio.to_thread(diff.step_encoded, True))
             while True:
                 await asyncio.sleep(INTERVAL_S)
-                await ws.send_json(await asyncio.to_thread(diff.step, False))
+                await ws.send_text(await asyncio.to_thread(diff.step_encoded, False))
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

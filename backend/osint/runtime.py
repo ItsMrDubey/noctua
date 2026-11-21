@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -19,6 +19,34 @@ log = logging.getLogger(__name__)
 
 DEDUPE_WINDOW = timedelta(hours=48)
 USER_AGENT = "osint-poc/0.1"
+# how long a live position stays "current" per kind; shared with the map layers and counts
+LIVE_MAX_AGE = {"air": timedelta(minutes=30), "sea": timedelta(hours=6)}
+
+
+def live_cutoffs(now: datetime | None = None) -> dict[str, datetime]:
+    now = now or utcnow()
+    return {kind: now - age for kind, age in LIVE_MAX_AGE.items()}
+
+
+def is_current(p, cutoffs: dict[str, datetime]) -> bool:
+    """True if ``p`` is within its kind's max age (unknown kinds are always current)."""
+    cutoff = cutoffs.get(p.kind)
+    return cutoff is None or p.ts >= cutoff
+
+
+def prune_live(ingestor: Ingestor, now: datetime | None = None) -> int:
+    """Drop stale entries from ``ingestor.live`` per kind (LIVE_MAX_AGE).
+
+    Coupling note: this reaches into Ingestor internals (``live`` and ``_lock``) because the
+    ingestor's own ``prune`` uses the 48 h dedupe window for everything. It rebinds ``live``
+    to a new dict (like ``Ingestor.prune``) so lock-free readers never see a dict mutate
+    mid-iteration. Candidate to move into Ingestor.prune.
+    """
+    cutoffs = live_cutoffs(now)
+    with ingestor._lock:
+        before = len(ingestor.live)
+        ingestor.live = {k: p for k, p in ingestor.live.items() if is_current(p, cutoffs)}
+        return before - len(ingestor.live)
 
 
 class Runtime:
@@ -57,6 +85,7 @@ class Runtime:
             await asyncio.sleep(self.maintenance_interval_s)
             try:
                 await asyncio.to_thread(self.ingestor.prune, utcnow() - DEDUPE_WINDOW)
+                await asyncio.to_thread(prune_live, self.ingestor)
             except Exception:
                 log.exception("maintenance pass failed")
 

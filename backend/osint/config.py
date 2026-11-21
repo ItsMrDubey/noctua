@@ -8,6 +8,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1", "[::1]")
 
 
 class Settings(BaseSettings):
@@ -25,6 +26,16 @@ class Settings(BaseSettings):
     config_dir: Path = Field(default=ROOT / "config", alias="OSINT_CONFIG_DIR")
     host: str = Field(default="127.0.0.1", alias="OSINT_HOST")
     port: int = Field(default=8765, alias="OSINT_PORT")
+    cesium_ion_token: str = ""
+    # extra Host header values accepted besides loopback (comma separated, "*" = any)
+    allowed_hosts: str = Field(default="", alias="OSINT_ALLOWED_HOSTS")
+    # when set, /api, /ws, /kml, /metrics and /docs require it (Bearer header or ?token=)
+    api_token: str = Field(default="", alias="OSINT_API_TOKEN")
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        extra = [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+        return [*LOOPBACK_HOSTS, *extra]
 
     @property
     def sqlite_path(self) -> Path:

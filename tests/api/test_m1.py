@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from osint.api import m1
+from osint.api import layers, m1
 from osint.api.m1 import mount_m1
 from osint.config import Settings
 from osint.core.geo import utcnow
@@ -30,7 +30,7 @@ def rt(tmp_path):
     live["sea:1"] = Position(track_id="sea:1", kind="sea", ts=now - timedelta(hours=2),
                              lat=1, lon=2, source="t")
     r.store.upsert_tracks([
-        TrackInfo(track_id="air:a", kind="air", ident="a", name="RCH<1>&", is_mil=True,
+        TrackInfo(track_id="air:a", kind="air", ident="a", name="RCH<1>&", is_mil=True, reg="05-5140",
                   high_priority=True, type_code="C17", extra={"sq": "7700"}),
         TrackInfo(track_id="sea:1", kind="sea", ident="1", name="HMS Test", is_mil=True),
     ], now)
@@ -61,11 +61,15 @@ def client(rt):
     return TestClient(app)
 
 
-def test_config(client, monkeypatch):
-    monkeypatch.delenv("CESIUM_ION_TOKEN", raising=False)
+def test_config(client, rt):
     assert client.get("/api/config").json() == {"cesium_ion_token": None}
-    monkeypatch.setenv("CESIUM_ION_TOKEN", "tok")
+    rt.settings.cesium_ion_token = "tok"
     assert client.get("/api/config").json() == {"cesium_ion_token": "tok"}
+
+
+def test_cesium_token_from_env(monkeypatch):
+    monkeypatch.setenv("CESIUM_ION_TOKEN", "envtok")
+    assert Settings(_env_file=None).cesium_ion_token == "envtok"
 
 
 def test_aircraft_layer(client):
@@ -73,9 +77,23 @@ def test_aircraft_layer(client):
     assert d["layer"] == "aircraft" and d["count"] == 2
     a = next(i for i in d["items"] if i["id"] == "air:a")
     assert a["lat"] == 10.12346 and a["is_mil"] is True and a["high_priority"] is True
-    assert a["extra"] == {"sq": "7700"} and a["type_code"] == "C17"
+    assert a["type_code"] == "C17" and a["reg"] == "05-5140" and "extra" not in a
     b = next(i for i in d["items"] if i["id"] == "air:b")
-    assert b["name"] is None and b["is_mil"] is False and b["extra"] == {}
+    assert b["name"] is None and b["is_mil"] is False and b["reg"] is None
+
+
+def test_track_detail(client):
+    d = client.get("/api/track/air:a").json()
+    assert d["track"]["extra"] == {"sq": "7700"} and d["track"]["reg"] == "05-5140"
+    assert d["position"]["alt_ft"] == 30000
+    assert client.get("/api/track/air:b").json()["track"] is None
+    assert client.get("/api/track/nope").status_code == 404
+
+
+def test_layer_served_from_cache(client, rt):
+    first = client.get("/api/layers/aircraft").json()
+    rt.ingestor.live.pop("air:b")
+    assert client.get("/api/layers/aircraft").json() == first  # within the 5 s TTL
 
 
 def test_bbox_filter(client):
@@ -94,6 +112,14 @@ def test_fires_window(client):
     assert d["items"][0]["frp"] == 12.0 and d["items"][0]["satellite"] == "N"
     assert client.get("/api/layers/fires?hours=48").json()["count"] == 2
     assert client.get("/api/layers/fires?hours=999").status_code == 422
+    assert d["truncated"] is False
+
+
+def test_fires_truncated(client, monkeypatch):
+    monkeypatch.setattr(layers, "OBS_LIMIT", 1)
+    d = client.get("/api/layers/fires?hours=48").json()
+    assert d["count"] == 1 and d["truncated"] is True
+    assert client.get("/api/layers/fires").json()["truncated"] is False
 
 
 def test_quake_version_dedupe(client):
@@ -105,7 +131,7 @@ def test_quake_version_dedupe(client):
 
 def test_status(client):
     d = client.get("/api/status").json()
-    assert d["counts"] == {"aircraft": 3, "ships": 1}
+    assert d["counts"] == {"aircraft": 2, "ships": 1}  # air:old is past the 30 min max age
     assert d["sources"]["adsb"]["status"] == "healthy"
     assert d["sources"]["adsb"]["last_batch_size"] == 3
 
@@ -121,6 +147,7 @@ def test_master_kml(client):
     assert len(links) == 4
     hrefs = [link.find("k:Link/k:href", NS).text for link in links]
     assert hrefs[0] == "http://testserver/kml/aircraft.kml"
+    assert all("token" not in h for h in hrefs)
     assert [link.find("k:Link/k:refreshInterval", NS).text for link in links] == [
         "30", "60", "600", "120"]
 

@@ -1,5 +1,6 @@
 """KML rendering for Google Earth Pro."""
 
+from urllib.parse import quote
 from xml.sax.saxutils import escape
 
 KML_MEDIA = "application/vnd.google-earth.kml+xml"
@@ -118,13 +119,14 @@ def quakes_kml(items: list[dict]) -> str:
     return _doc("Quakes", pms)
 
 
-def master_kml(base_url: str) -> str:
+def master_kml(base_url: str, token: str | None = None) -> str:
     base = base_url.rstrip("/")
+    query = f"?token={quote(token, safe='')}" if token else ""
     links = []
     for name, path, secs in (("Aircraft", "aircraft", 30), ("Ships", "ships", 60),
                              ("Fires", "fires", 600), ("Quakes", "quakes", 120)):
         links.append(
-            f"<NetworkLink><name>{name}</name><Link><href>{_e(base)}/kml/{path}.kml</href>"
+            f"<NetworkLink><name>{name}</name><Link><href>{_e(f"{base}/kml/{path}.kml{query}")}</href>"
             f"<refreshMode>onInterval</refreshMode><refreshInterval>{secs}</refreshInterval>"
             "</Link></NetworkLink>")
     return _doc("OSINT Platform", links)

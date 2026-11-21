@@ -65,3 +65,19 @@ async def test_maintenance_prunes_off_the_event_loop(tmp_path, monkeypatch):
     finally:
         await runtime.stop()
     assert threads[0] is not threading.main_thread()
+
+
+def test_prune_live_uses_per_kind_max_age(tmp_path):
+    from osint.runtime import prune_live
+
+    runtime = _runtime(tmp_path)
+    now = utcnow()
+    live = runtime.ingestor.live
+    for tid, kind, age in (("air:new", "air", timedelta(minutes=5)),
+                           ("air:old", "air", timedelta(minutes=45)),
+                           ("sea:new", "sea", timedelta(hours=5)),
+                           ("sea:old", "sea", timedelta(hours=7))):
+        live[tid] = Position(track_id=tid, kind=kind, ts=now - age, lat=0, lon=0, source="t")
+    assert prune_live(runtime.ingestor, now) == 2
+    assert set(runtime.ingestor.live) == {"air:new", "sea:new"}
+    runtime.store.close()
