@@ -118,6 +118,28 @@ off_topic:
     - 足球
     - futbolcu*
     - teknik direktör
+    # club names whose Persian/Arabic spelling folds onto currency words (رئال -> ريال,
+    # the rial/riyal): the full name marks sport, the bare word stays economic
+    - real madrid
+    - رئال مادرید
+    - ريال مدريد
+    - fc barcelona
+    - بارسلونا
+    - برشلونة
+    - atletico madrid
+    - اتلتیکو مادرید
+    - أتلتيكو مدريد
+    - manchester united
+    - منچستر یونایتد
+    - مانشستر يونايتد
+    - دروازه‌بان
+    - سرمربی
+    - لیگ
+    - تنیس
+    - الدوري
+    - اليويفا
+    - التنس
+    - حارس المرمى
   weak:
     - match
     - matches
@@ -144,6 +166,14 @@ off_topic:
     - maç*
     - مباراة
     - 比赛
+    - باشگاه        # also "Young Journalists Club" (an agency name): weak only
+    - بازیکن
+    - نادي
+    - لاعب
+    - مدرب          # also military "trainers": weak only
+    - مسابقه
+  # a URL path segment naming a sports section is a strong off-topic signal
+  url_path_segments: [sport, sports, varzesh, deportes, sport-news, sportnews]
 
 categories:
   armed_conflict:

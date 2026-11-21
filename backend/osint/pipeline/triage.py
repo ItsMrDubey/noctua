@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -261,6 +262,9 @@ class Triage:
         for kind in ("strong", "weak"):
             for t in _flatten(off.get(kind)):
                 self.lexicon.add(f"off_{kind}", t)
+        # URL path segments that mark a sports/entertainment section (strong off-topic)
+        self.off_topic_paths = frozenset(
+            fold(str(x)).strip("/") for x in off.get("url_path_segments") or ())
         self.category_names: list[str] = []
         for name, c in (cfg.get("categories") or {}).items():
             self.category_names.append(name)
@@ -287,8 +291,15 @@ class Triage:
 
     # ------------------------------------------------------------------ scoring
 
-    def score_text(self, title: str, snippet: str) -> dict[str, float]:
-        """Per-category scores in 0..1 for a title + snippet."""
+    def url_off_topic(self, url: str) -> bool:
+        """True when the URL path has a sports/entertainment section segment."""
+        if not url or not self.off_topic_paths:
+            return False
+        path = urlsplit(url).path
+        return any(fold(seg) in self.off_topic_paths for seg in path.split("/") if seg)
+
+    def score_text(self, title: str, snippet: str, url: str = "") -> dict[str, float]:
+        """Per-category scores in 0..1 for a title + snippet (+ the URL's section)."""
         in_title = self.lexicon.find(title)
         in_snippet = self.lexicon.find(snippet) - in_title
         weights: dict[str, float] = {}
@@ -298,7 +309,7 @@ class Triage:
                 weights[group] = weights.get(group, 0.0) + w
         found = in_title | in_snippet  # off-topic context counts wherever it appears
         groups = [self.lexicon.terms[tid].group for tid in found]
-        off = groups.count("off_strong") + 0.5 * groups.count("off_weak")
+        off = groups.count("off_strong") + 0.5 * groups.count("off_weak")             + (1.0 if self.url_off_topic(url) else 0.0)
         penalty = self.cfg.off_topic_penalty if off >= self.cfg.off_topic_trigger else 1.0
         scores: dict[str, float] = {}
         for name in self.category_names:
@@ -341,7 +352,8 @@ class Triage:
 
     def assess(self, doc: Document) -> TriageResult:
         language = doc.language or detect_language(f"{doc.title} {doc.snippet}")
-        scores = self.score_text(doc.title, doc.snippet)
+        scores = self.score_text(doc.title, doc.snippet,
+                                 "" if doc.kind == "gdelt_event" else doc.url)
         if doc.kind == "gdelt_event":
             scores, places = self._gdelt(doc, scores)
         elif self.gazetteer is not None:

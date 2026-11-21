@@ -153,3 +153,32 @@ def test_lexicon_prefix_phrase_and_clitics():
     assert groups("hunger strikes continue") == set()
     assert groups("a strike and a hunger strike") == {"f"}
     assert groups("striker") == set()
+
+
+# live false positive 01M7Z9WE92V2YBSXB10NRGNSJ9: Persian "Real Madrid" folded to the rial
+COURTOIS_TITLE = "رئال مادرید قرارداد تیبو کورتوا را تا ۲۰۲۸ تمدید کرد"
+COURTOIS_SNIPPET = ("باشگاه رئال مادرید از توافق رسمی با تیبو کورتوا، دروازه‌بان بلژیکی خود، "
+                    "برای تمدید قرارداد تا ۳۰ ژوئن ۲۰۲۸ خبر داد.")
+
+
+@pytest.mark.parametrize(("title", "snippet", "url"), [
+    (COURTOIS_TITLE, COURTOIS_SNIPPET, "https://www.iranintl.com/202611217282"),
+    ("رافائل نادال، اسطوره تنیس به جمع مدیران رئال مادرید پیوست", "",
+     "https://www.iranintl.com/202611217282"),
+    ("بيريز يعلن إيرادات قياسية لريال مدريد ويكشف خطة اليويفا للبث المجاني", "",
+     "https://www.aljazeera.net/x/2026/11/21/a"),
+    ("Real Madrid posts record revenue as Barcelona trims its wage bill", "",
+     "https://e.x/a"),
+    ("Inflation data: prices rise again", "", "https://www.varzesh3.com/varzesh/news/1"),
+    ("Sanctions hit the club's finances", "", "https://www.aljazeera.net/sport/2026/11/21/b"),
+])
+def test_sports_articles_are_not_relevant(triage, title, snippet, url):
+    doc = Document(id="doc:x", source="t", url=url, title=title, snippet=snippet,
+                   language="", published_at=NOW, fetched_at=NOW, kind="article")
+    r = triage.assess(doc)
+    assert r.relevance < 0.35 and "economic" not in r.categories, (title, r.scores)
+
+
+def test_rial_still_counts_outside_sport(triage):
+    r = triage.assess(_doc("سقوط ارزش ریال در برابر دلار به رکورد تازه رسید"))
+    assert "economic" in r.categories
