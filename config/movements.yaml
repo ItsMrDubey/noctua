@@ -1,0 +1,31 @@
+# Military movements analysis (osint.movements). Read by osint.movements.config.MovementsConfig.
+cache_s: 60                 # API results are cached this long
+
+legs:
+  gap_min: 45               # a gap longer than this ends a leg
+  ground_alt_ft: 1500       # on/near ground: alt <= this AND speed < ground_speed_kts ...
+  ground_speed_kts: 60
+  airport_radius_km: 15     # ... within this distance of a reference airport
+  low_alt_ft: 4000          # first/last fix this low near an airport resolves the endpoint
+  min_points: 3             # legs with fewer airborne fixes are dropped
+  in_flight_min: 20         # open leg whose last fix is this recent = "in flight"
+  max_path_points: 40       # per-leg polyline is downsampled to this many points
+
+corridors:
+  default_hours: 168
+  arc_points: 32            # great-circle polyline points
+  max_callsigns: 6
+
+surges:
+  h3_res: 2
+  bucket_hours: 6
+  baseline_days: 7
+  z_min: 2.5
+  min_count: 3              # distinct military aircraft in the cell+bucket
+  std_floor: 1.0            # keeps z finite where the baseline is flat
+  min_baseline_days: 2      # less lake history than this = no flags (baseline_insufficient)
+
+naval:
+  hours: 24
+  max_track_points: 60
+  name_prefixes: [USNS, USS, HMS, HMAS, HMCS, INS, FS, ITS, ESPS, JS, ROKS, TCG, PLAN, RFS, HNLMS, KRI, BNS, PNS]

@@ -1,0 +1,32 @@
+# Nuclear facilities with coordinates from Wikidata (CC0). The class list was taken from the
+# subclasses of wd:Q1739545 (nuclear facility) that have located instances, plus wd:Q53732481
+# (nuclear test site); fusion devices and nuclear-powered ships are deliberately left out.
+SELECT ?i ?kind (SAMPLE(?en) AS ?label) (SAMPLE(?nat) AS ?native) (SAMPLE(?co) AS ?coord)
+       (SAMPLE(?ctry) AS ?country) (SAMPLE(?op) AS ?operator) (SAMPLE(?dis) AS ?dissolved)
+       (SAMPLE(?svc) AS ?service) (SAMPLE(?mw) AS ?capacity_mw) (SAMPLE(?useLbl) AS ?state_of_use)
+WHERE {
+  VALUES (?c ?kind) {
+    (wd:Q134447 "power") (wd:Q97377955 "power") (wd:Q4072211 "power")
+    (wd:Q1438105 "research") (wd:Q2367818 "research") (wd:Q383242 "research") (wd:Q30716167 "research")
+    (wd:Q23636677 "research") (wd:Q6865163 "research") (wd:Q2004696 "research") (wd:Q3388395 "research")
+    (wd:Q80877 "reactor") (wd:Q377968 "reactor") (wd:Q796821 "reactor") (wd:Q558152 "reactor")
+    (wd:Q558106 "reactor") (wd:Q1058741 "reactor") (wd:Q16624467 "reactor") (wd:Q1204277 "reactor")
+    (wd:Q552334 "reactor") (wd:Q2026692 "reactor") (wd:Q4886158 "reactor") (wd:Q373950 "reactor")
+    (wd:Q468846 "reactor") (wd:Q1257071 "reactor") (wd:Q11501547 "reactor") (wd:Q7543123 "reactor")
+    (wd:Q1756060 "reactor") (wd:Q11600404 "reactor") (wd:Q11536204 "reactor") (wd:Q35957 "reactor")
+    (wd:Q55475603 "reactor") (wd:Q1622414 "reactor")
+    (wd:Q54360657 "enrichment") (wd:Q64785417 "reprocessing")
+    (wd:Q21493801 "storage") (wd:Q244990 "storage")
+    (wd:Q53732481 "test_site") (wd:Q1739545 "facility") (wd:Q2407597 "facility")
+  }
+  ?i wdt:P31 ?c ; wdt:P625 ?co .
+  OPTIONAL { ?i rdfs:label ?en FILTER(LANG(?en) = "en") }
+  OPTIONAL { ?i wdt:P1705 ?nat }
+  OPTIONAL { ?i wdt:P17/rdfs:label ?ctry FILTER(LANG(?ctry) = "en") }
+  OPTIONAL { ?i wdt:P137/rdfs:label ?op FILTER(LANG(?op) = "en") }
+  OPTIONAL { ?i wdt:P576 ?dis }
+  OPTIONAL { ?i wdt:P729 ?svc }
+  OPTIONAL { ?i p:P2109/psn:P2109/wikibase:quantityAmount ?w . BIND(?w / 1000000 AS ?mw) }
+  OPTIONAL { ?i wdt:P5817/rdfs:label ?useLbl FILTER(LANG(?useLbl) = "en") }
+}
+GROUP BY ?i ?kind
