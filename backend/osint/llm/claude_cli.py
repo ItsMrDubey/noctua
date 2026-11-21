@@ -5,17 +5,53 @@ article text goes in on stdin. Runs on the user's Claude plan, so callers must r
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import re
 import shutil
+import subprocess
+import threading
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from osint.llm.base import LLMError, LLMResult, LLMTimeout
 
 log = logging.getLogger(__name__)
+
+# process-wide cap on concurrent ``claude`` processes (extraction + translation share it:
+# each CLI process holds ~250-500 MB). A threading semaphore polled from asyncio, so it
+# works across event loops and threads and is never leaked by a cancelled waiter.
+MAX_CLI_PROCESSES = 2
+_CLI_SLOTS = threading.BoundedSemaphore(MAX_CLI_PROCESSES)
+
+
+@contextlib.asynccontextmanager
+async def cli_slot() -> AsyncIterator[None]:
+    while not _CLI_SLOTS.acquire(blocking=False):
+        await asyncio.sleep(0.1)
+    try:
+        yield
+    finally:
+        _CLI_SLOTS.release()
+
+
+async def kill_tree(proc) -> None:
+    """Kill the CLI and its children: on Windows ``claude.exe`` spawns node workers that
+    survive ``proc.kill()``, so ``taskkill /T /F`` (no shell) takes the whole tree."""
+    if os.name == "nt" and getattr(proc, "pid", None):
+        try:
+            await asyncio.to_thread(
+                subprocess.run, ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                capture_output=True, timeout=15, check=False)
+        except (OSError, subprocess.SubprocessError):
+            log.warning("taskkill of claude CLI pid %s failed", proc.pid, exc_info=True)
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass
 
 # npm installs a claude.cmd shim next to node_modules; batch files must never receive
 # untrusted argv (cmd.exe re-parses it), so we resolve the real executable behind it.
@@ -130,7 +166,7 @@ class ClaudeCliBackend:
 
     async def extract(self, instruction: str, text: str, schema: dict) -> LLMResult:
         argv = self.argv(instruction, schema)
-        async with self._sem:
+        async with self._sem, cli_slot():
             t0 = time.monotonic()
             if self.cwd is not None:
                 self.cwd.mkdir(parents=True, exist_ok=True)
@@ -142,10 +178,7 @@ class ClaudeCliBackend:
                 out, err = await asyncio.wait_for(
                     proc.communicate(text.encode("utf-8")), self.timeout_s)
             except (TimeoutError, asyncio.CancelledError) as exc:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
+                await kill_tree(proc)
                 try:
                     await asyncio.wait_for(proc.wait(), 10)
                 except TimeoutError:

@@ -53,7 +53,9 @@ WHERE_PREC = {1: ("point", 1.0), 2: ("city", 0.85), 3: ("admin1", 0.65), 4: ("ad
 DATE_PREC = {1: 1.0, 2: 0.85, 3: 0.7, 4: 0.5, 5: 0.3}
 MAX_ZIP_BYTES = 500 * 1024 * 1024
 MAX_CSV_BYTES = 2 * 1024 * 1024 * 1024
-BATCH = 2000
+# events per commit: each carries ~20 field rows, so ~5k rows per transaction (a huge
+# transaction pins the WAL and blocks the live server's writers)
+BATCH = 250
 
 _GED_ZIP = re.compile(r'href="([^"]*/ged/ged(\d+)-csv\.zip)"', re.IGNORECASE)
 _CANDIDATE = re.compile(r'href="([^"]*/candidateged/GEDEvent_v[\d_]+\.csv)"', re.IGNORECASE)
@@ -261,7 +263,7 @@ def import_file(ctx: BackfillContext, path: Path, dataset: str, window: Window,
         n += 1
         if len(events) >= BATCH:
             flush()
-            if n % 50_000 < BATCH:
+            if n % 25_000 < BATCH:
                 log.info("ucdp %s: %d events so far", dataset, n)
     flush()
     summary.add("events", n)

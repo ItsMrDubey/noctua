@@ -180,3 +180,43 @@ def test_rate_limiter_seeded_from_history():
                           history=[99_000.0, 99_500.0, 1.0])
     assert lim.counts() == {"hour": 2, "day": 2}  # 1.0 is older than a day
     assert not lim.try_acquire()
+
+
+async def test_cli_processes_are_capped_process_wide():
+    """Extraction and translation each allow 2 calls, but together never run more than 2
+    claude processes."""
+    state = {"now": 0, "peak": 0}
+    out = envelope(structured_output={"a": 1}).encode()
+
+    async def spawn(*argv, **kw):
+        state["now"] += 1
+        state["peak"] = max(state["peak"], state["now"])
+
+        class P(FakeProc):
+            async def communicate(self, data):
+                await asyncio.sleep(0.02)
+                state["now"] -= 1
+                return out, b""
+        return P()
+
+    backends = [ClaudeCliBackend(concurrency=2, spawn=spawn) for _ in range(2)]
+    for be in backends:
+        be._exe = "claude"
+    await asyncio.gather(*(be.extract("i", "t", SCHEMA) for be in backends for _ in range(4)))
+    assert state["peak"] == 2
+
+
+async def test_timeout_kills_the_whole_process_tree(monkeypatch):
+    import osint.llm.claude_cli as cli
+
+    runs = []
+    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(cli.subprocess, "run", lambda argv, **kw: runs.append((argv, kw)))
+    proc = FakeProc(hang=True)
+    proc.pid = 4242
+    be = ClaudeCliBackend(timeout_s=0.05, spawn=fake_spawn([proc], []))
+    be._exe = "claude"
+    with pytest.raises(LLMTimeout):
+        await be.extract("i", "t", SCHEMA)
+    assert runs and runs[0][0] == ["taskkill", "/T", "/F", "/PID", "4242"]
+    assert "shell" not in runs[0][1] and proc.killed

@@ -24,6 +24,8 @@ USER_AGENT = "osint-poc/0.1"
 LIVE_MAX_AGE = {"air": timedelta(minutes=30), "sea": timedelta(hours=6)}
 # closed lake partitions (hour ended this long ago) are compacted by maintenance
 COMPACT_GRACE = timedelta(minutes=10)
+# WAL checkpoint(TRUNCATE) cadence of the events database (the WAL reached 770 MB)
+CHECKPOINT_INTERVAL = timedelta(hours=1)
 
 
 def live_cutoffs(now: datetime | None = None) -> dict[str, datetime]:
@@ -117,8 +119,16 @@ class Runtime:
             log.exception("runtime boot failed")
 
     async def _maintenance(self) -> None:
+        last_checkpoint = utcnow()
         while True:
             await asyncio.sleep(self.maintenance_interval_s)
+            if utcnow() - last_checkpoint >= CHECKPOINT_INTERVAL:
+                last_checkpoint = utcnow()
+                try:
+                    res = await asyncio.to_thread(self.store.checkpoint)
+                    log.info("sqlite wal checkpoint: %s", res)
+                except Exception:
+                    log.exception("sqlite wal checkpoint failed")
             try:
                 await asyncio.to_thread(self.ingestor.prune, utcnow() - DEDUPE_WINDOW)
                 await asyncio.to_thread(self.ingestor.prune_live, LIVE_MAX_AGE)
