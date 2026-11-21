@@ -1,0 +1,56 @@
+import urllib.request
+import csv
+import time
+
+# 1. Paste your free NASA FIRMS Map Key here
+NASA_MAP_KEY = __import__("os").environ.get("FIRMS_MAP_KEY", "")
+
+# 2. Your exact Middle East Bounding Box (West, South, East, North)
+BOUNDING_BOX = "15,-10,85,45"
+SOURCE = "VIIRS_NOAA20_NRT" # High-res satellite
+DAYS = "1" # Show fires from the last 24 hours
+
+url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{NASA_MAP_KEY}/{SOURCE}/{BOUNDING_BOX}/{DAYS}"
+
+def update_fires():
+    """Fetches custom fire data and writes a clean KML file."""
+    print("Fetching custom Middle East fire data...")
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    
+    try:
+        response = urllib.request.urlopen(req)
+        # Decode the CSV response from NASA
+        lines = [l.decode('utf-8') for l in response.readlines()]
+        reader = csv.DictReader(lines)
+        
+        # Build the KML framework
+        kml_header = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n'
+        # Creates a simple red dot style for the fires
+        kml_header += '<Style id="fire"><IconStyle><color>ff0000ff</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>\n'
+        kml_footer = '</Document>\n</kml>'
+        
+        placemarks = ""
+        for row in reader:
+            lat = row['latitude']
+            lon = row['longitude']
+            
+            placemarks += f"""
+            <Placemark>
+                <styleUrl>#fire</styleUrl>
+                <Point><coordinates>{lon},{lat},0</coordinates></Point>
+            </Placemark>
+            """
+            
+        # Write the file for Google Earth to read
+        with open("LiveFires.kml", "w") as f:
+            f.write(kml_header + placemarks + kml_footer)
+        print("Fire KML updated successfully!")
+        
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+
+# Run this in a loop, updating every 10 minutes (600 seconds)
+if __name__ == "__main__":
+    while True:
+        update_fires()
+        time.sleep(600)

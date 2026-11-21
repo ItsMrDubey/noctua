@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSINT // ME COMMAND CENTER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Chakra+Petch:wght@400;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-primary: #060608;
+    --bg-secondary: #0c0c10;
+    --bg-card: #10101a;
+    --bg-card-hover: #16162a;
+    --border: #1a1a2e;
+    --red: #ff1a1a;
+    --red-dim: #661111;
+    --red-glow: rgba(255, 26, 26, 0.15);
+    --amber: #ffaa00;
+    --amber-dim: #664400;
+    --green: #00ff88;
+    --green-dim: #004422;
+    --blue: #3399ff;
+    --blue-dim: #113366;
+    --cyan: #00ddff;
+    --cyan-dim: #004466;
+    --text-primary: #e0e0e8;
+    --text-dim: #555566;
+    --text-label: #777788;
+  }
+
+  body {
+    font-family: 'Share Tech Mono', monospace;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+      linear-gradient(rgba(255,26,26,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,26,26,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 16px; }
+
+  .logo {
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 700; font-size: 18px; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--red);
+    text-shadow: 0 0 20px var(--red-glow);
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .logo-icon {
+    width: 26px; height: 26px;
+    border: 2px solid var(--red); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; animation: pulse-border 2s ease-in-out infinite;
+    box-shadow: 0 0 12px var(--red-glow);
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: var(--red); box-shadow: 0 0 12px var(--red-glow); }
+    50% { border-color: var(--red-dim); box-shadow: 0 0 4px transparent; }
+  }
+
+  .logo .slash { color: var(--text-dim); font-weight: 400; margin: 0 2px; }
+
+  .header-right { display: flex; align-items: center; gap: 16px; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--red); padding: 3px 8px;
+    border: 1px solid var(--red-dim); border-radius: 3px;
+    background: rgba(255,26,26,0.05);
+  }
+
+  .live-dot {
+    width: 6px; height: 6px; background: var(--red);
+    border-radius: 50%; animation: blink 1.2s ease-in-out infinite;
+    box-shadow: 0 0 6px var(--red);
+  }
+
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+  .countdown { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary); position: relative; z-index: 10;
+  }
+
+  .tab {
+    padding: 12px 24px; cursor: pointer;
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 600; font-size: 12px;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-dim); border-bottom: 2px solid transparent;
+    transition: all 0.2s; display: flex; align-items: center; gap: 8px;
+    user-select: none;
+  }
+
+  .tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.02); }
+
+  .tab.active { border-bottom-color: var(--red); color: var(--text-primary); }
+  .tab[data-tab="fires"].active { border-bottom-color: var(--red); }
+  .tab[data-tab="flights"].active { border-bottom-color: var(--amber); }
+  .tab[data-tab="ships"].active { border-bottom-color: var(--blue); }
+  .tab[data-tab="seismic"].active { border-bottom-color: var(--amber); }
+  .tab[data-tab="intel"].active { border-bottom-color: var(--cyan); }
+  .tab[data-tab="bases"].active { border-bottom-color: var(--green); }
+  .tab[data-tab="seismic"].active .tab-count { background: var(--amber-dim); color: var(--amber); }
+  .tab[data-tab="intel"].active .tab-count { background: rgba(0,221,255,0.15); color: var(--cyan); }
+  .tab[data-tab="bases"].active .tab-count { background: var(--green-dim); color: var(--green); }
+
+  .tab-count {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 7px; border-radius: 3px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px; font-weight: 400;
+  }
+
+  .tab[data-tab="fires"].active .tab-count { background: var(--red-dim); color: var(--red); }
+  .tab[data-tab="flights"].active .tab-count { background: var(--amber-dim); color: var(--amber); }
+  .tab[data-tab="ships"].active .tab-count { background: var(--blue-dim); color: var(--blue); }
+
+  /* ── STATS BAR ── */
+  .stats-bar {
+    display: flex; gap: 1px; background: var(--border);
+    border-bottom: 1px solid var(--border);
+    position: relative; z-index: 10;
+  }
+
+  .stat-box {
+    flex: 1; background: var(--bg-secondary);
+    padding: 12px 18px; display: flex; flex-direction: column; gap: 3px;
+  }
+
+  .stat-label {
+    font-size: 9px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+
+  .stat-value {
+    font-family: 'Chakra Petch', sans-serif;
+    font-weight: 700; font-size: 24px; line-height: 1;
+  }
+
+  .stat-value.red { color: var(--red); }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.blue { color: var(--blue); }
+  .stat-value.small { font-size: 13px; }
+
+  /* ── TABLE ── */
+  .panel { display: none; position: relative; z-index: 10; }
+  .panel.active { display: block; }
+
+  .data-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+  }
+
+  .data-table thead { position: sticky; top: 60px; z-index: 50; }
+
+  .data-table th {
+    background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+    padding: 10px 14px; text-align: left;
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-dim); font-weight: 400; white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 9px 14px; border-bottom: 1px solid rgba(26,26,46,0.5);
+    white-space: nowrap;
+  }
+
+  .data-table tbody tr { background: transparent; transition: background 0.15s; }
+  .data-table tbody tr:hover { background: var(--bg-card-hover); }
+
+  .data-table tbody tr td:first-child {
+    border-left: 3px solid transparent; padding-left: 11px;
+  }
+
+  /* Fire intensity stripes */
+  .intensity-low td:first-child { border-left-color: var(--text-dim); }
+  .intensity-nom td:first-child { border-left-color: var(--amber-dim); }
+  .intensity-high td:first-child { border-left-color: var(--red); }
+  .intensity-extreme td:first-child { border-left-color: var(--amber); }
+
+  /* Flight stripes */
+  .flight-mil td:first-child { border-left-color: var(--red); }
+  .flight-mil { background: rgba(255,26,26,0.04) !important; }
+  .flight-interest td:first-child { border-left-color: var(--amber); }
+  .flight-civil td:first-child { border-left-color: transparent; }
+  .flight-ground td:first-child { border-left-color: var(--text-dim); }
+
+  /* Ship stripes */
+  .ship-moving td:first-child { border-left-color: var(--blue); }
+  .ship-anchored td:first-child { border-left-color: var(--text-dim); }
+
+  .frp-bar-cell { position: relative; min-width: 90px; }
+  .frp-bar {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    height: 4px; border-radius: 2px; opacity: 0.4;
+  }
+  .frp-text { position: relative; z-index: 1; }
+
+  .badge {
+    display: inline-block; padding: 2px 7px; border-radius: 2px;
+    font-size: 10px; letter-spacing: 1px;
+  }
+  .badge-red { background: rgba(255,26,26,0.15); color: var(--red); border: 1px solid var(--red-dim); }
+  .badge-amber { background: rgba(255,170,0,0.1); color: var(--amber); border: 1px solid var(--amber-dim); }
+  .badge-dim { background: rgba(85,85,102,0.15); color: var(--text-dim); border: 1px solid #333; }
+  .badge-green { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid var(--green-dim); }
+  .badge-blue { background: rgba(51,153,255,0.1); color: var(--blue); border: 1px solid var(--blue-dim); }
+
+  .dim { color: var(--text-dim); }
+  .label-text { color: var(--text-label); font-size: 11px; }
+
+  .status-message {
+    text-align: center; padding: 50px 20px;
+    color: var(--text-dim); font-size: 13px;
+    letter-spacing: 2px; position: relative; z-index: 10;
+  }
+  .status-message.error { color: var(--red); }
+
+  .loading-bar {
+    width: 200px; height: 2px; background: var(--border);
+    margin: 16px auto 0; border-radius: 1px; overflow: hidden;
+  }
+  .loading-bar::after {
+    content: ''; display: block; width: 40%; height: 100%;
+    background: var(--red); border-radius: 1px;
+    animation: loading-slide 1s ease-in-out infinite;
+  }
+  @keyframes loading-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+
+  @keyframes row-in {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .data-table tbody tr { animation: row-in 0.25s ease-out both; }
+
+  .no-key-msg {
+    text-align: center; padding: 40px 20px; color: var(--text-dim);
+    font-size: 12px; letter-spacing: 1px; line-height: 1.8;
+  }
+  .no-key-msg a { color: var(--blue); }
+
+  @media (max-width: 900px) {
+    .data-table { font-size: 11px; }
+    .data-table th, .data-table td { padding: 7px 10px; }
+    .header { padding: 10px 14px; }
+    .stat-box { padding: 8px 12px; }
+    .stat-value { font-size: 18px; }
+    .tab { padding: 10px 14px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">
+      <div class="logo-icon">&#9632;</div>
+      OSINT <span class="slash">//</span> ME
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="countdown">NEXT <span id="countdown-val">--</span>s</div>
+    <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="fires" onclick="switchTab('fires')">
+    FIRES <span class="tab-count" id="tab-fires-count">--</span>
+  </div>
+  <div class="tab" data-tab="flights" onclick="switchTab('flights')">
+    FLIGHTS <span class="tab-count" id="tab-flights-count">--</span>
+  </div>
+  <div class="tab" data-tab="ships" onclick="switchTab('ships')">
+    SHIPS <span class="tab-count" id="tab-ships-count">--</span>
+  </div>
+  <div class="tab" data-tab="seismic" onclick="switchTab('seismic')">
+    SEISMIC <span class="tab-count" id="tab-seismic-count">--</span>
+  </div>
+  <div class="tab" data-tab="intel" onclick="switchTab('intel')">
+    INTEL <span class="tab-count" id="tab-intel-count">--</span>
+  </div>
+  <div class="tab" data-tab="bases" onclick="switchTab('bases')">
+    BASES <span class="tab-count" id="tab-bases-count">--</span>
+  </div>
+</div>
+
+
+<!-- ── ALERT BANNER ── -->
+<div id="alert-banner" style="display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%);
+  z-index:9998; background:rgba(255,0,0,0.15); border:1px solid #ff1a1a; border-radius:6px;
+  padding:10px 24px; font-family:'Chakra Petch',sans-serif; font-size:13px; letter-spacing:2px;
+  color:#ff4444; backdrop-filter:blur(8px); animation:alert-pulse 1s ease-in-out infinite;
+  cursor:pointer; max-width:90vw;" onclick="dismissAlert()">
+  <span id="alert-text"></span>
+  <span style="margin-left:12px;color:#666;font-size:10px;">CLICK TO DISMISS</span>
+</div>
+<style>
+  @keyframes alert-pulse {
+    0%,100% { box-shadow: 0 0 10px rgba(255,0,0,0.3); }
+    50% { box-shadow: 0 0 25px rgba(255,0,0,0.6); }
+  }
+</style>
+
+<!-- ── FIRES PANEL ── -->
+<div class="panel active" id="panel-fires">
+  <div class="stats-bar" id="stats-fires">
+    <div class="stat-box"><div class="stat-label">Detections</div><div class="stat-value red" id="sf-total">--</div></div>
+    <div class="stat-box"><div class="stat-label">High Confidence</div><div class="stat-value amber" id="sf-high">--</div></div>
+    <div class="stat-box"><div class="stat-label">Max FRP (MW)</div><div class="stat-value red" id="sf-maxfrp">--</div></div>
+    <div class="stat-box"><div class="stat-label">Last Updated</div><div class="stat-value green small" id="sf-updated">--</div></div>
+  </div>
+  <table class="data-table">
+    <thead><tr>
+      <th>Time (IST)</th><th>Coordinates</th><th>Brightness</th>
+      <th>FRP (MW)</th><th>Confidence</th><th>Satellite</th><th>D/N</th>
+    </tr></thead>
+    <tbody id="fires-tbody"></tbody>
+  </table>
+  <div class="status-message" id="fires-status">INITIALIZING<div class="loading-bar"></div></div>
+</div>
+
+<!-- ── FLIGHTS PANEL ── -->
+<div class="panel" id="panel-flights">
+  <div class="stats-bar" id="stats-flights">
+    <div class="stat-box"><div class="stat-label">Military / Govt</div><div class="stat-value red" id="sfl-mil">--</div></div>
+    <div class="stat-box"><div class="stat-label">Total in ME</div><div class="stat-value amber" id="sfl-total-me">--</div></div>
+    <div class="stat-box"><div class="stat-label">Total Aircraft</div><div class="stat-value green" id="sfl-total">--</div></div>
+    <div class="stat-box"><div class="stat-label">Last Updated</div><div class="stat-value green small" id="sfl-updated">--</div></div>
+  </div>
+  <table class="data-table">
+    <thead><tr>
+      <th>Class</th><th>Callsign</th><th>Aircraft</th>
+      <th>Altitude</th><th>Speed</th><th>Heading</th><th>Vertical</th><th>Squawk</th>
+    </tr></thead>
+    <tbody id="flights-tbody"></tbody>
+  </table>
+  <div class="status-message" id="flights-status">INITIALIZING<div class="loading-bar"></div></div>
+</div>
+
+<!-- ── SHIPS PANEL ── -->
+<div class="panel" id="panel-ships">
+  <div class="stats-bar" id="stats-ships">
+    <div class="stat-box"><div class="stat-label">Vessels Tracked</div><div class="stat-value blue" id="ss-total">--</div></div>
+    <div class="stat-box"><div class="stat-label">Underway</div><div class="stat-value blue" id="ss-moving">--</div></div>
+    <div class="stat-box"><div class="stat-label">Countries</div><div class="stat-value green" id="ss-countries">--</div></div>
+    <div class="stat-box"><div class="stat-label">Last Updated</div><div class="stat-value green small" id="ss-updated">--</div></div>
+  </div>
+  <table class="data-table">
+    <thead><tr>
+      <th>Vessel Name</th><th>MMSI</th><th>Type</th><th>Country</th>
+      <th>Speed</th><th>Course</th><th>Destination</th>
+    </tr></thead>
+    <tbody id="ships-tbody"></tbody>
+  </table>
+  <div class="status-message" id="ships-status">INITIALIZING<div class="loading-bar"></div></div>
+</div>
+
+<!-- ── SEISMIC PANEL ── -->
+<div class="panel" id="panel-seismic">
+  <div class="stats-bar">
+    <div class="stat-box"><div class="stat-label">Events (24h)</div><div class="stat-value amber" id="ss-events">--</div></div>
+    <div class="stat-box"><div class="stat-label">Explosions</div><div class="stat-value red" id="ss-explosions">--</div></div>
+    <div class="stat-box"><div class="stat-label">Max Magnitude</div><div class="stat-value amber" id="ss-maxmag">--</div></div>
+    <div class="stat-box"><div class="stat-label">Last Updated</div><div class="stat-value green small" id="ss2-updated">--</div></div>
+  </div>
+  <table class="data-table">
+    <thead><tr>
+      <th>Type</th><th>Time (IST)</th><th>Location</th><th>Mag</th><th>Depth</th><th>Felt</th>
+    </tr></thead>
+    <tbody id="seismic-tbody"></tbody>
+  </table>
+  <div class="status-message" id="seismic-status">NO SEISMIC EVENTS IN REGION</div>
+</div>
+
+<!-- ── INTEL (CORRELATIONS) PANEL ── -->
+<div class="panel" id="panel-intel">
+  <div class="stats-bar">
+    <div class="stat-box"><div class="stat-label">Fire-Flight Links</div><div class="stat-value red" id="si-ff">--</div></div>
+    <div class="stat-box"><div class="stat-label">Seismic-Fire Links</div><div class="stat-value amber" id="si-sf">--</div></div>
+    <div class="stat-box"><div class="stat-label">Flight Patterns</div><div class="stat-value cyan" id="si-fp">--</div></div>
+    <div class="stat-box"><div class="stat-label">Last Analysis</div><div class="stat-value green small" id="si-updated">--</div></div>
+  </div>
+  <div id="intel-content" style="padding:16px;position:relative;z-index:10;"></div>
+  <div class="status-message" id="intel-status">ANALYZING DATA<div class="loading-bar"></div></div>
+</div>
+
+<!-- ── BASES PANEL ── -->
+<div class="panel" id="panel-bases">
+  <div class="stats-bar">
+    <div class="stat-box"><div class="stat-label">Total Facilities</div><div class="stat-value green" id="sb-total">--</div></div>
+    <div class="stat-box"><div class="stat-label">US Bases</div><div class="stat-value blue" id="sb-us">--</div></div>
+    <div class="stat-box"><div class="stat-label">Russian</div><div class="stat-value red" id="sb-ru">--</div></div>
+    <div class="stat-box"><div class="stat-label">Iranian</div><div class="stat-value green" id="sb-ir">--</div></div>
+  </div>
+  <table class="data-table">
+    <thead><tr>
+      <th>Name</th><th>Type</th><th>Country</th><th>Operator</th><th>Notes</th>
+    </tr></thead>
+    <tbody id="bases-tbody"></tbody>
+  </table>
+  <div class="status-message" id="bases-status">LOADING<div class="loading-bar"></div></div>
+</div>
+
+<script>
+let activeTab = 'fires';
+const REFRESH = { fires: 60, flights: 15, ships: 30, seismic: 120, intel: 60, bases: 3600 };
+let countdowns = { fires: REFRESH.fires, flights: REFRESH.flights, ships: REFRESH.ships, seismic: REFRESH.seismic, intel: REFRESH.intel, bases: REFRESH.bases };
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+  document.getElementById('countdown-val').textContent = countdowns[tab];
+}
+
+function confBadge(c) {
+  const cl = c.toLowerCase();
+  if (cl.includes('high')) return `<span class="badge badge-red">${c}</span>`;
+  if (cl.includes('nominal')) return `<span class="badge badge-amber">${c}</span>`;
+  return `<span class="badge badge-dim">${c}</span>`;
+}
+
+// ── FIRES ──
+async function loadFires() {
+  try {
+    const r = await fetch('fires.json?t=' + Date.now());
+    if (!r.ok) throw new Error('No data');
+    const d = await r.json();
+
+    document.getElementById('tab-fires-count').textContent = d.total;
+    document.getElementById('sf-total').textContent = d.total;
+    document.getElementById('sf-updated').textContent = d.updated;
+
+    let highC = 0, maxFrp = 0;
+    d.fires.forEach(f => {
+      if (f.confidence.toLowerCase().includes('high')) highC++;
+      if (f.frp_val > maxFrp) maxFrp = f.frp_val;
+    });
+    document.getElementById('sf-high').textContent = highC;
+    document.getElementById('sf-maxfrp').textContent = maxFrp.toFixed(1);
+
+    const mf = Math.max(maxFrp, 1);
+    let html = '';
+    d.fires.forEach((f, i) => {
+      const ic = f.frp_val >= 100 ? 'intensity-extreme' : f.frp_val >= 30 ? 'intensity-high' : f.frp_val >= 10 ? 'intensity-nom' : 'intensity-low';
+      const bw = Math.min((f.frp_val / mf) * 100, 100);
+      const bc = f.frp_val >= 100 ? 'var(--amber)' : f.frp_val >= 30 ? 'var(--red)' : f.frp_val >= 10 ? 'var(--amber-dim)' : 'var(--text-dim)';
+      const dn = f.daynight === 'Night' ? '<span class="dim">NIT</span>' : '<span style="color:var(--amber)">DAY</span>';
+      html += `<tr class="${ic}" style="animation-delay:${i*0.015}s">
+        <td>${esc(f.time_ist)}</td><td class="label-text">${esc(f.lat)}, ${esc(f.lon)}</td>
+        <td>${esc(String(f.brightness))} K</td>
+        <td class="frp-bar-cell"><div class="frp-bar" style="width:${bw}%;background:${bc}"></div><span class="frp-text">${esc(String(f.frp))}</span></td>
+        <td>${confBadge(f.confidence)}</td><td class="label-text">${esc(f.satellite)}</td><td>${dn}</td>
+      </tr>`;
+    });
+    document.getElementById('fires-tbody').innerHTML = html;
+    document.getElementById('fires-status').style.display = d.fires.length ? 'none' : 'block';
+  } catch(e) {
+    document.getElementById('fires-status').className = 'status-message error';
+    document.getElementById('fires-status').innerHTML = 'FEED ERROR - run fire_data.py';
+    document.getElementById('fires-status').style.display = 'block';
+  }
+}
+
+// ── FLIGHTS ──
+async function loadFlights() {
+  try {
+    const r = await fetch('flights.json?t=' + Date.now());
+    if (!r.ok) throw new Error('No data');
+    const d = await r.json();
+
+    document.getElementById('tab-flights-count').textContent = d.military || 0;
+    document.getElementById('sfl-mil').textContent = d.military || 0;
+    document.getElementById('sfl-total-me').textContent = d.total;
+    document.getElementById('sfl-total').textContent = d.total;
+    document.getElementById('sfl-updated').textContent = d.updated;
+
+    let html = '';
+    d.flights.forEach((f, i) => {
+      const rc = f.is_mil ? 'flight-mil' : 'flight-civil';
+      const alt = f.alt_ft !== null ? f.alt_ft.toLocaleString() + ' ft' : 'GND';
+      const spd = f.speed_kts !== null ? f.speed_kts + ' kts' : '--';
+      const sq = f.squawk === '7700' ? `<span class="badge badge-red">7700 EMER</span>` :
+                 f.squawk === '7600' ? `<span class="badge badge-amber">7600 COMMS</span>` :
+                 f.squawk === '7500' ? `<span class="badge badge-red">7500 HIJACK</span>` :
+                 `<span class="dim">${esc(f.squawk)}</span>`;
+      const vert = f.vertical.includes('Climbing') ? `<span style="color:var(--green)">${esc(f.vertical)}</span>` :
+                   f.vertical.includes('Descending') ? `<span style="color:var(--amber)">${esc(f.vertical)}</span>` :
+                   `<span class="dim">${esc(f.vertical)}</span>`;
+
+      let classBadge, csColor, acInfo;
+      if (f.is_mil) {
+        const role = f.mil_role || f.operator || 'MILITARY';
+        classBadge = `<span class="badge badge-red">${esc(role)}</span>`;
+        csColor = 'var(--red)';
+        acInfo = f.desc || f.type || 'Unknown';
+      } else {
+        classBadge = `<span class="dim">CIV</span>`;
+        csColor = 'var(--text-dim)';
+        acInfo = f.desc || f.type || '--';
+      }
+
+      html += `<tr class="${rc}" style="animation-delay:${i*0.015}s">
+        <td>${classBadge}</td>
+        <td style="color:${csColor};font-weight:bold">${esc(f.callsign)}</td>
+        <td class="label-text" title="${esc(acInfo)}">${esc(acInfo).substring(0,25)}</td>
+        <td>${alt}</td><td>${spd}</td><td class="label-text">${esc(f.heading)}</td>
+        <td>${vert}</td><td>${sq}</td>
+      </tr>`;
+    });
+    document.getElementById('flights-tbody').innerHTML = html;
+    document.getElementById('flights-status').style.display = d.flights.length ? 'none' : 'block';
+    checkHighPriorityAlerts(d.flights);
+  } catch(e) {
+    document.getElementById('flights-status').className = 'status-message error';
+    document.getElementById('flights-status').innerHTML = 'FLIGHT FEED UNAVAILABLE';
+    document.getElementById('flights-status').style.display = 'block';
+  }
+}
+
+// ── SHIPS ──
+async function loadShips() {
+  try {
+    const r = await fetch('ships.json?t=' + Date.now());
+    if (!r.ok) throw new Error('No data');
+    const d = await r.json();
+
+    document.getElementById('tab-ships-count').textContent = d.total;
+    document.getElementById('ss-total').textContent = d.total;
+    document.getElementById('ss-updated').textContent = d.updated;
+
+    if (d.status === 'no_key') {
+      document.getElementById('ships-tbody').innerHTML = '';
+      document.getElementById('ships-status').style.display = 'block';
+      document.getElementById('ships-status').className = 'no-key-msg';
+      document.getElementById('ships-status').innerHTML = `
+        SHIP TRACKING REQUIRES A FREE API KEY<br><br>
+        1. Register at <a href="https://aisstream.io" target="_blank">aisstream.io</a> (free)<br>
+        2. Paste your key in <code>ship_data.py</code> line 7<br>
+        3. Restart serve.py`;
+      return;
+    }
+
+    let moving = 0;
+    const countries = new Set();
+    d.ships.forEach(s => { if (s.moving) moving++; countries.add(s.country); });
+    document.getElementById('ss-moving').textContent = moving;
+    document.getElementById('ss-countries').textContent = countries.size;
+
+    let html = '';
+    d.ships.forEach((s, i) => {
+      const rc = s.moving ? 'ship-moving' : 'ship-anchored';
+      const typeBadge = s.type.includes('Military') ? `<span class="badge badge-red">${esc(s.type)}</span>` :
+                        s.type.includes('Tanker') ? `<span class="badge badge-amber">${esc(s.type)}</span>` :
+                        s.type.includes('Cargo') ? `<span class="badge badge-blue">${esc(s.type)}</span>` :
+                        `<span class="badge badge-dim">${esc(s.type)}</span>`;
+      html += `<tr class="${rc}" style="animation-delay:${i*0.015}s">
+        <td style="color:var(--blue);font-weight:bold">${esc(s.name)}</td>
+        <td class="dim">${esc(s.mmsi)}</td><td>${typeBadge}</td><td>${esc(s.country)}</td>
+        <td>${esc(s.speed)}</td><td class="label-text">${esc(s.course)}</td>
+        <td class="label-text">${esc(s.destination)}</td>
+      </tr>`;
+    });
+    document.getElementById('ships-tbody').innerHTML = html;
+    document.getElementById('ships-status').style.display = d.ships.length ? 'none' : 'block';
+  } catch(e) {
+    document.getElementById('ships-status').className = 'status-message error';
+    document.getElementById('ships-status').innerHTML = 'SHIP FEED UNAVAILABLE';
+    document.getElementById('ships-status').style.display = 'block';
+  }
+}
+
+function tick() {
+  for (const key of ['fires', 'flights', 'ships']) {
+    countdowns[key]--;
+    if (countdowns[key] <= 0) {
+      countdowns[key] = REFRESH[key];
+      if (key === 'fires') loadFires();
+      else if (key === 'flights') loadFlights();
+      else if (key === 'seismic') loadSeismic();
+      else if (key === 'intel') loadIntel();
+      else if (key === 'bases') loadBases();
+      else loadShips();
+    }
+  }
+  document.getElementById('countdown-val').textContent = countdowns[activeTab];
+}
+
+
+// ── HIGH PRIORITY ALERT SYSTEM ──
+let knownHighPriority = new Set();
+let alertActive = false;
+let audioCtx = null;
+
+function playAlertSound() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Three-tone military alert
+    const times = [0, 0.15, 0.3];
+    const freqs = [880, 1100, 880];
+    times.forEach((t, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'square';
+      osc.frequency.value = freqs[i];
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.12);
+      osc.start(audioCtx.currentTime + t);
+      osc.stop(audioCtx.currentTime + t + 0.12);
+    });
+    // Second burst after pause
+    setTimeout(() => {
+      times.forEach((t, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'square';
+        osc.frequency.value = freqs[i];
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.12);
+        osc.start(audioCtx.currentTime + t);
+        osc.stop(audioCtx.currentTime + t + 0.12);
+      });
+    }, 600);
+  } catch(e) {}
+}
+
+function checkHighPriorityAlerts(flights) {
+  const newAlerts = [];
+  flights.forEach(f => {
+    if (f.high_priority && !knownHighPriority.has(f.hex)) {
+      knownHighPriority.add(f.hex);
+      newAlerts.push(f);
+    }
+  });
+
+  // Clean up aircraft that left
+  const currentHexes = new Set(flights.filter(f => f.high_priority).map(f => f.hex));
+  for (const hex of knownHighPriority) {
+    if (!currentHexes.has(hex)) knownHighPriority.delete(hex);
+  }
+
+  if (newAlerts.length > 0) {
+    playAlertSound();
+    const names = newAlerts.map(f => {
+      const name = f.desc || f.type || 'UNKNOWN';
+      return `${f.callsign} (${name})`;
+    }).join(' | ');
+    const banner = document.getElementById('alert-banner');
+    document.getElementById('alert-text').textContent =
+      'HIGH PRIORITY CONTACT: ' + names;
+    banner.style.display = 'block';
+    alertActive = true;
+
+    // Auto-switch to flights tab
+    switchTab('flights');
+  }
+}
+
+function dismissAlert() {
+  document.getElementById('alert-banner').style.display = 'none';
+  alertActive = false;
+}
+
+// ── SEISMIC ──
+async function loadSeismic() {
+  try {
+    const r = await fetch('seismic.json?t=' + Date.now());
+    if (!r.ok) throw new Error('No data');
+    const d = await r.json();
+    document.getElementById('tab-seismic-count').textContent = d.total;
+    document.getElementById('ss-events').textContent = d.total;
+    document.getElementById('ss2-updated').textContent = d.updated;
+    let explosions = 0, maxMag = 0;
+    (d.events||[]).forEach(e => {
+      if (e.type && e.type.toLowerCase().includes('explosion')) explosions++;
+      if (e.magnitude > maxMag) maxMag = e.magnitude;
+    });
+    document.getElementById('ss-explosions').textContent = explosions;
+    document.getElementById('ss-maxmag').textContent = maxMag > 0 ? maxMag.toFixed(1) : '--';
+    let html = '';
+    (d.events||[]).forEach((e, i) => {
+      const isExplosion = e.type && e.type.toLowerCase().includes('explosion');
+      const typeBadge = isExplosion ? `<span class="badge badge-red">EXPLOSION</span>` :
+                        `<span class="badge badge-amber">${esc(e.type||'earthquake')}</span>`;
+      html += `<tr style="animation-delay:${i*0.02}s">
+        <td>${typeBadge}</td><td>${esc(e.time_ist)}</td><td class="label-text">${esc(e.place)}</td>
+        <td style="color:var(--amber);font-weight:bold">${e.magnitude}</td>
+        <td class="dim">${e.depth_km} km</td><td class="dim">${e.felt_reports||0}</td></tr>`;
+    });
+    document.getElementById('seismic-tbody').innerHTML = html;
+    document.getElementById('seismic-status').style.display = (d.events||[]).length ? 'none' : 'block';
+  } catch(e) {
+    document.getElementById('seismic-status').textContent = 'SEISMIC FEED UNAVAILABLE';
+    document.getElementById('seismic-status').style.display = 'block';
+  }
+}
+
+// ── INTEL (CORRELATIONS) ──
+async function loadIntel() {
+  try {
+    const r = await fetch('correlations.json?t=' + Date.now());
+    if (!r.ok) throw new Error('No data');
+    const d = await r.json();
+    const ff = d.fire_flight || [];
+    const sf = d.seismic_fire || [];
+    const fp = Object.values(d.flight_patterns || {});
+    document.getElementById('tab-intel-count').textContent = ff.length + sf.length + fp.length;
+    document.getElementById('si-ff').textContent = ff.length;
+    document.getElementById('si-sf').textContent = sf.length;
+    document.getElementById('si-fp').textContent = fp.length;
+    document.getElementById('si-updated').textContent = d.timestamp;
+    let html = '';
+    // Flight patterns
+    fp.forEach(p => {
+      const patternColor = p.pattern === 'orbiting' ? 'var(--red)' :
+                          p.pattern === 'racetrack' ? 'var(--amber)' :
+                          p.pattern === 'descending' ? 'var(--amber)' :
+                          p.pattern === 'loitering' ? 'var(--cyan)' : 'var(--text-dim)';
+      html += `<div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid ${patternColor};border-radius:4px;padding:12px 16px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:${patternColor};font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;">${esc(p.pattern.toUpperCase())}</span>
+          <span class="badge badge-red">${esc(p.callsign)} (${esc(p.type||'')})</span>
+        </div>
+        <div style="color:var(--text-label);font-size:11px;margin-top:6px;">${esc(p.desc||'')}</div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:4px;">${esc(p.details?.assessment||'')}</div>
+      </div>`;
+    });
+    // Fire-flight correlations
+    ff.forEach(c => {
+      const flights = c.nearby_military.map(f =>
+        `${esc(f.callsign)} (${esc(f.desc||f.type||'')}) - ${f.min_distance_nm}NM`
+      ).join('<br>');
+      html += `<div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:4px;padding:12px 16px;margin-bottom:8px;">
+        <div style="color:var(--red);font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;">FIRE + MILITARY AIRCRAFT</div>
+        <div style="color:var(--text-label);font-size:11px;margin-top:6px;">Fire at ${c.fire_lat.toFixed(3)}, ${c.fire_lon.toFixed(3)} (FRP: ${c.max_frp} MW, ${c.fire_detections} detections)</div>
+        <div style="color:var(--amber);font-size:11px;margin-top:4px;">Nearby military: ${flights}</div>
+        <div style="color:var(--text-dim);font-size:10px;margin-top:4px;">Confidence: ${(c.confidence*100).toFixed(0)}%</div>
+      </div>`;
+    });
+    // Seismic-fire
+    sf.forEach(c => {
+      html += `<div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:4px;padding:12px 16px;margin-bottom:8px;">
+        <div style="color:var(--amber);font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:13px;letter-spacing:1px;">SEISMIC + FIRE</div>
+        <div style="color:var(--text-label);font-size:11px;margin-top:6px;">${esc(c.seismic_type||'Event')} M${c.magnitude} at ${esc(c.seismic_place||'')} with ${c.nearby_fires.length} fire(s) nearby</div>
+        <div style="color:var(--text-dim);font-size:10px;margin-top:4px;">Confidence: ${(c.confidence*100).toFixed(0)}%</div>
+      </div>`;
+    });
+    if (!html) html = '<div style="text-align:center;padding:40px;color:var(--text-dim);letter-spacing:2px;">COLLECTING DATA — CORRELATIONS APPEAR AS PATTERNS EMERGE</div>';
+    document.getElementById('intel-content').innerHTML = html;
+    document.getElementById('intel-status').style.display = 'none';
+  } catch(e) {
+    document.getElementById('intel-status').textContent = 'INTEL FEED INITIALIZING';
+    document.getElementById('intel-status').style.display = 'block';
+  }
+}
+
+// ── BASES ──
+async function loadBases() {
+  try {
+    const r = await fetch('bases.json?t=' + Date.now());
+    if (!r.ok) throw new Error('No data');
+    const bases = await r.json();
+    document.getElementById('tab-bases-count').textContent = bases.length;
+    document.getElementById('sb-total').textContent = bases.length;
+    document.getElementById('sb-us').textContent = bases.filter(b => b.operator && b.operator.includes('United States')).length;
+    document.getElementById('sb-ru').textContent = bases.filter(b => b.operator && b.operator.includes('Russia')).length;
+    document.getElementById('sb-ir').textContent = bases.filter(b => b.country === 'Iran').length;
+    let html = '';
+    bases.forEach((b, i) => {
+      const opColor = (b.operator||'').includes('United States') ? 'var(--blue)' :
+                      (b.operator||'').includes('Russia') ? 'var(--red)' :
+                      b.country === 'Iran' ? 'var(--green)' :
+                      b.country === 'Israel' ? '#fff' :
+                      (b.operator||'').includes('United Kingdom') ? '#aa66ff' : 'var(--text-label)';
+      html += `<tr style="animation-delay:${i*0.01}s">
+        <td style="color:${opColor};font-weight:bold">${esc(b.name)}</td>
+        <td><span class="badge badge-dim">${esc(b.type||'')}</span></td>
+        <td>${esc(b.country||'')}</td><td class="label-text">${esc(b.operator||'')}</td>
+        <td class="dim" style="white-space:normal;max-width:250px;font-size:10px;">${esc(b.notes||'')}</td>
+      </tr>`;
+    });
+    document.getElementById('bases-tbody').innerHTML = html;
+    document.getElementById('bases-status').style.display = bases.length ? 'none' : 'block';
+  } catch(e) {
+    document.getElementById('bases-status').textContent = 'BASES DATA UNAVAILABLE';
+    document.getElementById('bases-status').style.display = 'block';
+  }
+}
+
+
+// Initial load
+loadFires(); loadFlights(); loadShips(); loadSeismic(); loadIntel(); loadBases();
+setInterval(tick, 1000);
+</script>
+
+</body>
+</html>

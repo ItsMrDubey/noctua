@@ -16,3 +16,6 @@ digests/
 *.sqlite
 *.parquet
 Live*.kml
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
