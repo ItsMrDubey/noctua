@@ -114,7 +114,7 @@ export function historicalDetails(it, detail) {
   const fields = (d.fields || []).map((f) => [String(f.field).replace(/_/g, " "), esc(f.value)]);
   const body = kv([["Dates", span(it.t_start, it.t_end)], ["Place", esc([d.place_name, d.country].filter(Boolean).join(", "))], ["Precision", esc(it.precision)],
     ["Position", nf(it.lat, 3) + ", " + nf(it.lon, 3)], ...fields, ["ID", esc(it.id)]]) +
-    (d.summary ? '<div class="evsum" style="margin-top:8px">' + esc(d.summary) + "</div>" : "") +
+    (d.summary_en || d.summary ? '<div class="evsum" style="margin-top:8px">' + esc(d.summary_en || d.summary) + "</div>" : "") +
     '<div class="prov" style="margin-top:8px"><div><i></i>Uppsala Conflict Data Program, Georeferenced Event Dataset (curated, historical)</div></div>';
-  return [it.title || "Historical conflict event", body];
+  return [(d.title_en || it.title_en || it.title || d.title) || "Historical conflict event", body];
 }

@@ -1,5 +1,5 @@
 // Command palette (Ctrl+K or /): search tracks, places, layers and actions from one field.
-import { esc } from "/static/js/ui.js";
+import { esc, evTitle } from "/static/js/ui.js";
 import { uiGlyph, threatColor } from "/static/js/symbology.js";
 
 const MAX_PER_GROUP = { Tracks: 8, Places: 6, Layers: 6, Actions: 8 };
@@ -73,6 +73,19 @@ export class Palette {
           const s = Math.max(score(String(it.name || ""), q), score(String(it.id), q) - 5, score(String(it.reg || ""), q), score(String(it.type_code || ""), q) - 10, score(String(it.operator || ""), q) - 15);
           if (s > 0) out.push({ group: "Tracks", s: s + (it.high_priority ? 3 : 0), label: it.name || it.id, sub: [l.kind === "aircraft" ? "Aircraft" : "Ship", it.type_code, it.reg || it.operator].filter(Boolean).join(" · "),
             glyph: '<span style="color:' + threatColor(l.kind, it) + '">' + uiGlyph(l.kind, it) + "</span>", run: () => { c.select(l.kind, it.id); c.flyToItem(l.kind, it.id); } });
+        }
+      }
+      // news events, by their English title (falls back to the original while translating)
+      const evl = c.byKind && c.byKind.events;
+      if (evl) {
+        let n = 0;
+        for (const it of evl.visibleItems()) {
+          const t = evTitle(it);
+          const s = Math.max(score(t, q), it.title_en && it.title ? score(String(it.title), q) - 10 : 0, score(String(it.place_name || ""), q) - 10);
+          if (s <= 0) continue;
+          out.push({ group: "Events", s: s - 2, label: t || it.id, sub: ["Event", String(it.category || "").replace(/_/g, " "), it.place_name].filter(Boolean).join(" · "),
+            glyph: '<span style="color:' + threatColor("events", it) + '">' + uiGlyph("events", it) + "</span>", run: () => { c.select("events", it.id); c.flyToItem("events", it.id); } });
+          if (++n >= 40) break;
         }
       }
       // places

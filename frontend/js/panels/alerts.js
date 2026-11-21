@@ -1,6 +1,6 @@
 // Alert center: client-side detectors (new high-priority aircraft, emergency squawks,
 // significant quakes, source outages) feeding a toast stack + the Alerts list.
-import { $, esc, REDUCED } from "/static/js/ui.js";
+import { $, esc, REDUCED, evTitle, trPending } from "/static/js/ui.js";
 
 const MAX = 200, MAX_TOASTS = 4, TTL = 9000;
 const SEV = { high: "Threat", warn: "Warning", info: "Info", ok: "Restored", event: "Event" };
@@ -91,7 +91,7 @@ export class AlertCenter {
       if (Date.now() - this.lastEv < 10000) return;
       this.seen.ev.add(it.id);
       this.lastEv = Date.now();
-      this.push({ sev: "event", title: it.title || "New event", sub: (it.category || "").replace(/_/g, " ") + " · " + (it.source_diversity || 0) + " outlets · conf " + Number(it.confidence).toFixed(2),
+      this.push({ sev: "event", title: evTitle(it) || "New event", sub: (it.category || "").replace(/_/g, " ") + " · " + (it.source_diversity || 0) + " outlets · conf " + Number(it.confidence).toFixed(2) + (trPending(it) ? " · translating…" : ""),
         target: { kind: "events", id: it.id, lat: it.lat, lon: it.lon } });
     }
   }

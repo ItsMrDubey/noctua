@@ -5,6 +5,16 @@ export const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => 
 export const REDUCED = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const nf = (n, d = 0) => (n == null || isNaN(n) ? "–" : Number(n).toLocaleString(undefined, { maximumFractionDigits: d }));
 
+// ---- English display of events / sources (backend adds title_en / summary_en / snippet_en / lang;
+// title_en is null while a translation is pending; older backends have none of these fields) ----
+export const isEn = (lang) => /^en\b/i.test(String(lang || ""));
+export const evTitle = (it) => (it && (it.title_en || it.title)) || "";
+// original shown because the English text has not arrived yet
+export const trPending = (it) => !!(it && it.title && Object.hasOwn(it, "title_en") && it.title_en == null && !isEn(it.lang));
+export const TR_TAG = '<span class="tr-pend" title="English translation pending; showing the original">translating…</span>';
+// true when the record carries a translation that differs from its source-language text
+export const hasOriginal = (it) => !!(it && ((it.title_en && it.title && it.title_en !== it.title) || (it.summary_en && it.summary && it.summary_en !== it.summary)));
+
 export function ago(ts) {
   if (ts == null) return "–";
   const t = typeof ts === "number" ? (ts < 1e11 ? ts * 1000 : ts) : Date.parse(ts);
