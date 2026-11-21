@@ -1,0 +1,9 @@
+{
+  "_comment": "Known common words that are also GeoNames place names (folded). Fallback until data/gazetteer/common_tokens.json is built from the corpus (python -m osint.enrich.ambiguity).",
+  "ar": ["كيف"],
+  "fa": ["كيف"],
+  "en": ["nice", "reading", "mobile", "split", "bath", "tours", "orange", "buffalo"],
+  "fr": ["tours", "orange"],
+  "es": ["mayo", "real"],
+  "de": ["essen", "hof"]
+}

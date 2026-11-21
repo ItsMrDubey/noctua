@@ -7,6 +7,12 @@ them; later loads read the cache (rebuilt automatically when the source files ch
 ``match(text, language)`` looks up 1-3 token n-grams of Unicode-normalised, case-folded
 text (character windows for CJK), then disambiguates candidates by population, country
 co-mentions and specificity.
+
+Common words that are also place names (``osint.enrich.ambiguity``: learnt per language
+from our corpus, plus a small seed) are ignored in non-Latin scripts and, in Latin script,
+only count when capitalised mid-sentence next to a mention of the same country (or another
+place in it). A city name shared by similar-sized cities in different countries with no
+country co-mention is left unlocated (no hit).
 """
 
 import logging
@@ -23,10 +29,11 @@ from pathlib import Path
 
 from osint.core.geo import haversine_km
 from osint.core.models import PlaceHit
+from osint.enrich.ambiguity import CommonTokens, is_latin
 
 log = logging.getLogger(__name__)
 
-INDEX_VERSION = "1"
+INDEX_VERSION = "2"
 SOURCE_FILES = ("cities15000.zip", "countryInfo.txt", "admin1CodesASCII.txt")
 MIN_CONFIDENCE = 0.5
 _SPECIFICITY = {"city": 0.08, "admin1": 0.04, "country": 0.0}
@@ -35,7 +42,7 @@ _SPECIFICITY = {"city": 0.08, "admin1": 0.04, "country": 0.0}
 STOPWORDS = frozenset(str.split("""
 a an and are as at be but by for from has have he her his in is it its of on or our she
 that the their them they this to was we were will with you said says say says new old
-police mobile nice split reading bath most male bar bay may march sale same deal union
+police most male bar bay may march sale same deal union
 university hope opportunity independence liberty victory progress unity peace freedom
 central north south east west northern southern eastern western city state capital port
 san santa saint st la le el al de del da di do du des los las der die das und van von
@@ -192,6 +199,11 @@ _CJK_RE = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
 _TOKEN_RE = re.compile(r"[^\W_]+(?:[.'’][^\W_]+)*", re.UNICODE)
 _KANA_RE = re.compile(r"[぀-ヿ]")
 _SPLIT_RE = re.compile(r"[.'’]")
+# a token right after one of these (or at the start of the text) starts a sentence
+_SENTENCE_END = frozenset(".!?:;|\"'«»“”„()[]-–—•\n")
+# similar-sized cities in different countries (population ratio below this) are ambiguous
+_AMBIGUOUS_POP_RATIO = 3.0
+_SHORT_NON_LATIN_MIN_POP = 100_000
 _ARABIC_FOLD = str.maketrans({
     "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ی": "ي", "ة": "ه", "ک": "ك",
     "ـ": None, "’": "'",
@@ -220,6 +232,22 @@ def tokens(text: str) -> list[tuple[str, str]]:
         for part in _SPLIT_RE.split(fold(orig)):
             if part:
                 out.append((part, orig))
+    return out
+
+
+def _tokens_pos(text: str) -> list[tuple[str, str, bool]]:
+    """(folded token, original token, starts a sentence) triples."""
+    out = []
+    prev_end = 0
+    for m in _TOKEN_RE.finditer(text):
+        orig = m.group(0)
+        gap = text[prev_end:m.start()].rstrip(" \t")
+        start = (not gap and prev_end == 0) or (bool(gap) and gap[-1] in _SENTENCE_END)
+        prev_end = m.end()
+        for part in _SPLIT_RE.split(fold(orig)):
+            if part:
+                out.append((part, orig, start))
+                start = False
     return out
 
 
@@ -254,11 +282,23 @@ def _keep_alt_name(raw: str) -> bool:
     return len(key) >= 3
 
 
+def _keep_short_alt(key: str, place: "Place") -> bool:
+    """Alternate names of <= 3 letters are mostly codes or words: only countries (codes,
+    official short forms) keep them, plus non-Latin names of sizeable cities (Arabic
+    "حلب", "غزة" are the real names; common words among them are filtered at match time)."""
+    if len(key.replace(" ", "")) > 3 or _CJK_RE.search(key) or place.precision == "country":
+        return True
+    return not is_latin(key) and place.population >= _SHORT_NON_LATIN_MIN_POP
+
+
 class Gazetteer:
-    def __init__(self, places: list[Place], names: dict[str, list[tuple[int, int]]]) -> None:
-        """``names``: key -> [(place index, is_primary)]."""
+    def __init__(self, places: list[Place], names: dict[str, list[tuple[int, int]]], *,
+                 common: CommonTokens | None = None) -> None:
+        """``names``: key -> [(place index, is_primary)]; ``common``: common words that are
+        also place names (default: the seed)."""
         self.places = places
         self.names = names
+        self.common = common if common is not None else CommonTokens.seed()
         self.cjk_keys = {k for k in names if _CJK_RE.search(k)}
         self.max_cjk = max((len(k) for k in self.cjk_keys), default=0)
         self.country_place: dict[str, int] = {
@@ -279,6 +319,8 @@ class Gazetteer:
                 for raw in group:
                     key = name_key(raw)
                     if not key or key in seen or key in STOPWORDS:
+                        continue
+                    if not is_primary and not _keep_short_alt(key, place):
                         continue
                     seen.add(key)
                     names[key].append((idx, is_primary))
@@ -401,14 +443,14 @@ class Gazetteer:
         fp = cls._fingerprint(src_dir)
         cache = src_dir / "index.sqlite"
         gz = cls.load_cache(cache, fp)
-        if gz is not None:
-            return gz
-        log.info("building gazetteer index from %s", src_dir)
-        gz = cls.build(src_dir)
-        try:
-            gz.save(cache, fp)
-        except OSError:
-            log.warning("could not cache gazetteer index at %s", cache, exc_info=True)
+        if gz is None:
+            log.info("building gazetteer index from %s", src_dir)
+            gz = cls.build(src_dir)
+            try:
+                gz.save(cache, fp)
+            except OSError:
+                log.warning("could not cache gazetteer index at %s", cache, exc_info=True)
+        gz.common = CommonTokens.default(src_dir)
         return gz
 
     # ------------------------------------------------------------------ matching
@@ -435,8 +477,9 @@ class Gazetteer:
     def match(self, text: str, language: str = "", *, country_hint: str = "",
               limit: int = 8) -> list[PlaceHit]:
         """Places mentioned in ``text``, best first (deduplicated by place)."""
-        toks = tokens(text)
+        toks = _tokens_pos(text)
         found: list[tuple[str, list[tuple[int, int]], int, bool]] = []  # key, cands, n, variant
+        deferred: list[tuple[str, list[tuple[int, int]], int, bool]] = []  # common words
         used = [False] * len(toks)
         for n in (3, 2, 1):
             for i in range(len(toks) - n + 1):
@@ -445,26 +488,33 @@ class Gazetteer:
                 span = toks[i:i + n]
                 if span[0][1][:1].islower():  # cased scripts: place names are capitalised
                     continue
-                key = " ".join(t for t, _ in span)
+                key = " ".join(t for t, _, _ in span)
                 if n == 1 and (key in STOPWORDS or key in AMBIGUOUS_SINGLE):
                     continue
                 cands = self._lookup(key)
                 variant = False
+                hit_key = key
                 if not cands and n == 1:
                     for v in self._variants(key):
                         cands = self._lookup(v)
                         if cands:
-                            variant = True
+                            variant, hit_key = True, v
                             break
                 if cands and n == 1 and _is_acronym(span[0][1]):
                     # "IPO", "NATO": only countries may match an all-caps short token
                     cands = [c for c in cands if self.places[c[0]].precision == "country"]
+                if cands and n == 1 and self.common.is_common(hit_key, language):
+                    # a common word in this language: never in non-Latin scripts; in Latin
+                    # script only capitalised mid-sentence with a same-country mention
+                    if is_latin(span[0][1]) and not span[0][2]:
+                        deferred.append((span[0][1], cands, n, variant))
+                    continue
                 if cands:
-                    found.append((" ".join(o for _, o in span), cands, n, variant))
+                    found.append((" ".join(o for _, o, _ in span), cands, n, variant))
                     for j in range(i, i + n):
                         used[j] = True
         # CJK has no spaces: scan character windows, longest first
-        for tok, _orig in toks:
+        for tok, _orig, _ in toks:
             if not _CJK_RE.search(tok):
                 continue
             i = 0
@@ -479,7 +529,23 @@ class Gazetteer:
                         break
                 else:
                     i += 1
+        if deferred:
+            found += self._confirm_common(found, deferred, country_hint)
         return self._disambiguate(found, country_hint, limit)
+
+    def _confirm_common(self, found, deferred, country_hint: str) -> list:
+        """Common-word matches kept only for places in a country the text also mentions
+        (by name/demonym, or through another matched place)."""
+        countries = {country_hint} if country_hint else set()
+        for h in self._disambiguate(found, country_hint, 10**6):
+            countries.add(h.country)
+        out = []
+        for matched, cands, n, variant in deferred:
+            kept = [c for c in cands if self.places[c[0]].country in countries
+                    and self.places[c[0]].precision != "country"]
+            if kept:
+                out.append((matched, kept, n, variant))
+        return out
 
     def _disambiguate(self, found, country_hint: str, limit: int) -> list[PlaceHit]:
         mentioned = {country_hint} if country_hint else set()
@@ -512,6 +578,7 @@ class Gazetteer:
             scored.sort(reverse=True)
             s, i = scored[0]
             top = self.places[i]
+            unlocated = False
             for s2, j in scored[1:]:
                 if s2 <= s - 0.05:
                     break
@@ -520,7 +587,16 @@ class Gazetteer:
                 if other.country != top.country or haversine_km(
                         top.lat, top.lon, other.lat, other.lon) > 150:
                     s -= 0.1
+                    # similar-sized namesakes in different countries, neither mentioned:
+                    # no way to tell which one is meant, so leave the text unlocated
+                    unlocated = (other.country != top.country
+                                 and top.precision == other.precision == "city"
+                                 and top.country not in mentioned
+                                 and other.country not in mentioned
+                                 and _similar(top.population, other.population))
                     break
+            if unlocated:
+                continue
             conf = round(max(0.0, min(1.0, s)), 3)
             if conf < MIN_CONFIDENCE:
                 continue
@@ -533,6 +609,11 @@ class Gazetteer:
         hits = sorted(best.values(),
                       key=lambda h: h.confidence + _SPECIFICITY[h.precision], reverse=True)
         return hits[:limit]
+
+
+def _similar(a: int, b: int) -> bool:
+    lo, hi = sorted((max(a, 1), max(b, 1)))
+    return hi / lo < _AMBIGUOUS_POP_RATIO
 
 
 _RANK = {"city": 2, "admin1": 1, "country": 0}
