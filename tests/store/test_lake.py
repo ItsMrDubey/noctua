@@ -76,3 +76,31 @@ def test_duckdb_connection_is_memory_capped(tmp_path):
         assert con.execute("SELECT current_setting('threads')").fetchone()[0] == 2
     finally:
         con.close()
+
+
+def test_concurrent_queries_do_not_conflict_on_view_names(tmp_path):
+    """Regression: a shared view name per dataset made parallel queries fail with a DuckDB
+    write-write catalog conflict (the quakes layer returned 500 next to the fires layer)."""
+    import threading
+
+    lake = Lake(tmp_path)
+    obs = [Observation(id=f"quake:{i}", type="quake", ts=T0, lat=1, lon=1, source="t") for i in range(5)]
+    lake.write("observations", [observation_row(o) for o in obs])
+    lake.write("positions", [position_row(_pos(T0))])
+    errors: list[BaseException] = []
+
+    def run(sql: str) -> None:
+        try:
+            for _ in range(5):
+                lake.query(sql, start=T0 - timedelta(hours=1), end=T0 + timedelta(hours=1))
+        except BaseException as e:  # noqa: BLE001 - collected for the assertion below
+            errors.append(e)
+
+    threads = [threading.Thread(target=run, args=(sql,)) for sql in
+               ["SELECT count(*) FROM observations", "SELECT count(*) FROM positions"] * 4]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert lake.query("SELECT count(*) FROM observations") == [(5,)]

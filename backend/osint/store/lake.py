@@ -237,16 +237,38 @@ class Lake:
                 self._con = None
 
     def _bind(self, cur: duckdb.DuckDBPyConnection, sql: str,
-              start: datetime | None, end: datetime | None) -> None:
+              start: datetime | None, end: datetime | None) -> tuple[str, list[tuple[str, bool]]]:
+        """Bind each dataset ``sql`` names to a per-call uniquely named view and return the
+        rewritten SQL plus the bound names. Views live in the connection-wide catalog, so a
+        shared name ("observations") makes concurrent queries conflict (write-write
+        conflict on create) or read each other's file lists."""
+        names: dict[str, str] = {}
+        bound: list[tuple[str, bool]] = []
         for dataset in set(_DATASET_RE.findall(sql)):
+            name = f"{dataset}_{uuid.uuid4().hex[:12]}"
+            names[dataset] = name
             files = self.partition_files(dataset, start, end)
             if files:
                 # schemas are fixed per dataset (no union_by_name: it reads every footer)
                 rel = cur.read_parquet([f.as_posix() for f in files], hive_partitioning=True)
-                rel.create_view(dataset, replace=True)
+                rel.create_view(name, replace=True)
+                bound.append((name, True))
             else:
-                cur.register(dataset, pa.schema(
+                cur.register(name, pa.schema(
                     [*SCHEMAS[dataset], *_HIVE_FIELDS]).empty_table())
+                bound.append((name, False))
+        return _DATASET_RE.sub(lambda m: names[m.group(1)], sql), bound
+
+    @staticmethod
+    def _unbind(cur: duckdb.DuckDBPyConnection, bound: list[tuple[str, bool]]) -> None:
+        for name, is_view in bound:
+            try:
+                if is_view:
+                    cur.execute(f"DROP VIEW IF EXISTS {name}")
+                else:
+                    cur.unregister(name)
+            except duckdb.Error:
+                pass
 
     def query(self, sql: str, params: list | None = None, *,
               start: datetime | None = None, end: datetime | None = None) -> list[tuple]:
@@ -257,13 +279,15 @@ class Lake:
         without them the whole dataset is scanned (generic fallback)."""
         for attempt in range(2):
             cur = self._cursor()
+            bound: list[tuple[str, bool]] = []
             try:
-                self._bind(cur, sql, start, end)
-                return cur.execute(sql, params or []).fetchall()
+                bound_sql, bound = self._bind(cur, sql, start, end)
+                return cur.execute(bound_sql, params or []).fetchall()
             except duckdb.IOException:
                 if attempt:  # a file vanished under us (compaction): relist once
                     raise
             finally:
+                self._unbind(cur, bound)
                 cur.close()
         raise AssertionError("unreachable")
 
