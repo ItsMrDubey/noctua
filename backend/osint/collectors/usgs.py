@@ -1,10 +1,13 @@
 """USGS real-time earthquake (and explosion/quarry blast) feed, worldwide."""
 
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 
 from osint.core.collector import CollectorContext, PollCollector, register
 from osint.core.geo import utcnow
 from osint.core.models import Batch, Observation
+
+log = logging.getLogger(__name__)
 
 FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/{window}.geojson"
 
@@ -43,13 +46,41 @@ class UsgsCollector(PollCollector):
     commercial_ok = True
     default_interval_s = 120.0
 
+    def _window(self, cursor: dict | None, now: datetime) -> str:
+        if not cursor:
+            return self.cfg.get("backfill_window", "all_day")
+        try:
+            last = datetime.fromisoformat(cursor["last_poll"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=UTC)
+        except (KeyError, TypeError, ValueError):
+            return "all_month"
+        age = now - last
+        if age < timedelta(minutes=50):
+            return "all_hour"
+        if age < timedelta(hours=23):
+            return "all_day"
+        if age < timedelta(days=6.5):
+            return "all_week"
+        return "all_month"
+
     async def poll(self, ctx: CollectorContext) -> Batch:
-        cursor = ctx.get_cursor(self.name)
-        window = "all_hour" if cursor else self.cfg.get("backfill_window", "all_day")
+        started = utcnow()
+        window = self._window(ctx.get_cursor(self.name), started)
         r = await ctx.http.get(FEED_URL.format(window=window), timeout=30)
         r.raise_for_status()
         features = r.json().get("features") or []
         batch = Batch(source=self.name)
-        batch.observations.extend(o for o in map(parse_feature, features) if o is not None)
-        ctx.set_cursor(self.name, {"last_poll": utcnow().isoformat(), "window": window})
+        skipped = 0
+        for f in features:
+            try:
+                obs = parse_feature(f)
+            except (ValueError, TypeError, KeyError):
+                skipped += 1
+                continue
+            if obs is not None:
+                batch.observations.append(obs)
+        if skipped:
+            log.warning("usgs: skipped %d malformed feature(s) in %s", skipped, window)
+        ctx.set_cursor(self.name, {"last_poll": started.isoformat(), "window": window})
         return batch
