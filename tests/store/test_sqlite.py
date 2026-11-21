@@ -43,3 +43,13 @@ def test_quarantine_and_sources(store):
     assert [(s["name"], s["licence"], s["commercial_ok"]) for s in store.list_sources()] == [
         ("adsb", "mixed-v2", 0)
     ]
+
+
+def test_get_tracks_chunked(store):
+    tracks = [TrackInfo(track_id=f"air:{i}", kind="air", ident=str(i), extra={"k": "v"})
+              for i in range(1000)]
+    store.upsert_tracks(tracks, T0)
+    got = store.get_tracks([t.track_id for t in tracks] + ["air:missing"])
+    assert len(got) == 1000
+    assert got["air:5"]["extra"] == {"k": "v"}
+    assert store.get_tracks([]) == {}

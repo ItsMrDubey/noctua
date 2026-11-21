@@ -101,6 +101,21 @@ class SqliteStore:
         out["extra"] = json.loads(out["extra"])
         return out
 
+    def get_tracks(self, track_ids: list[str]) -> dict[str, dict]:
+        out: dict[str, dict] = {}
+        for i in range(0, len(track_ids), 900):
+            chunk = track_ids[i : i + 900]
+            marks = ",".join("?" * len(chunk))
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT * FROM tracks WHERE track_id IN ({marks})", chunk
+                ).fetchall()
+            for r in rows:
+                d = dict(r)
+                d["extra"] = json.loads(d["extra"])
+                out[d["track_id"]] = d
+        return out
+
     def quarantine(self, source: str, record_type: str, reason: str, payload: dict) -> None:
         with self._lock, self._db:
             self._db.execute(
