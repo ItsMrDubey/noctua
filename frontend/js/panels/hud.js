@@ -81,14 +81,16 @@ export function setupHud(viewer) {
     }
     const target = centerTarget();
     if (!target) return; // looking at space
-    const eye = cam.positionCartographic.height;
+    // eye height above the ground being looked at (terrain-aware)
+    const eye = Math.max(cam.positionCartographic.height - C.Cartographic.fromCartesian(target).height, 50);
     if (is25()) {
       flyAround(target, -90, Math.min(Math.max(eye * 2, 3000), 2e7));
     } else {
       onEnter25();
-      // from high up drop to city scale; close in keep the range so the framing holds
-      const range = eye > 20e3 ? 2200 : Math.max(eye * 1.4, 400);
-      flyAround(target, -32, range);
+      // from orbit drop to city scale; closer in keep roughly the same distance so the
+      // framing holds (a valley seen from 25 km stays a valley, a street stays a street)
+      const range = eye > 80e3 ? 2500 : Math.max(eye * 1.1, 400);
+      flyAround(target, -30, range);
     }
   };
   if (tiltBtn) tiltBtn.addEventListener("click", toggleTilt);

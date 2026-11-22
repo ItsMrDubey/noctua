@@ -214,9 +214,46 @@ export function setupImagery(viewer) {
     scene.requestRender();
   };
   $("t-grid").addEventListener("change", (e) => gridOn(e.target.checked));
-  $("t-daynight").addEventListener("change", (e) => {
-    scene.globe.enableLighting = e.target.checked;
-    scene.globe.dynamicAtmosphereLighting = e.target.checked;
+  $("t-daynight").addEventListener("change", applyLighting);
+
+  // terrain relief: a light fixed to the view (upper left, slightly behind the viewer) so
+  // slopes read like a hillshade whatever the time of day; only close in, where terrain
+  // is resolved (from orbit it would just shade the globe's limb)
+  const sun = new C.SunLight();
+  const relief = new C.DirectionalLight({ direction: new C.Cartesian3(0, 0, -1), intensity: 2.4 });
+  const cam = viewer.camera;
+  const scratch = { up: new C.Cartesian3(), fwd: new C.Cartesian3(), r: new C.Cartesian3(), d: new C.Cartesian3() };
+  function aimRelief() {
+    const { up, fwd, r, d } = scratch;
+    scene.globe.ellipsoid.geodeticSurfaceNormal(cam.positionWC, up);
+    // horizontal forward = camera direction minus its vertical component
+    C.Cartesian3.multiplyByScalar(up, C.Cartesian3.dot(cam.directionWC, up), fwd);
+    C.Cartesian3.subtract(cam.directionWC, fwd, fwd);
+    if (C.Cartesian3.magnitudeSquared(fwd) < 1e-8) C.Cartesian3.clone(cam.upWC, fwd);
+    C.Cartesian3.normalize(fwd, fwd);
+    C.Cartesian3.cross(fwd, up, r); // screen right on the ground plane
+    // travelling down (-up), towards the right (+r), and away from the viewer (+fwd)
+    C.Cartesian3.multiplyByScalar(up, -1.0, d);
+    C.Cartesian3.add(d, C.Cartesian3.multiplyByScalar(r, 0.75, r), d);
+    C.Cartesian3.add(d, C.Cartesian3.multiplyByScalar(fwd, 0.35, fwd), d);
+    C.Cartesian3.normalize(d, relief.direction);
+  }
+  const RELIEF_MAX_H = 400e3;
+  function applyLighting() {
+    const dayNight = $("t-daynight").checked;
+    const reliefOn = !dayNight && $("t-relief").checked && cam.positionCartographic.height < RELIEF_MAX_H;
+    scene.globe.enableLighting = dayNight || reliefOn;
+    scene.globe.dynamicAtmosphereLighting = dayNight;
+    const light = reliefOn ? relief : sun;
+    if (scene.light !== light) scene.light = light;
+    if (reliefOn) aimRelief();
+    scene.requestRender();
+  }
+  $("t-relief").addEventListener("change", applyLighting);
+  cam.changed.addEventListener(applyLighting);
+  applyLighting();
+  $("t-exag").addEventListener("change", (e) => {
+    scene.verticalExaggeration = +e.target.value || 1;
     scene.requestRender();
   });
 }

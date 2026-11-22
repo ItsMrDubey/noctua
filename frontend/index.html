@@ -126,6 +126,8 @@
     <label class="row"><input type="checkbox" id="t-labels"><span class="sw txt" style="--c:#c8d4de">A</span>Place labels</label>
     <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
     <label class="row" title="OSM Buildings via Cesium ion; drawn below 60 km eye altitude"><input type="checkbox" id="t-buildings"><span class="sw sq" style="--c:#9aa3ad"></span>3D buildings <small>ion</small></label>
+    <label class="row" title="Hillshade terrain with a light from the upper left of the view (below 400 km eye altitude; off while day/night shading is on)"><input type="checkbox" id="t-relief" checked><span class="sw half" style="--c:#b8c4cf"></span>Relief lighting <small>terrain</small></label>
+    <label class="row field" title="Vertical exaggeration of Cesium World Terrain">Terrain relief <select id="t-exag"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option></select></label>
     <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
     <label class="row field">GIBS date <input type="date" id="gibs-date"></label>
   </section>
