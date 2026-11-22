@@ -107,7 +107,18 @@ export function createViewer(cfg) {
   scene.fxaa = false;
   if (scene.postProcessStages && scene.postProcessStages.fxaa) scene.postProcessStages.fxaa.enabled = false;
   globe.maximumScreenSpaceError = 2.5;
-  globe.tileCacheSize = 300;
+  // bigger cache: panning back over an area reuses tiles instead of re-downloading them
+  globe.tileCacheSize = 1000;
+  globe.loadingDescendantLimit = 40;
+  // adaptive detail: sharper close in (where imagery goes to z19 and terrain/buildings
+  // matter), cheaper at regional / world scale where extra tiles just cost time
+  const adaptDetail = () => {
+    const h = viewer.camera.positionCartographic.height;
+    const sse = h < 30e3 ? 1.33 : h < 300e3 ? 1.75 : 2.5;
+    if (globe.maximumScreenSpaceError !== sse) { globe.maximumScreenSpaceError = sse; scene.requestRender(); }
+  };
+  viewer.camera.changed.addEventListener(adaptDetail);
+  viewer.camera.moveEnd.addEventListener(adaptDetail);
   const dpr = window.devicePixelRatio || 1;
   if (dpr > 1.5) viewer.resolutionScale = Math.min(1, 1.5 / dpr);
   // look: deep night-ocean base, atmosphere on
