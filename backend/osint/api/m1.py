@@ -4,10 +4,9 @@ import asyncio
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
 
-from osint.api import history, kml, layers, live_ws
+from osint.api import history, kml, layers, live_ws, static
 from osint.api.backfill import mount_backfill
 from osint.api.events import mount_events
 from osint.api.extraction import mount_extraction
@@ -119,9 +118,9 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
 
     @app.get("/")
     def index():
-        index_file = FRONTEND / "index.html"
-        if index_file.is_file():
-            return FileResponse(index_file)
+        resp = static.index_response(FRONTEND)
+        if resp is not None:
+            return resp
         return {"service": "osint", "frontend": "not built yet", "docs": "/docs"}
 
-    app.mount("/static", StaticFiles(directory=FRONTEND, check_dir=False), name="static")
+    static.mount_static(app, FRONTEND)
