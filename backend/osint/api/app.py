@@ -15,6 +15,8 @@ from osint.runtime import Runtime
 
 
 def create_app(runtime: Runtime) -> FastAPI:
+    """``runtime`` is a Runtime (`osint run`) or an ApiRuntime (`osint api`, which also
+    reports the worker process in /health)."""
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         try:
@@ -45,14 +47,19 @@ def create_app(runtime: Runtime) -> FastAPI:
                 runtime.ingestor, "consecutive_flush_failures", 0
             ),
         }
+        out: dict = {"sources": sources, "ingestor": ingestor}
+        worker_info = getattr(runtime, "worker_info", None)
+        if worker_info is not None:  # split mode: the pipeline runs in `osint worker`
+            out["worker"] = worker = worker_info()
+            if not worker.pop("alive"):
+                return {"status": "worker_down", **out}
         if runtime.booting:
-            return {"status": "starting", "sources": sources, "ingestor": ingestor}
+            return {"status": "starting", **out}
         if runtime.boot_error:
-            return {"status": "failed", "boot_error": runtime.boot_error,
-                    "sources": sources, "ingestor": ingestor}
+            return {"status": "failed", "boot_error": runtime.boot_error, **out}
         all_down = bool(sources) and all(s["status"] == "down" for s in sources.values())
         status = "ok" if ingestor["alive"] and not all_down else "degraded"
-        return {"status": status, "sources": sources, "ingestor": ingestor}
+        return {"status": status, **out}
 
     @app.get("/metrics", response_class=PlainTextResponse)
     def metrics() -> str:

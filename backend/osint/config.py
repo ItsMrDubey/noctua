@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     allowed_hosts: str = Field(default="", alias="OSINT_ALLOWED_HOSTS")
     # when set, /api, /ws, /kml, /metrics and /docs require it (Bearer header or ?token=)
     api_token: str = Field(default="", alias="OSINT_API_TOKEN")
+    # `osint worker` publishes its state (live positions, health, job status) this often
+    state_interval_s: float = Field(default=1.0, alias="OSINT_STATE_INTERVAL_S")
 
     @property
     def allowed_host_list(self) -> list[str]:
