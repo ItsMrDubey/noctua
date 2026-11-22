@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/static/css/dock.css">
 <link rel="stylesheet" href="/static/css/webcams.css">
 <link rel="stylesheet" href="/static/css/naval.css">
+<link rel="stylesheet" href="/static/css/browser.css">
 <script>window.CESIUM_BASE_URL = "/static/vendor/cesium/";</script>
 <script src="/static/vendor/cesium/Cesium.js"></script>
 </head>
@@ -46,6 +47,7 @@
   <button class="rail-btn" data-g="imagery" title="Imagery"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
   <button class="rail-btn" data-g="weather" title="Weather &amp; lighting"><svg viewBox="0 0 20 20"><path d="M5.5 14.5h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 5.5 14.5z" /></svg></button>
   <span class="rail-fill"></span>
+  <button class="rail-btn" id="rail-dossier" title="Dossier browser (B)"><svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" /><path d="M2.5 7h15M9 7v9.5" /></svg></button>
   <button id="rail-toggle" class="rail-btn" title="Collapse layer panel ( [ )"><svg viewBox="0 0 20 20"><path d="M12.5 5l-5 5 5 5" /></svg></button>
 </nav>
 
@@ -152,6 +154,7 @@
       <button id="d-follow" title="Keep the camera on this track">Follow</button>
       <button id="d-trail" title="Show / hide the 6 h trail">Trail</button>
       <button id="d-pin" title="Pin to the top of the track list">Pin</button>
+      <button id="d-intel" title="Open a dossier: Wikidata, photos, sources, nearby (I)">Intel</button>
     </div>
   </aside>
 

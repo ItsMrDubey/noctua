@@ -8,6 +8,7 @@ from fastapi.responses import Response
 
 from osint.api import history, kml, layers, live_ws, static
 from osint.api.backfill import mount_backfill
+from osint.api.browse import mount_browse
 from osint.api.events import mount_events
 from osint.api.extraction import mount_extraction
 from osint.api.imagery import mount_imagery
@@ -114,6 +115,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_extraction(app, runtime)
     mount_webcams(app)
     mount_weather(app)
+    mount_browse(app, alterlab_key=runtime.settings.alterlab_api_key or "")
     mount_backfill(app, runtime)
     __import__("osint.api.naval", fromlist=["mount_naval"]).mount_naval(app, runtime)
     __import__("osint.api.benchmark", fromlist=["mount_benchmark"]).mount_benchmark(app, runtime)

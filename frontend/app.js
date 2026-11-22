@@ -29,6 +29,7 @@ import { CarrierLayer } from "/static/js/naval.js";
 import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 import { Weather, setCinematic, sunTime } from "/static/js/weather.js";
+import { Dossier } from "/static/js/browser.js";
 
 const errors = {};
 let lastStatus = null;
@@ -658,6 +659,36 @@ async function main() {
     if (selected && isTrack(selected.kind)) { refreshSelected(); trailSelected(false); }
   });
 
+  // ---- Dossier (in-app browser) ----
+  const dossier = new Dossier({ flyTo });
+  // build the best dossier for the current selection
+  async function intel() {
+    const open = (spec) => dossier.open(spec);
+    if (refSel) {
+      const it = refSel.item || {}, k = refSel.kind;
+      if (it.wikidata && /^Q\d+$/.test(it.wikidata)) return open({ type: "entity", qid: it.wikidata });
+      if (/airport/.test(k) && (it.icao || it.ident)) return open({ type: "resolve", icao: it.icao || it.ident, q: it.name, lat: it.lat, lon: it.lon, label: it.name });
+      if (it.name && it.lat != null) return open({ type: "resolve", q: it.name, lat: it.lat, lon: it.lon, label: it.name });
+      if (it.lat != null) return open({ type: "nearby", lat: it.lat, lon: it.lon, label: it.name || "" });
+      return;
+    }
+    if (!selected) { dossier.toggle(); return; }
+    const it = byKind[selected.kind] && byKind[selected.kind].items.get(selected.id);
+    if (!it) return;
+    if (selected.kind === "events") {
+      const d = detail && detail.id === selected.id ? detail : await fetchJson("/api/events/" + encodeURIComponent(selected.id), 8000).catch(() => null);
+      const urls = ((d && d.documents) || []).map((x) => x.url).filter((u) => /^https?:\/\//.test(u || ""));
+      for (const u of [...new Set(urls)].slice(0, 3)) dossier.openUrl(u, { focus: false });
+      if (it.lat != null && it.precision !== "country") open({ type: "nearby", lat: it.lat, lon: it.lon, label: it.place_name || it.title || "" });
+      return;
+    }
+    if (selected.kind === "ships" && it.name) return open({ type: "resolve", q: it.name, label: it.name });
+    if (it.operator) open({ type: "resolve", q: it.operator, label: it.operator });
+    if (it.lat != null) open({ type: "nearby", lat: it.lat, lon: it.lon, label: it.name || it.id });
+  }
+  $("d-intel").addEventListener("click", () => intel().catch((e) => console.warn("intel", e)));
+  $("rail-dossier").addEventListener("click", () => dossier.toggle());
+
   // ---- Keyboard ----
   const ctx = { viewer, scene, air, ships, byKind, refLayers, nuclear, moves, tree, timeline, hud, fps, mods, models, leaders, histLayer, showWebcam, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
   document.addEventListener("keydown", (e) => {
@@ -669,6 +700,8 @@ async function main() {
     else if (e.key === "f" || e.key === "F") fps.toggle();
     else if (e.key === "h" || e.key === "H") hud.home();
     else if (e.key === "t" || e.key === "T") hud.toggleTilt();
+    else if (e.key === "i" || e.key === "I") intel().catch((err) => console.warn("intel", err));
+    else if (e.key === "b" || e.key === "B") dossier.toggle();
     else if (e.key === "[") tree.toggleCollapsed();
     else if (e.key === "l" || e.key === "L") timeline.goLive();
     else if (e.key === " " && e.target === document.body) { e.preventDefault(); timeline.togglePlay(); }
@@ -695,6 +728,7 @@ async function main() {
   const prevAir = air.onChange;
   air.onChange = () => { prevAir && prevAir(); clearTimeout(haloT); haloT = setTimeout(() => reticle.syncHalos(air), 300); };
   ctx.tracklist = tracklist;
+  ctx.dossier = dossier;
   ctx.palette = new Palette(ctx);
   window.__osint = ctx;
   return ctx;
