@@ -198,7 +198,9 @@ def connect(path: Path | str, *, read_only: bool = False,
 
 
 class SqliteStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, migrate: bool = True) -> None:
+        """``migrate=False`` (the API process) skips the data-healing UPDATEs, which the
+        worker owns; schema creation and the one-time column add still run (idempotent)."""
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self._lock = threading.Lock()
@@ -210,10 +212,14 @@ class SqliteStore:
         self._db.executescript(EVENTS_SCHEMA)
         self._db.executescript(CORROBORATION_SCHEMA)
         self._db.executescript(VERIFICATION_SCHEMA)
-        self._migrate_origin()
+        self._migrate_origin(heal=migrate)
 
-    def _migrate_origin(self) -> None:
+    def _migrate_origin(self, heal: bool = True) -> None:
         """Add/backfill ``events.origin`` (idempotent; cheap on later starts)."""
+        with self._lock:
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(events)")}
+        if "origin" in cols and not heal:
+            return
         with self._lock, self._db:
             cols = {r[1] for r in self._db.execute("PRAGMA table_info(events)")}
             if "origin" not in cols:
