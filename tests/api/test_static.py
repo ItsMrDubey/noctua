@@ -1,4 +1,6 @@
 import gzip
+import os
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -20,6 +22,9 @@ def fe(tmp_path):
     (fe / "dist" / "assets" / "app-abc.js.gz").write_bytes(gzip.compress(body))
     (fe / "vendor" / "big.js").write_bytes(body)
     (fe / "js" / "x.js").write_text("export const a = 1;")
+    future = time.time() + 3600  # build newer than every source file
+    os.utime(fe / "dist" / "index.html", (future, future))
+    static._checked.clear()
     return fe
 
 
@@ -88,3 +93,28 @@ def test_cache_policy(client):
 def test_api_json_gzipped(client):
     r = client.get("/api/big", headers={"Accept-Encoding": "gzip"})
     assert r.headers["content-encoding"] == "gzip" and r.json()["x"] == "y" * 5000
+
+
+def test_stale_build_is_rebuilt_or_falls_back(tmp_path, monkeypatch):
+    from tests.frontend.test_build import BASIC, _fe
+    from osint.frontend_build import build
+
+    fe = _fe(tmp_path, BASIC)
+    build(fe)
+    static._checked.clear()
+    assert static.index_path(fe) == fe / "dist" / "index.html"
+    old_js = next((fe / "dist" / "assets").glob("app-*.js")).name
+    later = time.time() + 10
+    (fe / "js" / "m.js").write_text(
+        "export const K = 8;\nexport function add(a, b) { return a - b; }\n")
+    os.utime(fe / "js" / "m.js", (later, later))
+    static._checked.clear()
+    assert static.index_path(fe) == fe / "dist" / "index.html"
+    new_js = next((fe / "dist" / "assets").glob("app-*.js")).name
+    assert new_js != old_js and "K = 8" in (fe / "dist" / "assets" / new_js).read_text()
+    # a source edit that breaks the build serves the source tree instead of a stale bundle
+    (fe / "app.js").write_text("export default 1;\n")
+    later += 10
+    os.utime(fe / "app.js", (later, later))
+    static._checked.clear()
+    assert static.index_path(fe) == fe / "index.html"

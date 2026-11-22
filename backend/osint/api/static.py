@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import os
 import stat
+import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,6 +26,8 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
+
+log = logging.getLogger(__name__)
 
 # Windows takes MIME types from the registry, which can map .js to text/plain; module
 # scripts are rejected unless served as JavaScript
@@ -45,10 +50,44 @@ def cache_control(path: str) -> str:
     return REVALIDATE
 
 
-def index_path(frontend: Path) -> Path:
+_build_lock = threading.Lock()
+_checked: dict[Path, float] = {}
+CHECK_INTERVAL_S = 2.0
+
+
+def _newest_source(frontend: Path) -> float:
+    files = [frontend / "index.html", frontend / "app.js",
+             *(frontend / "js").rglob("*.js"), *(frontend / "css").glob("*.css")]
+    return max((f.stat().st_mtime for f in files if f.is_file()), default=0.0)
+
+
+def ensure_fresh(frontend: Path) -> bool:
+    """True if ``frontend/dist`` is usable. Rebuilds it when a source file is newer
+    (checked at most every CHECK_INTERVAL_S); a failed build falls back to the source."""
     built = frontend / "dist" / "index.html"
-    if os.environ.get("OSINT_FRONTEND", "").lower() != "src" and built.is_file():
-        return built
+    if not built.is_file():
+        return False
+    now = time.monotonic()
+    if now - _checked.get(frontend, -1e9) < CHECK_INTERVAL_S:
+        return True
+    with _build_lock:
+        _checked[frontend] = now
+        try:
+            if _newest_source(frontend) <= built.stat().st_mtime:
+                return True
+            from osint.frontend_build import build
+
+            log.info("frontend source changed; rebuilding bundle: %s", build(frontend)["js"])
+            return True
+        except Exception:
+            log.exception("frontend rebuild failed; serving the source tree")
+            _checked.pop(frontend, None)
+            return False
+
+
+def index_path(frontend: Path) -> Path:
+    if os.environ.get("OSINT_FRONTEND", "").lower() != "src" and ensure_fresh(frontend):
+        return frontend / "dist" / "index.html"
     return frontend / "index.html"
 
 
