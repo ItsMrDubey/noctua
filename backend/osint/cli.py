@@ -1,4 +1,5 @@
-"""Command line entry point: `osint run`, `osint backfill <source>`."""
+"""Command line entry point: `osint run` (single process), `osint worker` + `osint api`
+(split; `osint supervise` runs both), `osint backfill <source>`."""
 
 import argparse
 import faulthandler
@@ -71,46 +72,130 @@ def describe_exit(code: int) -> str:
     return f"exit code {code}"
 
 
-def supervise(cmd: list[str], log_path: Path, *, max_restarts: int = 5, window_s: float = 600,
-              base_backoff_s: float = 2.0, max_backoff_s: float = 60.0,
-              sleep=time.sleep, clock=time.monotonic, spawn=subprocess.Popen) -> int:
-    """Run ``cmd`` as a child; restart it after a crash with exponential backoff, giving up after
-    ``max_restarts`` restarts within ``window_s`` seconds. Exit code 0 (clean stop) is not restarted."""
+class _Supervised:
+    """One child's restart state: exponential backoff, giving up after ``max_restarts``
+    restarts within ``window_s`` seconds."""
+
+    def __init__(self, name: str, cmd: list[str]) -> None:
+        self.name, self.cmd = name, cmd
+        self.proc = None
+        self.started = 0.0
+        self.restart_at = 0.0
+        self.restarts: deque[float] = deque()
+        self.attempt = 0
+        self.done = False
+        self.gave_up = False
+
+
+def supervise_many(children: dict[str, list[str]], log_path: Path, *, max_restarts: int = 5,
+                   window_s: float = 600, base_backoff_s: float = 2.0,
+                   max_backoff_s: float = 60.0, poll_s: float = 0.5, stop_grace_s: float = 15.0,
+                   sleep=time.sleep, clock=time.monotonic, spawn=subprocess.Popen) -> int:
+    """Run each ``{name: cmd}`` as a child process, restarting each independently after a
+    crash with exponential backoff; a child giving up (``max_restarts`` restarts within
+    ``window_s``) or exiting 0 (clean stop) is not restarted. Returns once no child is left
+    (1 if any gave up). Ctrl+C stops every child. Log lines are prefixed ``[name]``."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def note(msg: str) -> None:
-        line = f"{_stamp()} {msg}"
+    def note(name: str, msg: str) -> None:
+        line = f"{_stamp()} [{name}] {msg}"
         print(line, flush=True)
         with log_path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
 
-    restarts: deque[float] = deque()
-    attempt = 0
-    while True:
-        started = clock()
-        child = spawn(cmd)
-        note(f"started pid={child.pid}: {' '.join(cmd)}")
-        try:
-            code = child.wait()
-        except KeyboardInterrupt:
-            child.terminate()
-            code = child.wait()
-            note(f"interrupted; child stopped ({describe_exit(code)})")
-            return 0
-        note(f"child pid={child.pid} exited: {describe_exit(code)} after {clock() - started:.0f}s")
+    kids = [_Supervised(name, cmd) for name, cmd in children.items()]
+
+    def exited(k: _Supervised, code: int) -> None:
+        note(k.name, f"child pid={k.proc.pid} exited: {describe_exit(code)} "
+                     f"after {clock() - k.started:.0f}s")
+        k.proc = None
         if code == 0:
-            return 0
+            k.done = True
+            return
         now = clock()
-        while restarts and now - restarts[0] > window_s:
-            restarts.popleft()
-        if len(restarts) >= max_restarts:
-            note(f"giving up: {max_restarts} restarts within {window_s:.0f}s")
-            return 1
-        restarts.append(now)
-        attempt = attempt + 1 if now - started < window_s else 1
-        delay = min(max_backoff_s, base_backoff_s * 2 ** (attempt - 1))
-        note(f"restart {len(restarts)}/{max_restarts} in {delay:.0f}s")
-        sleep(delay)
+        while k.restarts and now - k.restarts[0] > window_s:
+            k.restarts.popleft()
+        if len(k.restarts) >= max_restarts:
+            note(k.name, f"giving up: {max_restarts} restarts within {window_s:.0f}s")
+            k.done = k.gave_up = True
+            return
+        k.restarts.append(now)
+        k.attempt = k.attempt + 1 if now - k.started < window_s else 1
+        delay = min(max_backoff_s, base_backoff_s * 2 ** (k.attempt - 1))
+        note(k.name, f"restart {len(k.restarts)}/{max_restarts} in {delay:.0f}s")
+        k.restart_at = now + delay
+
+    try:
+        while True:
+            for k in kids:
+                if k.done:
+                    continue
+                if k.proc is None:
+                    if clock() >= k.restart_at:
+                        k.started = clock()
+                        k.proc = spawn(k.cmd)
+                        note(k.name, f"started pid={k.proc.pid}: {' '.join(k.cmd)}")
+                    continue
+                code = k.proc.poll()
+                if code is not None:
+                    exited(k, code)
+            if all(k.done for k in kids):
+                return 1 if any(k.gave_up for k in kids) else 0
+            sleep(poll_s)
+    except KeyboardInterrupt:
+        # a console Ctrl+C reaches the children too: give them time to shut down cleanly
+        for k in kids:
+            if k.proc is None:
+                continue
+            try:
+                code = k.proc.wait(timeout=stop_grace_s)
+            except subprocess.TimeoutExpired:
+                k.proc.terminate()
+                code = k.proc.wait()
+            note(k.name, f"interrupted; child stopped ({describe_exit(code)})")
+        return 0
+
+
+def supervise(cmd: list[str], log_path: Path, **kwargs) -> int:
+    """Supervise the single-process ``cmd`` (see supervise_many)."""
+    return supervise_many({"run": cmd}, log_path, **kwargs)
+
+
+def _child_cmd(sub: str) -> list[str]:
+    return [sys.executable, "-c", f"from osint.cli import main; main([{sub!r}])"]
+
+
+def run_worker(settings: Settings) -> None:
+    """Collectors, ingest and every pipeline job, no HTTP server; publishes its state for
+    `osint api` every ``settings.state_interval_s`` seconds."""
+    import asyncio
+
+    from osint.state import StatePublisher, state_path
+
+    log = logging.getLogger("osint.worker")
+
+    async def main() -> None:
+        collectors = build_collectors(load_sources(settings.config_dir))
+        runtime = Runtime(settings, collectors)
+        publisher = StatePublisher(runtime, state_path(settings.data_dir),
+                                   settings.state_interval_s)
+        task = None
+        try:
+            await runtime.start()
+            task = asyncio.create_task(publisher.run(), name="state_publisher")
+            log.info("worker running; state -> %s", publisher.path)
+            await asyncio.Event().wait()  # until Ctrl+C cancels us
+        finally:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            await runtime.stop()
+            log.info("worker stopped")
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
 
 
 def check_bind(settings: Settings) -> None:
@@ -157,8 +242,13 @@ def run_backfill(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="osint")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("run", help="run collectors and the API server")
-    sub.add_parser("supervise", help="run `osint run` as a child process; restart it with backoff after a crash")
+    sub.add_parser("run", help="run collectors, pipeline and the API server in one process")
+    sub.add_parser("worker", help="run collectors and the pipeline (no HTTP); publishes state")
+    sub.add_parser("api", help="serve the HTTP API from the stores and the worker's state")
+    sp = sub.add_parser("supervise", help="run `osint worker` and `osint api` as child "
+                        "processes; restart each with backoff after a crash")
+    sp.add_argument("--single", action="store_true",
+                    help="supervise the single-process `osint run` instead")
     add_backfill_parser(sub)
     args = parser.parse_args(argv)
 
@@ -168,14 +258,26 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.cmd == "supervise":
         settings = Settings()
-        cmd = [sys.executable, "-c", "from osint.cli import main; main(['run'])"]
-        raise SystemExit(supervise(cmd, settings.data_dir / "supervisor.log"))
+        log_path = settings.data_dir / "supervisor.log"
+        if args.single:
+            raise SystemExit(supervise(_child_cmd("run"), log_path))
+        raise SystemExit(supervise_many(
+            {"worker": _child_cmd("worker"), "api": _child_cmd("api")}, log_path))
 
-    if args.cmd == "run":
-        configure_logging()
-        settings = Settings()
-        install_crash_handlers(settings.data_dir)
-        check_bind(settings)
+    configure_logging()
+    settings = Settings()
+    install_crash_handlers(settings.data_dir)
+
+    if args.cmd == "worker":
+        run_worker(settings)
+        return
+
+    check_bind(settings)
+    if args.cmd == "api":
+        from osint.apiruntime import ApiRuntime
+
+        app = create_app(ApiRuntime(settings))
+    else:
         collectors = build_collectors(load_sources(settings.config_dir))
         app = create_app(Runtime(settings, collectors))
-        uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
+    uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
