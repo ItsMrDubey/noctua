@@ -49,7 +49,50 @@ export function setupHud(viewer) {
     setTimeout(() => viewer.setContinuous("morph", false), 1200);
   };
   modeBtn.addEventListener("click", toggleMode);
-  return { home, toggleMode };
+
+  // 2.5D: oblique "Google Earth" view around the point under the screen centre, with 3D
+  // buildings. Toggling again returns to a top-down view of the same point.
+  const tiltBtn = $("hud-tilt");
+  let onEnter25 = () => {};
+  const centerTarget = () => {
+    const c = new C.Cartesian2(scene.canvas.clientWidth / 2, scene.canvas.clientHeight / 2);
+    const ray = cam.getPickRay(c);
+    return (ray && scene.globe.pick(ray, scene)) || cam.pickEllipsoid(c, scene.globe.ellipsoid);
+  };
+  const is25 = () => scene.mode === C.SceneMode.SCENE3D && cam.pitch > C.Math.toRadians(-70);
+  const syncTilt = () => { if (tiltBtn) tiltBtn.classList.toggle("on", is25()); };
+  cam.moveEnd.addEventListener(syncTilt);
+  const flyAround = (target, pitchDeg, range) => {
+    const sphere = new C.BoundingSphere(target, 1);
+    viewer.setContinuous("tilt", true);
+    cam.flyToBoundingSphere(sphere, {
+      offset: new C.HeadingPitchRange(cam.heading, C.Math.toRadians(pitchDeg), range),
+      duration: 1.6,
+      complete: () => { viewer.setContinuous("tilt", false); syncTilt(); },
+      cancel: () => viewer.setContinuous("tilt", false),
+    });
+  };
+  const toggleTilt = () => {
+    if (scene.mode !== C.SceneMode.SCENE3D) { // buildings and oblique views need the 3D globe
+      scene.morphTo3D(0.6);
+      modeBtn.textContent = "2D";
+      setTimeout(toggleTilt, 800);
+      return;
+    }
+    const target = centerTarget();
+    if (!target) return; // looking at space
+    const eye = cam.positionCartographic.height;
+    if (is25()) {
+      flyAround(target, -90, Math.min(Math.max(eye * 2, 3000), 2e7));
+    } else {
+      onEnter25();
+      // from high up drop to city scale; close in keep the range so the framing holds
+      const range = eye > 20e3 ? 2200 : Math.max(eye * 1.4, 400);
+      flyAround(target, -32, range);
+    }
+  };
+  if (tiltBtn) tiltBtn.addEventListener("click", toggleTilt);
+  return { home, toggleMode, toggleTilt, set onEnter25(fn) { onEnter25 = fn; } };
 }
 
 // FPS meter: main-thread frames (rAF), scene renders/s, worst render time over the last second.

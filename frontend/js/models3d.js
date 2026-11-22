@@ -517,7 +517,17 @@ export async function enableIonExtras(viewer, token, opts = {}) {
   } catch (err) { console.warn("models3d: world terrain unavailable", err); }
   try {
     const ts = await C.createOsmBuildingsAsync({ maximumScreenSpaceError: 16 });
-    ts.style = new C.Cesium3DTileStyle({ color: "color('#9aa3ad', 0.9)" });
+    // height-tinted: low-rise slate, mid-rise steel, towers in the accent cyan (reads well
+    // in the oblique 2.5D view)
+    const h = "Number(${feature['cesium#estimatedHeight']})"; // NaN (no height) compares false
+    ts.style = new C.Cesium3DTileStyle({
+      color: { conditions: [
+        [`${h} >= 150`, "color('#5ee3ea')"],
+        [`${h} >= 60`, "color('#8fb8c9')"],
+        [`${h} >= 20`, "color('#a3adb8')"],
+        ["true", "color('#7d8792')"],
+      ] },
+    });
     scene.primitives.add(ts);
     handle.tileset = ts;
     // buildings are only legible close in; skip traversal entirely from high up

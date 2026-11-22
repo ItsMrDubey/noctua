@@ -94,6 +94,11 @@ async function main() {
     }
     toggleBuildings(ion, box.checked);
   });
+  // entering 2.5D switches the buildings on (once; the user can still turn them off)
+  hud.onEnter25 = () => {
+    const box = $("t-buildings");
+    if (!box.checked) { box.checked = true; box.dispatchEvent(new Event("change")); }
+  };
 
   const applyFilters = () => {
     air.filter = (it) => !$("t-aircraft-hp").checked || !!(it && it.high_priority);
@@ -595,6 +600,7 @@ async function main() {
     else if (e.key === "Escape") clearSelection();
     else if (e.key === "f" || e.key === "F") fps.toggle();
     else if (e.key === "h" || e.key === "H") hud.home();
+    else if (e.key === "t" || e.key === "T") hud.toggleTilt();
     else if (e.key === "[") tree.toggleCollapsed();
     else if (e.key === "l" || e.key === "L") timeline.goLive();
     else if (e.key === " " && e.target === document.body) { e.preventDefault(); timeline.togglePlay(); }
