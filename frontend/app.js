@@ -144,7 +144,6 @@ async function main() {
   let selected = null, following = false, detail = null, trailOn = true, refSel = null;
   const pins = new Set(JSON.parse(localStorage.getItem("noctua.pins") || "[]"));
   const savePins = () => localStorage.setItem("noctua.pins", JSON.stringify([...pins]));
-  const tracker = viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(0, 0, 0) });
   const isTrack = (k) => k === "aircraft" || k === "ships";
   const fx = { setTarget() {} }; // replaced by the selection reticle when available
   const buttons = () => {
@@ -152,12 +151,66 @@ async function main() {
     inspector.setButtons({ follow: t, following, trail: t, trailOn, pin: t, pinned: t && pins.has(selected.id) });
   };
 
+  // Follow camera. Every rendered frame (preRender, the same instant the 3D models are placed)
+  // it re-anchors the camera's reference frame on the track's smoothed, dead-reckoned position
+  // and keeps the camera's local offset, so the user can still orbit / zoom around the target
+  // (what Cesium's EntityView does, but in lockstep with the model; viewer.trackedEntity never
+  // engaged for a graphics-less entity and moved only on data refreshes).
+  const follow = { unPre: null, flight: false, enu: new Cesium.Matrix4(), local: new Cesium.Cartesian3(), pos: new Cesium.Cartesian3() };
+  const followTarget = (result) => {
+    if (!selected) return null;
+    const p = models.positionOf(selected.kind, selected.id, result) || byKind[selected.kind].positionOf(selected.id);
+    return p ? Cesium.Cartesian3.clone(p, result) : null;
+  };
+  function lockFollow() {
+    const cam = viewer.camera;
+    follow.flight = false;
+    if (!following || follow.unPre) return;
+    const p = followTarget(follow.pos);
+    if (!p) { setFollow(false); return; }
+    // enter the target's local frame keeping the current camera pose
+    Cesium.Transforms.eastNorthUpToFixedFrame(p, undefined, follow.enu);
+    const inv = Cesium.Matrix4.inverseTransformation(follow.enu, new Cesium.Matrix4());
+    const localPos = Cesium.Matrix4.multiplyByPoint(inv, cam.positionWC, new Cesium.Cartesian3());
+    cam.lookAtTransform(follow.enu, localPos);
+    follow.unPre = viewer.scene.preRender.addEventListener(() => {
+      const t = followTarget(follow.pos);
+      if (!t) return; // track gone for now: hold the last frame
+      Cesium.Cartesian3.clone(cam.position, follow.local); // offset in the previous local frame
+      Cesium.Transforms.eastNorthUpToFixedFrame(t, undefined, follow.enu);
+      cam.lookAtTransform(follow.enu, follow.local);
+    });
+  }
+  function unlockFollow() {
+    if (follow.unPre) { follow.unPre(); follow.unPre = null; }
+    if (follow.flight) { viewer.camera.cancelFlight(); follow.flight = false; }
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  }
   function setFollow(on) {
-    following = !!(on && selected);
-    if (following) {
-      const p = byKind[selected.kind].positionOf(selected.id);
-      if (p) { tracker.position = p.clone(); viewer.trackedEntity = tracker; }
-    } else viewer.trackedEntity = undefined;
+    const was = following;
+    following = !!(on && selected && isTrack(selected.kind));
+    if (was && !following) unlockFollow();
+    if (following && !was) {
+      const st = models.kinematics.get(selected.kind, selected.id);
+      const FLY_S = 1.4;
+      // fly to where the track will be when the flight lands, then lock on
+      const s = st && models.kinematics.predict(st, Date.now() + FLY_S * 1000);
+      const dest = s ? Cesium.Cartesian3.fromDegrees(s.lon, s.lat, s.altM) : followTarget(new Cesium.Cartesian3());
+      if (!dest) following = false;
+      else {
+        const ship = selected.kind === "ships";
+        const range = Math.min(viewer.camera.positionCartographic.height * 0.6, ship ? 1800 : 3200);
+        follow.flight = true;
+        viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(dest, ship ? 60 : 40), {
+          offset: new Cesium.HeadingPitchRange(viewer.camera.heading, Cesium.Math.toRadians(ship ? -28 : -18), Math.max(range, ship ? 600 : 900)),
+          duration: FLY_S,
+          complete: lockFollow,
+          cancel: () => { follow.flight = false; if (following) setFollow(false); },
+        });
+      }
+    }
+    models.setPinned(following ? selected.kind : null, following ? selected.id : null);
+    models.setFrameSync(following);
     viewer.setContinuous("follow", following);
     buttons();
   }
@@ -169,10 +222,6 @@ async function main() {
     if (isTrack(selected.kind)) { inspector.track(selected.kind, it, detail && detail.id === selected.id ? detail : null); alerts.squawk(withExtra(it)); }
     else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null, hooks.nearNuclear(it));
     else inspector.observation(selected.kind, it);
-    if (following) {
-      const p = byKind[selected.kind].positionOf(selected.id);
-      if (p) tracker.position = p.clone();
-    }
   }
   async function loadDetail(kind, id) {
     detail = null;
@@ -302,9 +351,6 @@ async function main() {
       clearTimeout(tip._t); tip._t = setTimeout(() => tip.classList.add("hidden"), 5000);
     }
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-  viewer.trackedEntityChanged.addEventListener(() => {
-    if (following && !viewer.trackedEntity) { following = false; viewer.setContinuous("follow", false); buttons(); }
-  });
 
   // ---- Reference geography ----
   const refLayers = new ReferenceLayers(viewer, null);

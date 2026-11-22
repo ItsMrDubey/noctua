@@ -225,6 +225,15 @@ function eyeHeight(scene) {
   return c ? c.height : Infinity;
 }
 
+function padRect(r, f) {
+  if (!r) return r;
+  const span = r.east >= r.west ? r.east - r.west : r.east - r.west + C.Math.TWO_PI; // antimeridian
+  const w = span * f, h = (r.north - r.south) * f;
+  const south = Math.max(-C.Math.PI_OVER_TWO, r.south - h), north = Math.min(C.Math.PI_OVER_TWO, r.north + h);
+  if (span + 2 * w >= C.Math.TWO_PI) return new C.Rectangle(-C.Math.PI, south, C.Math.PI, north);
+  return new C.Rectangle(C.Math.negativePiToPi(r.west - w), south, C.Math.negativePiToPi(r.east + w), north);
+}
+
 export class Models3D {
   /**
    * @param viewer Cesium.Viewer
@@ -272,13 +281,46 @@ export class Models3D {
 
   active() { return this.enabled && eyeHeight(this.scene) < this.maxAlt; }
 
+  /** One timestamp per rendered frame (calls within 8 ms share it), so the follow camera
+   * (evaluated in the clock tick) and the model matrices (preRender) use the same instant. */
+  frameNow() {
+    const t = performance.now();
+    if (!(t - this._fnAt < 8)) { this._fnAt = t; this._fn = Date.now(); }
+    return this._fn;
+  }
+
+  /** Smoothed (dead-reckoned + blended) position of a track as drawn this frame. */
+  positionOf(kind, id, result) {
+    const s = this.kinematics.predict(this.kinematics.get(kind, id), this.frameNow());
+    return s ? C.Cartesian3.fromDegrees(s.lon, s.lat, s.altM, undefined, result) : null;
+  }
+
+  /** While following a track: place models on every rendered frame (not the throttled
+   * 30 fps loop), so the model and the camera move in lockstep without jitter. */
+  /** Keep one track's model regardless of the view footprint (follow target); null clears. */
+  setPinned(kind, id) { this.pinned = kind && id != null ? [kind, id] : null; this.refresh(); }
+
+  setFrameSync(on) {
+    if (on && !this._unPre) {
+      this._unPre = this.scene.preRender.addEventListener(() => {
+        if (this.active() && this.entries.size) this._place(this.frameNow());
+      });
+    } else if (!on && this._unPre) {
+      this._unPre();
+      this._unPre = null;
+      this._kick();
+    }
+  }
+
   /** Re-select the 3D set (nearest N in view) and diff models. */
   refresh() {
     if (this.getItems) { const g = this.getItems(); if (g) { this.items.aircraft = g.aircraft || []; this.items.ships = g.ships || []; } }
     const want = new Map();
     if (this.active()) {
       const cam = this.scene.camera;
-      const rect = cam.computeViewRectangle(this.scene.globe.ellipsoid);
+      // ground footprint of the view, padded: aircraft at altitude seen obliquely project
+      // outside it, and a model must not pop in/out at the frame edge
+      const rect = padRect(cam.computeViewRectangle(this.scene.globe.ellipsoid), 0.25);
       const eye = cam.positionWC;
       const cand = [];
       for (const kind of ["aircraft", "ships"]) {
@@ -291,6 +333,12 @@ export class Models3D {
       }
       cand.sort((a, b) => a[0] - b[0]);
       for (let i = 0; i < cand.length && i < this.maxModels; i++) want.set(cand[i][1] + ":" + cand[i][2].id, cand[i]);
+      // the followed track always gets its model, wherever the view footprint falls
+      if (this.pinned) {
+        const [pk, pid] = this.pinned, key = pk + ":" + pid;
+        const it = !want.has(key) && this.items[pk] && this.items[pk].find((x) => x && x.id === pid);
+        if (it) want.set(key, [0, pk, it]);
+      }
     }
     let changed = false;
     for (const [key, e] of this.entries) {
@@ -384,7 +432,7 @@ export class Models3D {
     if (this._raf || !this.active() || !this.entries.size) return;
     const step = (ts) => {
       this._raf = 0;
-      if (!this.active() || !this.entries.size) return;
+      if (!this.active() || !this.entries.size || this._unPre) return; // frame sync owns placement
       if (ts - this._last >= 33) {
         this._last = ts;
         const moving = this._place(Date.now());
