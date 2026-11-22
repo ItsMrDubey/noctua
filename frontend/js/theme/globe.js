@@ -240,7 +240,9 @@ export function setupImagery(viewer) {
   }
   const RELIEF_MAX_H = 400e3;
   function applyLighting() {
-    const dayNight = $("t-daynight").checked;
+    // cinematic lighting uses the real (or chosen) sun, like day/night shading
+    const cine = !!($("t-cinematic") && $("t-cinematic").checked);
+    const dayNight = $("t-daynight").checked || cine;
     const reliefOn = !dayNight && $("t-relief").checked && cam.positionCartographic.height < RELIEF_MAX_H;
     scene.globe.enableLighting = dayNight || reliefOn;
     scene.globe.dynamicAtmosphereLighting = dayNight;
@@ -250,6 +252,7 @@ export function setupImagery(viewer) {
     scene.requestRender();
   }
   $("t-relief").addEventListener("change", applyLighting);
+  if ($("t-cinematic")) $("t-cinematic").addEventListener("change", applyLighting);
   cam.changed.addEventListener(applyLighting);
   applyLighting();
   $("t-exag").addEventListener("change", (e) => {

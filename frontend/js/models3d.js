@@ -297,6 +297,14 @@ export class Models3D {
 
   /** While following a track: place models on every rendered frame (not the throttled
    * 30 fps loop), so the model and the camera move in lockstep without jitter. */
+  /** Cast/receive sun shadows (cinematic lighting). */
+  setShadows(on) {
+    this.shadows = !!on;
+    const mode = on ? C.ShadowMode.ENABLED : C.ShadowMode.DISABLED;
+    for (const e of this.entries.values()) if (e.model) e.model.shadows = mode;
+    this.scene.requestRender();
+  }
+
   /** Keep one track's model regardless of the view footprint (follow target); null clears. */
   setPinned(kind, id) { this.pinned = kind && id != null ? [kind, id] : null; this.refresh(); }
 
@@ -373,7 +381,7 @@ export class Models3D {
       upAxis: C.Axis.Y, forwardAxis: C.Axis.Z,
       minimumPixelSize: 28, maximumScale: 600,
       silhouetteColor: HP_SIL, silhouetteSize: hp ? 1.5 : 0,
-      shadows: C.ShadowMode.DISABLED,
+      shadows: this.shadows ? C.ShadowMode.ENABLED : C.ShadowMode.DISABLED,
       colorBlendMode: C.ColorBlendMode.MIX, colorBlendAmount: 0,
       id: { kind, id: it.id, models3d: true }, // pickable like the billboard (pick.id.kind / .id)
     }).then((model) => {

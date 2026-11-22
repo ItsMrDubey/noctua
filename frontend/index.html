@@ -44,6 +44,7 @@
   <button class="rail-btn" data-g="ref" title="Reference geography"><svg viewBox="0 0 20 20"><path d="M10 2.5l7 7.5-7 7.5-7-7.5z" /><path d="M3 10h14M10 2.5v15" /></svg></button>
   <button class="rail-btn" data-g="density" title="Density"><svg viewBox="0 0 20 20"><path d="M6 3.5l4 2.3v4.6L6 12.7 2 10.4V5.8zM14 7.3l4 2.3v4.6l-4 2.3-4-2.3V9.6z" /></svg></button>
   <button class="rail-btn" data-g="imagery" title="Imagery"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
+  <button class="rail-btn" data-g="weather" title="Weather &amp; lighting"><svg viewBox="0 0 20 20"><path d="M5.5 14.5h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 5.5 14.5z" /></svg></button>
   <span class="rail-fill"></span>
   <button id="rail-toggle" class="rail-btn" title="Collapse layer panel ( [ )"><svg viewBox="0 0 20 20"><path d="M12.5 5l-5 5 5 5" /></svg></button>
 </nav>
@@ -130,6 +131,14 @@
     <label class="row field" title="Vertical exaggeration of Cesium World Terrain">Terrain relief <select id="t-exag"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option></select></label>
     <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
     <label class="row field">GIBS date <input type="date" id="gibs-date"></label>
+  </section>
+  <section class="grp" data-g="weather">
+    <header><h3>Weather &amp; lighting</h3></header>
+    <label class="row" title="Geostationary infrared cloud tops (GOES-East/West, Himawari ABI band 13), NASA GIBS, refreshed every 10 min (~30 min latency)"><input type="checkbox" id="t-wx-ir"><span class="sw" style="--c:#e8f0f7"></span>Satellite clouds (IR)</label>
+    <label class="row" title="Precipitation radar mosaic (RainViewer), latest frame, refreshed every 10 min"><input type="checkbox" id="t-wx-radar"><span class="sw" style="--c:#4fd07a"></span>Precipitation radar</label>
+    <label class="row" title="Volumetric clouds at low / mid / high levels from current cloud cover (Open-Meteo); below 450 km eye altitude"><input type="checkbox" id="t-wx-clouds"><span class="sw" style="--c:#ffffff"></span>3D clouds <small id="wx-clouds-n"></small></label>
+    <label class="row" title="Sun lighting with soft shadows on models / buildings / terrain, and bloom. GPU heavy: turn off if the globe stutters."><input type="checkbox" id="t-cinematic"><span class="sw half" style="--c:#ffd27a"></span>Cinematic lighting <small>GPU</small></label>
+    <label class="row field" title="Sun position used for lighting and shadows">Sun <select id="t-sun"><option value="">Real time</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="golden">Golden hour</option><option value="dusk">Dusk</option></select></label>
   </section>
 </aside>
 

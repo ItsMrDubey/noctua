@@ -28,6 +28,7 @@ import { initLicences } from "/static/js/licences.js";
 import { CarrierLayer } from "/static/js/naval.js";
 import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
+import { Weather, setCinematic, sunTime } from "/static/js/weather.js";
 
 const errors = {};
 let lastStatus = null;
@@ -94,6 +95,27 @@ async function main() {
     }
     toggleBuildings(ion, box.checked);
   });
+  // ---- weather & lighting ----
+  const weather = new Weather(viewer);
+  weather.onStatus = (st) => {
+    const el = $("wx-clouds-n");
+    el.textContent = st.clouds ? String(st.clouds) : "";
+    el.closest("label").title = st.error ? "3D clouds: " + st.error : "Volumetric clouds from current cloud cover (Open-Meteo); grid " + (st.step || "-") + " deg";
+  };
+  $("t-wx-ir").addEventListener("change", (e) => weather.setIR(e.target.checked));
+  $("t-wx-radar").addEventListener("change", (e) => weather.setRadar(e.target.checked));
+  $("t-wx-clouds").addEventListener("change", (e) => weather.setClouds(e.target.checked));
+  const applyCinematic = () => {
+    const on = $("t-cinematic").checked;
+    setCinematic(viewer, on);
+    models.setShadows(on);
+    if (ion && ion.tileset) ion.tileset.shadows = on ? Cesium.ShadowMode.ENABLED : Cesium.ShadowMode.DISABLED;
+  };
+  $("t-cinematic").addEventListener("change", applyCinematic);
+  const applySun = () => sunTime(viewer, $("t-sun").value || null);
+  $("t-sun").addEventListener("change", applySun);
+  viewer.camera.moveEnd.addEventListener(() => { if ($("t-sun").value !== "") applySun(); });
+
   // entering 2.5D switches the buildings on (once; the user can still turn them off)
   hud.onEnter25 = () => {
     const box = $("t-buildings");

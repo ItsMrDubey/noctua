@@ -15,6 +15,7 @@ from osint.api.movements import mount_movements
 from osint.api.nuclear import mount_nuclear
 from osint.api.reference import mount_reference
 from osint.api.security import is_loopback
+from osint.api.weather import mount_weather
 from osint.api.webcams import mount_webcams
 from osint.config import ROOT
 from osint.runtime import Runtime
@@ -112,6 +113,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_imagery(app, runtime)
     mount_extraction(app, runtime)
     mount_webcams(app)
+    mount_weather(app)
     mount_backfill(app, runtime)
     __import__("osint.api.naval", fromlist=["mount_naval"]).mount_naval(app, runtime)
     __import__("osint.api.benchmark", fromlist=["mount_benchmark"]).mount_benchmark(app, runtime)
