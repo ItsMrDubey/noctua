@@ -58,14 +58,35 @@ function showGpuHelp(detail) {
 
 // Cesium cannot rebuild its GPU resources after a lost context, so recover by reloading
 // once the browser restores the context (or after a short delay if it never does).
+// Reloads are rate-limited: browsers (Firefox especially) block WebGL for the session after
+// repeated context losses, so a tight lose -> reload -> lose loop would end in a dead globe.
+const RELOAD_KEY = "noctua.glReloads";
+function reloadAllowed() {
+  const now = Date.now();
+  let hist = [];
+  try { hist = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || "[]"); } catch { /* ignore */ }
+  hist = hist.filter((t) => now - t < 10 * 60000);
+  if (hist.length >= 2) return false;
+  hist.push(now);
+  try { sessionStorage.setItem(RELOAD_KEY, JSON.stringify(hist)); } catch { /* ignore */ }
+  return true;
+}
+
 function watchContextLoss(viewer) {
   const canvas = viewer.scene.canvas;
+  let pending = null;
+  const recover = () => {
+    if (pending) return;
+    if (reloadAllowed()) { pending = setTimeout(() => location.reload(), 1500); return; }
+    showGpuHelp("WebGL context was lost repeatedly (GPU reset or low memory). " +
+      "Close other GPU-heavy tabs/apps, then press Retry.");
+  };
   canvas.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
-    console.warn("WebGL context lost; reloading when restored");
-    setTimeout(() => location.reload(), 5000);
+    console.warn("WebGL context lost; waiting for restore");
+    setTimeout(recover, 5000);
   }, false);
-  canvas.addEventListener("webglcontextrestored", () => location.reload(), false);
+  canvas.addEventListener("webglcontextrestored", recover, false);
 }
 
 export function createViewer(cfg) {
