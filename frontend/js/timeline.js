@@ -3,11 +3,12 @@
 // updates the command-bar pill.
 import { $ } from "/static/js/ui.js";
 import { Histogram } from "/static/js/histogram.js";
+import { fmtDateTime, utcTitle, onTzChange } from "/static/js/timefmt.js";
 
 export const RANGES = { "48h": [48 * 60, "48 h", 10], "7d": [7 * 1440, "7 d", 60], "30d": [30 * 1440, "30 d", 360], "1y": [365 * 1440, "1 y", 1440] };
 const RANGE_KEY = "noctua.tl.range";
-const pad = (n) => String(n).padStart(2, "0");
-const fmt = (d) => d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) + " " + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + "Z";
+// display zone from timefmt.js; the exact UTC instant is on the label's title
+const fmt = (d) => fmtDateTime(d, { zone: true });
 
 // onChange(dateOrNull): null = back to live, Date = replay at that time. onPlay(bool) while auto-playing.
 // onRange(spanMin) after the range selector changes.
@@ -29,6 +30,7 @@ export class Timeline {
     $("tl-play").addEventListener("click", () => this.togglePlay());
     $("tl-range").addEventListener("change", (e) => this.setRange(e.target.value));
     setInterval(() => this._labels(), 30000);
+    onTzChange(() => { this._labels(); this._render(); });
     this._labels();
     this._render();
   }
@@ -100,11 +102,13 @@ export class Timeline {
   }
   _labels() {
     $("tl-start").textContent = fmt(new Date(this._start())) + " · −" + this.label;
+    $("tl-start").title = utcTitle(this._start());
     $("tl-end").textContent = "now";
   }
   _render() {
     const ind = $("tl-mode");
     ind.textContent = this.at ? "REPLAY " + fmt(this.at) : "LIVE · real time";
+    ind.title = this.at ? utcTitle(this.at) : "";
     ind.classList.toggle("replay", !!this.at);
     $("timeline").classList.toggle("replay", !!this.at);
     $("tl-live").classList.toggle("on", !this.at);

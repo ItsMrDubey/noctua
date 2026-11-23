@@ -1,10 +1,11 @@
 // Alert center: client-side detectors (new high-priority aircraft, emergency squawks,
 // significant quakes, source outages) feeding a toast stack + the Alerts list.
 import { $, esc, REDUCED, evTitle, trPending } from "/static/js/ui.js";
+import { fmtTime, utcTitle } from "/static/js/timefmt.js";
 
 const MAX = 200, MAX_TOASTS = 4, TTL = 9000;
 const SEV = { high: "Threat", warn: "Warning", info: "Info", ok: "Restored", event: "Event" };
-const hhmm = (d) => d.toISOString().slice(11, 16);
+const hhmm = (d) => fmtTime(d);
 
 export class AlertCenter {
   constructor(onFly) {
@@ -110,7 +111,7 @@ export class AlertCenter {
 
   html() {
     if (!this.list.length) return '<div class="empty"><b>No alerts</b>New high-priority aircraft, emergency squawks, M5+ quakes, new corroborated events and source outages appear here.</div>';
-    return '<ul class="alist">' + this.list.map((a) => '<li class="sev-' + a.sev + '" data-n="' + a.n + '"><time>' + hhmm(a.at) + "</time><b>" + esc(a.title) + "</b><small>" + esc(a.sub || SEV[a.sev]) + "</small></li>").join("") + "</ul>";
+    return '<ul class="alist">' + this.list.map((a) => '<li class="sev-' + a.sev + '" data-n="' + a.n + '"><time title="' + esc(utcTitle(a.at)) + '">' + hhmm(a.at) + "</time><b>" + esc(a.title) + "</b><small>" + esc(a.sub || SEV[a.sev]) + "</small></li>").join("") + "</ul>";
   }
   pick(n) { const a = this.list.find((x) => x.n === n); if (a && a.target) this.onFly(a.target); }
 }

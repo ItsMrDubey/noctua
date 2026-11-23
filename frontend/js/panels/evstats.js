@@ -1,4 +1,5 @@
-// Top-bar scorecard: GDELT accepted / rejected (hover: breakdown by reason) + events by status, from /api/events/stats.
+// GDELT scorecard in the system-status popover: accepted / rejected (breakdown by reason) +
+// events by status, from /api/events/stats.
 import { $, esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
 
@@ -15,11 +16,15 @@ export async function refreshEventStats() {
   const st = Object.entries(s.by_status || {});
   const rate = g.acceptance_rate == null ? "–" : (g.acceptance_rate * 100).toFixed(1) + "%";
   const err = s.builder && s.builder.last_error;
-  const html = '<i class="dot ' + (err ? "degraded" : "healthy") + '"></i><span class="nm">GDELT</span><span class="sc">' + nf(acc.total) + " accepted / " + nf(rej.total) + " rejected</span>" +
-    '<div class="evs-pop" role="tooltip"><h4>GDELT scorecard<small>acceptance ' + rate + "</small></h4>" +
-    "<h5>Accepted · " + nf(acc.total) + "</h5>" + reasons(acc) + "<h5>Rejected · " + nf(rej.total) + "</h5>" + reasons(rej) +
-    "<h5>Events · " + nf(s.events) + "</h5>" + (st.length ? st.map(([k, v]) => "<div><span>" + esc(k) + "</span><b>" + nf(v) + "</b></div>").join("") : '<div class="none">none yet</div>') +
-    (err ? '<div class="err">builder: ' + esc(err) + "</div>" : "") + "</div>";
-  if (el._h !== html) { el._h = html; el.innerHTML = html; }
-  el.classList.remove("hidden");
+  const html = '<div class="sp-kv"><span><i class="dot ' + (err ? "degraded" : "healthy") + '"></i>Accepted / rejected</span><b>' + nf(acc.total) + " / " + nf(rej.total) + "</b></div>" +
+    '<div class="sp-kv"><span>Acceptance</span><b>' + rate + "</b></div>" +
+    '<details class="sp-more"><summary>Breakdown by reason · events by status</summary>' +
+    "<h6>Accepted · " + nf(acc.total) + "</h6>" + reasons(acc) + "<h6>Rejected · " + nf(rej.total) + "</h6>" + reasons(rej) +
+    "<h6>Events · " + nf(s.events) + "</h6>" + (st.length ? st.map(([k, v]) => "<div><span>" + esc(k) + "</span><b>" + nf(v) + "</b></div>").join("") : '<div class="none">none yet</div>') +
+    "</details>" + (err ? '<div class="err">builder: ' + esc(err) + "</div>" : "");
+  if (el._h !== html) {
+    const d = el.querySelector("details"), open = !!(d && d.open);
+    el._h = html; el.innerHTML = html;
+    if (open) el.querySelector("details").open = true;
+  }
 }

@@ -3,7 +3,8 @@
 // for GNSS cells, squawks, outages, radiation stations and satellites. app.js only constructs it,
 // routes picks with a `signal` id here and calls clearSelection() when another object is selected.
 import { fetchJson } from "/static/js/api.js";
-import { $, esc, nf, ago, kv } from "/static/js/ui.js";
+import { $, esc, nf, ago, agoHtml, kv } from "/static/js/ui.js";
+import { fmtDateTime, fmtTime, utcTitle } from "/static/js/timefmt.js";
 import { GnssLayer, GNSS_LEVELS } from "/static/js/signals/gnss.js";
 import { SquawkLayer, OutageLayer, RadiationLayer, AuroraLayer, OUTAGE_COLORS, SQK_COLOR, radColor } from "/static/js/signals/overlays.js";
 import { SatelliteLayer, SAT_GROUPS, footprintKm } from "/static/js/signals/satellites.js";
@@ -123,7 +124,7 @@ export class Signals {
       const d = await fetchJson("/api/signals/spaceweather", 15000);
       this.sw = d;
       const kp = (d.kp || []).slice(-24);
-      this._kpBars = kp.length ? '<div class="bars" title="Kp, last 3 days (3-hourly)">' + kp.map(([t, v]) => '<i style="height:' + Math.max(6, (v / 9) * 100) + "%;--c:" + kpColor(v) + '" title="' + new Date(t * 1000).toISOString().slice(5, 16).replace("T", " ") + " Kp " + v + '"></i>').join("") + "</div>" : "";
+      this._kpBars = kp.length ? '<div class="bars" title="Kp, last 3 days (3-hourly)">' + kp.map(([t, v]) => '<i style="height:' + Math.max(6, (v / 9) * 100) + "%;--c:" + kpColor(v) + '" title="' + esc(fmtDateTime(t * 1000, { short: true, zone: true }) + " · Kp " + v + "\n" + utcTitle(t * 1000)) + '"></i>').join("") + "</div>" : "";
       this._renderWidget();
     } catch (e) { /* keep */ }
   }
@@ -135,17 +136,26 @@ export class Signals {
     const kp = sw.kp_now ? sw.kp_now[1] : null;
     const hot = (n, txt) => (n ? '<b class="hot">' + txt + "</b>" : "<b>" + txt + "</b>");
     const lvl = q.active || g.high || r.elevated ? "down" : g.medium || o.ongoing || (sw.g_now || 0) > 0 ? "degraded" : "healthy";
-    const html = '<i class="dot ' + lvl + '"></i><span class="nm">Signals</span><span class="sc">Kp ' + (kp == null ? "–" : nf(kp, 1)) + " · GNSS " + hot(g.high, nf(g.high || 0)) + " · SQK " + hot(q.active, nf(q.active || 0)) + " · NET " + nf(o.ongoing || 0) + "</span>" +
-      '<div class="evs-pop" role="tooltip"><h4>Signals &amp; space<small>' + esc(ago(ts(s.now)).split(" (")[0]) + "</small></h4>" +
-      "<h5>GNSS interference · live</h5><div><span>Jamming cells (&gt; 10 %)</span><b>" + nf(g.high) + "</b></div><div><span>Elevated cells</span><b>" + nf(g.medium) + "</b></div><div><span>Aircraft samples / poll</span><b>" + nf(g.samples) + "</b></div>" +
-      "<h5>Emergency squawks</h5><div><span>Active now</span><b>" + nf(q.active) + "</b></div><div><span>Last 24 h</span><b>" + nf(q.day) + "</b></div>" +
-      "<h5>Internet outages (IODA)</h5><div><span>Countries · ongoing</span><b>" + nf(o.countries) + " · " + nf(o.ongoing) + "</b></div>" +
-      "<h5>Space weather</h5><div><span>Kp · G-scale</span><b>" + (kp == null ? "–" : nf(kp, 1)) + " · G" + (sw.g_now == null ? "–" : sw.g_now) + "</b></div>" +
-      "<h5>Radiation</h5><div><span>Stations · elevated</span><b>" + nf(r.stations) + " · " + nf(r.elevated) + "</b></div>" +
-      "<h5>Satellites</h5><div><span>Objects cached</span><b>" + nf(sat.objects) + "</b></div>" + "</div>";
+    const row = (k, v) => '<div class="sp-kv"><span>' + k + "</span><b>" + v + "</b></div>";
+    const html = '<div class="sp-kv sp-lead"><span><i class="dot ' + lvl + '"></i>Kp ' + (kp == null ? "–" : nf(kp, 1)) + " · GNSS " + hot(g.high, nf(g.high || 0)) + " · SQK " + hot(q.active, nf(q.active || 0)) + " · NET " + nf(o.ongoing || 0) +
+      '</span><small title="' + esc(utcTitle(ts(s.now))) + '">' + esc(ago(ts(s.now)).split(" (")[0]) + "</small></div>" +
+      "<h6>GNSS interference · live</h6>" + row("Jamming cells (&gt; 10 %)", nf(g.high)) + row("Elevated cells", nf(g.medium)) + row("Aircraft samples / poll", nf(g.samples)) +
+      "<h6>Emergency squawks</h6>" + row("Active now", nf(q.active)) + row("Last 24 h", nf(q.day)) +
+      "<h6>Internet outages (IODA)</h6>" + row("Countries · ongoing", nf(o.countries) + " · " + nf(o.ongoing)) +
+      "<h6>Space weather</h6>" + row("Kp · G-scale", (kp == null ? "–" : nf(kp, 1)) + " · G" + (sw.g_now == null ? "–" : sw.g_now)) +
+      "<h6>Radiation</h6>" + row("Stations · elevated", nf(r.stations) + " · " + nf(r.elevated)) +
+      "<h6>Satellites</h6>" + row("Objects cached", nf(sat.objects)) +
+      '<button type="button" class="ghost sp-link" data-a="sig-layers">Signals &amp; space layers →</button>';
     if (el._h !== html) { el._h = html; el.innerHTML = html; }
-    el.classList.remove("hidden");
-    if (!el._bound) { el._bound = true; el.addEventListener("click", () => { const b = document.querySelector('.rail-btn[data-g="signals"]'); if (b) b.click(); }); }
+    if (!el._bound) {
+      el._bound = true;
+      el.addEventListener("click", (e) => {
+        if (!e.target.closest('[data-a="sig-layers"]')) return;
+        const p = document.getElementById("sys-pop");
+        if (p && p._close) p._close();
+        const b = document.querySelector('.rail-btn[data-g="signals"]'); if (b) b.click();
+      });
+    }
     const dot = $("sig-rail-dot");
     if (dot) dot.className = "rail-dot" + (lvl === "down" ? " bad" : lvl === "degraded" ? " warn" : "");
     const gn = $("g-signals-n");
@@ -218,7 +228,7 @@ export class Signals {
     return ["GNSS interference · " + (this.gnss.hours === 1 ? "live 1 h" : this.gnss.hours + " h"), col,
       '<h2 class="dz-title">' + esc(nf(c.pct, 1)) + "% degraded</h2>" + '<div class="sig-gauge" style="--c:' + col + '"><i style="width:' + Math.min(100, c.pct) + '%"></i></div>' +
       kv([["Assessment", esc(label)], ["Aircraft", nf(c.n)], ["Degraded", nf(c.bad) + (c.carried ? " (+" + nf(c.carried) + " carried from elsewhere, not counted)" : "")], ["Cell (H3 r" + (m.res || 3) + ")", esc(c.h3)], ["Centre", nf(c.lat, 3) + ", " + nf(c.lon, 3)],
-        ["Watch region", esc(near ? near.name : "")], ["Updated", ago(ts(m.updated))]]) +
+        ["Watch region", esc(near ? near.name : "")], ["Updated", agoHtml(ts(m.updated))]]) +
       '<div class="sig-legend">' + Object.values(GNSS_LEVELS).map(([l, cc]) => '<span><i style="--c:' + cc + '"></i>' + esc(l) + "</span>").join("") + "</div>" +
       '<div class="row-note" style="padding-left:0">Degraded = ADS-B NIC &lt; ' + esc(th.nic_min || 7) + " or NACp &lt; " + esc(th.nacp_min || 8) + " or GPS reported lost. Jamming, not spoofing: a spoofed receiver still reports high integrity. Source: adsb.fi open data (all traffic in the watch regions).</div>"];
   }
@@ -230,18 +240,19 @@ export class Signals {
       kv([["Flight", esc(e.flight)], ["ICAO hex", esc(String(e.hex).toUpperCase())], ["Registration", esc(e.reg)], ["Type", esc([e.type, e.desc].filter(Boolean).join(" · "))],
         ["Military", e.mil ? "Yes" : "No"], ["Altitude", e.alt_ft == null ? "–" : nf(e.alt_ft) + " ft"], ["Ground speed", e.gs == null ? "–" : nf(e.gs) + " kt"],
         ["Squawk / status", esc([e.squawk, e.emergency && e.emergency !== "none" ? e.emergency : ""].filter(Boolean).join(" · "))],
-        ["First seen", ago(ts(e.first_seen))], ["Last seen", ago(ts(e.last_seen))], ["Duration", nf(dur) + " min"], ["Position", nf(e.lat, 4) + ", " + nf(e.lon, 4)]]) +
+        ["First seen", agoHtml(ts(e.first_seen))], ["Last seen", agoHtml(ts(e.last_seen))], ["Duration", nf(dur) + " min"], ["Position", nf(e.lat, 4) + ", " + nf(e.lon, 4)]]) +
       '<div class="row-note" style="padding-left:0">One entry per flight and code. 7500 is often a mis-set transponder; confirm with ATC / news before acting. Source: adsb.fi open data.</div>' +
       '<div class="dz-acts"><a href="https://globe.adsb.fi/?icao=' + encodeURIComponent(e.hex) + '" target="_blank" rel="noopener noreferrer">Open on globe.adsb.fi</a></div>'];
   }
   _outageHtml(c) {
     const col = OUTAGE_COLORS[c.level] || OUTAGE_COLORS.low;
     const evs = (this.outages.events || []).filter((e) => e.cc === c.cc).sort((a, b) => b.until - a.until);
-    const span = (e) => new Date(e.from * 1000).toISOString().slice(5, 16).replace("T", " ") + " → " + (e.ongoing ? "now" : new Date(e.until * 1000).toISOString().slice(11, 16));
+    const span = (e) => fmtDateTime(e.from * 1000, { short: true }) + " → " + (e.ongoing ? "now" : fmtTime(e.until * 1000));
+    const spanUtc = (e) => utcTitle(e.from * 1000) + " → " + (e.ongoing ? "now" : utcTitle(e.until * 1000));
     return ["Internet outage · IODA", col, '<h2 class="dz-title">' + esc(c.name) + "</h2>" +
       kv([["Status", c.ongoing ? "Ongoing" : "Ended"], ["Severity", esc(c.level) + " · " + nf(c.severity, 2)], ["Datasources", esc(c.datasources.join(", "))], ["Peak score", nf(c.score)],
-        ["Window", esc(new Date(c.from * 1000).toISOString().slice(0, 16).replace("T", " ")) + " UTC →"]]) +
-      '<ul class="sig-list">' + evs.slice(0, 12).map((e) => "<li><span>" + esc(e.datasource) + " · " + esc(span(e)) + "</span><b>" + nf(e.score) + "</b></li>").join("") + "</ul>" +
+        ["Window", '<span title="' + esc(utcTitle(c.from * 1000)) + '">' + esc(fmtDateTime(c.from * 1000, { zone: true })) + "</span> →"]]) +
+      '<ul class="sig-list">' + evs.slice(0, 12).map((e) => '<li><span title="' + esc(spanUtc(e)) + '">' + esc(e.datasource) + " · " + esc(span(e)) + "</span><b>" + nf(e.score) + "</b></li>").join("") + "</ul>" +
       '<div class="row-note" style="padding-left:0">bgp / ping-slash24 = routing / probing loss (strong); gtr = Google traffic; merit-nt = network telescope (noisy, drawn faint).</div>' +
       '<div class="dz-acts"><a href="https://ioda.inetintel.cc.gatech.edu/country/' + encodeURIComponent(c.cc) + '" target="_blank" rel="noopener noreferrer">Open IODA dashboard</a></div>'];
   }
@@ -250,7 +261,7 @@ export class Signals {
     const col = hot ? "#ff4b55" : radColor(s.value);
     return ["Radiation · " + (s.source === "bfs" ? "BfS ODL" : "Safecast"), col, '<h2 class="dz-title">' + esc(nf(s.value, 3)) + " µSv/h</h2>" +
       kv([["Station", esc(s.name)], ["Status", esc(s.status)], ["7-day median", s.baseline == null ? "– (building)" : nf(s.baseline, 3) + " µSv/h"],
-        ["Ratio", s.baseline ? nf(s.value / s.baseline, 2) + "×" : "–"], ["Measured", ago(s.ts)], ["Country", esc(s.country)], ["Tube / CPM", esc([s.tube, s.cpm].filter((x) => x != null).join(" · "))],
+        ["Ratio", s.baseline ? nf(s.value / s.baseline, 2) + "×" : "–"], ["Measured", agoHtml(s.ts)], ["Country", esc(s.country)], ["Tube / CPM", esc([s.tube, s.cpm].filter((x) => x != null).join(" · "))],
         ["Cosmic part", s.cosmic == null ? "" : nf(s.cosmic, 3) + " µSv/h"], ["Position", nf(s.lat, 4) + ", " + nf(s.lon, 4)], ["ID", esc(s.id)]]) +
       '<div class="row-note" style="padding-left:0">Typical background 0.05–0.2 µSv/h. Rain briefly raises readings (radon progeny washout); an anomaly is judged against the station\'s own median.</div>'];
   }
@@ -265,9 +276,9 @@ export class Signals {
       kv([["NOAA scales now", "G" + (sc.G ?? "–") + " · S" + (sc.S ?? "–") + " · R" + (sc.R ?? "–")],
         ["Forecast", fc.date ? esc(fc.date) + " · G" + (fc.G ?? "–") + (fc.r_minor_prob ? " · R1-2 " + esc(fc.r_minor_prob) + "%" : "") + (fc.s_prob ? " · S1+ " + esc(fc.s_prob) + "%" : "") : ""],
         ["Solar wind", w.speed_kms == null ? "–" : nf(w.speed_kms) + " km/s"], ["IMF Bt / Bz", (w.bt_nt == null ? "–" : nf(w.bt_nt, 1)) + " / " + (w.bz_nt == null ? "–" : nf(w.bz_nt, 1)) + " nT"],
-        ["F10.7 flux", d.f107 && d.f107.flux != null ? nf(d.f107.flux) + " sfu" : ""], ["Updated", ago(ts(d.updated))]]) +
-      (fl.length ? '<section class="dz-sec"><h3>X-ray flares</h3><ul class="sig-list">' + fl.map((f) => "<li><span>" + esc(f.max ? new Date(f.max * 1000).toISOString().slice(5, 16).replace("T", " ") : "–") + "</span><b>" + esc(f.class || "?") + "</b></li>").join("") + "</ul></section>" : "") +
-      '<section class="dz-sec"><h3>SWPC alerts</h3>' + ((d.alerts || []).slice(0, 8).map((a) => '<div class="sig-msg" title="' + esc(a.product) + '"><b>' + esc(new Date(a.issued * 1000).toISOString().slice(5, 16).replace("T", " ")) + " · " + esc(a.kind) + "</b>\n" + esc(a.headline) + "</div>").join("") || '<div class="dz-empty">None</div>') + "</section>" +
+        ["F10.7 flux", d.f107 && d.f107.flux != null ? nf(d.f107.flux) + " sfu" : ""], ["Updated", agoHtml(ts(d.updated))]]) +
+      (fl.length ? '<section class="dz-sec"><h3>X-ray flares</h3><ul class="sig-list">' + fl.map((f) => '<li><span title="' + esc(f.max ? utcTitle(f.max * 1000) : "") + '">' + esc(f.max ? fmtDateTime(f.max * 1000, { short: true }) : "–") + "</span><b>" + esc(f.class || "?") + "</b></li>").join("") + "</ul></section>" : "") +
+      '<section class="dz-sec"><h3>SWPC alerts</h3>' + ((d.alerts || []).slice(0, 8).map((a) => '<div class="sig-msg" title="' + esc(a.product + "\n" + utcTitle(a.issued * 1000)) + '"><b>' + esc(fmtDateTime(a.issued * 1000, { short: true })) + " · " + esc(a.kind) + "</b>\n" + esc(a.headline) + "</div>").join("") || '<div class="dz-empty">None</div>') + "</section>" +
       '<div class="row-note" style="padding-left:0">G-scale from Kp (5 = G1 … 9 = G5). Storms degrade HF radio, GNSS accuracy and satellite drag; strong ones can also raise GNSS-interference readings.</div>';
     this._open({ name: "Space weather", lat: null, lon: null }, "Space weather · NOAA SWPC", kpColor(kp), body, false);
   }
@@ -286,7 +297,7 @@ export class Signals {
       kv([["NORAD ID", esc(it.norad)], ["Int'l designator", esc(it.intl)], ["Groups", esc(groups)],
         ["Position", inf ? nf(inf.lat, 2) + ", " + nf(inf.lon, 2) : "computing…"], ["Altitude", inf ? nf(inf.alt) + " km" : "–"], ["Speed", inf ? nf(inf.speed, 2) + " km/s" : "–"],
         ["Footprint", inf ? "radius " + nf(footprintKm(inf.alt)) + " km (≥ 10° elevation)" : "–"],
-        ["Orbit", nf(peri) + " × " + nf(apo) + " km · " + nf(r[6], 1) + "° incl."], ["Period", nf(period, 1) + " min"], ["Element set", esc(it.epoch.slice(0, 16).replace("T", " ")) + " UTC · " + nf(epochAge, 1) + " d old"]]) +
+        ["Orbit", nf(peri) + " × " + nf(apo) + " km · " + nf(r[6], 1) + "° incl."], ["Period", nf(period, 1) + " min"], ["Element set", '<span title="' + esc(utcTitle(it.epoch)) + '">' + esc(fmtDateTime(it.epoch, { zone: true })) + "</span> · " + nf(epochAge, 1) + " d old"]]) +
       '<div class="row-note" style="padding-left:0">SGP4 propagation in the browser (satellite.js) from CelesTrak GP data. Solid ring: current orbit; dashed: ground track ± half an orbit; cyan circle: coverage footprint.</div>' +
       '<div class="dz-acts"><a href="https://celestrak.org/satcat/table-satcat.php?CATNR=' + encodeURIComponent(it.norad) + '" target="_blank" rel="noopener noreferrer">CelesTrak SATCAT entry</a></div>';
     this._open({ name: it.name, lat: inf ? inf.lat : null, lon: inf ? inf.lon : null, norad: it.norad, flyAlt: inf ? inf.alt * 1000 + 2.5e6 : 2e7 }, "Satellite · " + (groups || "active"), col, body, refresh);

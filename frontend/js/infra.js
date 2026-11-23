@@ -307,9 +307,7 @@ const row = (id, sw, c, text, extra = "", sub = false, title = "") =>
 const chips = (id, map, on) => '<div id="' + id + '" class="chips">' + Object.entries(map).map(([k, [l, c]]) => '<button class="chip' + (on.has(k) ? " on" : "") + '" data-k="' + k + '" style="--c:' + c + ';cursor:pointer">' + l + "</button>").join("") + "</div>";
 
 export function mountInfraTree(layers, tree) {
-  const sec = document.createElement("section");
-  sec.className = "grp"; sec.dataset.g = "infra";
-  sec.innerHTML = '<header><h3>Infrastructure</h3><b id="g-infra-n" class="num">–</b></header>' +
+  const rows =
     row("i-cables", "ln", "#36c5ff", "Submarine cables", "", false, "TeleGeography public submarine cable map") +
     row("i-landings", "ring", "#bff3ff", "Cable landings", "", true) +
     row("i-pipelines", "ln", "#ffd24a", "Oil & gas pipelines", "", false, "OpenStreetMap transmission and submarine pipelines") +
@@ -325,17 +323,33 @@ export function mountInfraTree(layers, tree) {
     chips("i-air-chips", AIRF, layers.airTypes) +
     '<label class="row sub"><input type="checkbox" id="i-air-mil"><span class="sw sq" style="--c:#ff4d4d"></span>Military only</label>' +
     '<div class="row-note" id="i-note"></div>';
-  const after = document.querySelector('#left .grp[data-g="ref"]');
-  if (after) after.after(sec); else document.getElementById("left").appendChild(sec);
-  if (tree && tree.closed) sec.classList.toggle("closed", tree.closed.has("infra"));
-  sec.querySelector("header").addEventListener("click", () => (tree ? tree.setClosed(sec, !sec.classList.contains("closed")) : sec.classList.toggle("closed")));
-  // rail button
-  const rb = document.createElement("button");
-  rb.className = "rail-btn"; rb.dataset.g = "infra"; rb.title = "Critical infrastructure";
-  rb.innerHTML = '<svg viewBox="0 0 20 20"><path d="M2 15c3-4 5-4 8 0s5 4 8 0" /><path d="M6 3v6M14 3v6M4 6h4M12 6h4" /></svg>';
-  const refBtn = document.querySelector('.rail-btn[data-g="ref"]');
-  if (refBtn) refBtn.after(rb);
-  rb.addEventListener("click", () => tree && tree.focusGroup("infra"));
+  // the layer tree reserves a slot (#infra-slot) in its "Infrastructure & watchlists" group;
+  // without one (older markup) the module builds its own group + rail button after Reference
+  const slot = document.getElementById("infra-slot");
+  let sec;
+  if (slot) {
+    sec = slot.closest(".grp");
+    const tpl = document.createElement("template");
+    tpl.innerHTML = rows;
+    slot.replaceWith(tpl.content);
+  } else {
+    sec = document.createElement("section");
+    sec.className = "grp"; sec.dataset.g = "infra";
+    sec.innerHTML = '<header><h3>Infrastructure</h3><b id="g-infra-n" class="num">–</b></header>' + rows;
+    const after = document.querySelector('#left .grp[data-g="ref"]');
+    if (after) after.after(sec); else document.getElementById("left").appendChild(sec);
+    if (tree && tree.closed) sec.classList.toggle("closed", tree.closed.has("infra"));
+    sec.querySelector("header").addEventListener("click", () => (tree ? tree.setClosed(sec, !sec.classList.contains("closed")) : sec.classList.toggle("closed")));
+  }
+  if (!document.querySelector('.rail-btn[data-g="infra"]')) {
+    const rb = document.createElement("button");
+    rb.className = "rail-btn"; rb.dataset.g = "infra"; rb.title = "Critical infrastructure";
+    rb.innerHTML = '<svg viewBox="0 0 20 20"><path d="M2 15c3-4 5-4 8 0s5 4 8 0" /><path d="M6 3v6M14 3v6M4 6h4M12 6h4" /></svg>';
+    const refBtn = document.querySelector('.rail-btn[data-g="ref"]');
+    if (refBtn) refBtn.after(rb);
+    rb.addEventListener("click", () => tree && tree.focusGroup("infra"));
+  }
+  if (tree && tree.refresh) tree.refresh();
   // wiring
   const $i = (id) => document.getElementById(id);
   let saved = {};

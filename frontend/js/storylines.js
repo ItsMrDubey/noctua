@@ -9,7 +9,8 @@
 //                the most recent ones emphasised.
 import { esc, nf } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
-import { fmtUtc, since, localHint, distKm } from "/static/js/panels/dossier-kit.js";
+import { fmtDateTime, fmtDate, fmtTime, utcTitle } from "/static/js/timefmt.js";
+import { since, distKm } from "/static/js/panels/dossier-kit.js";
 import { ROLE, T_BASIS } from "/static/js/panels/timeline-view.js";
 
 const RANGE = { "48h": 48, "7d": 168, "30d": 720 };
@@ -20,8 +21,9 @@ export const roleChips = (roles) => Object.entries(roles || {}).sort((a, b) => O
   .map(([r, n]) => '<i class="sl-role" style="--rc:' + ((ROLE[r] || [])[1] || "var(--dim)") + '">' + esc((ROLE[r] || [r])[0]) + (n > 1 ? " ×" + n : "") + "</i>").join("");
 
 export const spanText = (s) => {
-  const a = fmtUtc(s.t_first), b = fmtUtc(s.t_last);
-  return a.slice(0, 10) === b.slice(0, 10) ? a + " → " + b.slice(11) : a.slice(5) + " → " + b.slice(5);
+  // display zone (timefmt.js); same calendar day -> "2026-11-23 09:10 → 14:02"
+  if (!s.t_first || !s.t_last) return fmtDateTime(s.t_first || s.t_last);
+  return fmtDate(s.t_first) === fmtDate(s.t_last) ? fmtDateTime(s.t_first) + " → " + fmtTime(s.t_last) : fmtDateTime(s.t_first, { short: true }) + " → " + fmtDateTime(s.t_last, { short: true });
 };
 
 // The "storyline" section of /api/intel as HTML: the thread an event belongs to (its role, the
@@ -36,7 +38,7 @@ export function storylineHtml(S, selfId) {
     return '<div class="dk-story"' + pv(m.storyline_id, m.title) + ' title="Open the storyline (Shift: new pane)"><span>PART OF STORYLINE</span><b>' + esc(m.title) + "</b>" +
       '<small><i class="sl-role" style="--rc:' + role[1] + '" title="' + esc(m.role_basis || "") + '">' + esc(role[0]) + "</i> " + esc(m.n_events + " events · " + (m.theatre_label || "") + " · " + spanText(m)) + "</small></div>" +
       '<ol class="sl-mini">' + (S.members || []).map((x) => '<li class="' + (x.event_id === selfId ? "self" : "") + '" style="--rc:' + ((ROLE[x.role] || [])[1] || "var(--dim)") + '"' +
-        (x.lat != null ? ' data-fly="' + x.lat + "," + x.lon + '"' : "") + '><time title="' + esc(T_BASIS[x.t_basis] || x.t_basis) + '">' + esc(fmtUtc(x.t).slice(5)) + "</time><i>" + esc((ROLE[x.role] || [x.role])[0]) + "</i><span>" + esc(x.title) + "</span></li>").join("") + "</ol>";
+        (x.lat != null ? ' data-fly="' + x.lat + "," + x.lon + '"' : "") + '><time title="' + esc((T_BASIS[x.t_basis] || x.t_basis) + '\n' + utcTitle(x.t)) + '">' + esc(fmtDateTime(x.t, { short: true })) + "</time><i>" + esc((ROLE[x.role] || [x.role])[0]) + "</i><span>" + esc(x.title) + "</span></li>").join("") + "</ol>";
   }
   const near = S.nearby || [];
   return near.length ? '<ul class="cx-l">' + near.map((x) => "<li" + pv(x.id, x.title) + ' title="Open the storyline"><i class="at">' + x.n_events + "</i><b>" + esc(x.title) + "</b><span>" + esc(x.theatre_label + " · " + spanText(x)) + "</span></li>").join("") + "</ul>"
@@ -101,7 +103,7 @@ export class StorylineList {
       return '<li class="sl-row" data-id="' + esc(s.id) + '" tabindex="0">' +
         '<div class="sl-t"><b>' + esc(s.title) + '</b><span class="sl-n" title="' + esc(s.n_news + " news events" + (s.n_sensor ? " + " + s.n_sensor + " sensor events" : "")) + '">' + s.n_events + "</span></div>" +
         '<div class="sl-m"><span class="sl-th">' + esc(s.theatre_label) + "</span>" + (places ? " · " + esc(places) : "") + "</div>" +
-        '<div class="sl-s"><span title="' + esc("First: " + (T_BASIS[s.t_first_basis] || s.t_first_basis) + "\n" + localHint(s.t_first, null)) + '">' + esc(spanText(s)) + "</span>" +
+        '<div class="sl-s"><span title="' + esc("First: " + (T_BASIS[s.t_first_basis] || s.t_first_basis) + "\n" + utcTitle(s.t_first) + "\nLatest: " + utcTitle(s.t_last)) + '">' + esc(spanText(s)) + "</span>" +
         '<em title="Latest member event time (reported or observed), not processing time">latest event ' + esc(since(s.t_last)) + " ago</em></div>" +
         '<div class="sl-r">' + roleChips(s.roles) + "</div></li>";
     }).join("") + "</ul>" + (lp ? '<div class="sl-foot">Linked by the worker · ' + nf(lp.events) + " events in window · last pass " + esc(since(this.job.last_run_at)) + " ago (" + nf(lp.seconds, 2) + " s)</div>" : "");

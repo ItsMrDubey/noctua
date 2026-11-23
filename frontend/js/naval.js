@@ -3,7 +3,7 @@
 // surface is one static Primitive rebuilt only when its data changes; requestRender after changes.
 // Standalone module: the controller wires it (see naval-report.md).
 import { fetchJson } from "/static/js/api.js";
-import { esc, ago, nf } from "/static/js/ui.js";
+import { esc, ago, agoHtml, nf } from "/static/js/ui.js";
 
 const C = Cesium;
 const ION = "#5ee3ea", AMBER = "#f2ad3d";
@@ -249,7 +249,7 @@ function indicatorHtml(it) {
     '<div class="nv-desc">' + esc(it.description) + "</div>" +
     '<div class="kv"><span>Weight</span><div>' + nf(it.weight, 2) + "</div><span>Position</span><div>" +
     nf(it.lat, 3) + ", " + nf(it.lon, 3) + (it.radius_km ? " (±" + nf(it.radius_km) + " km)" : "") + "</div>" +
-    "<span>Seen</span><div>" + ago(it.ts) + "</div></div>" +
+    "<span>Seen</span><div>" + agoHtml(it.ts) + "</div></div>" +
     '<div class="nv-refs">' + (it.refs || []).map(refLink).join(" ") + "</div>" + disclaimerHtml() + "</div>";
 }
 
@@ -269,7 +269,7 @@ function hypothesisHtml(h, status) {
   const ev = (h.evidence || []).map((e) => {
     const meta = KIND[e.kind] || { c: "#9fb0c0", label: e.kind };
     return '<li><i class="nv-dot" style="background:' + meta.c + '"></i><div><div class="nv-desc">' + esc(e.description) +
-      '</div><div class="nv-meta">' + esc(meta.label) + " · " + ago(e.ts) + " · " + nf(e.distance_km) + " km from centre · w " +
+      '</div><div class="nv-meta">' + esc(meta.label) + " · " + agoHtml(e.ts) + " · " + nf(e.distance_km) + " km from centre · w " +
       nf(e.weight, 2) + "</div>" + '<div class="nv-refs">' + (e.refs || []).slice(0, 3).map(refLink).join(" ") + "</div></div></li>";
   }).join("");
   const missing = status ? Object.entries(status).filter(([, s]) => s.note).map(([k, s]) =>
@@ -282,7 +282,7 @@ function hypothesisHtml(h, status) {
     '<div class="nv-bar"><b style="width:' + pct + '%"></b></div><span>' + pct + "%</span></div>" +
     '<div class="kv"><span>Centre</span><div>' + nf(h.lat, 2) + ", " + nf(h.lon, 2) + "</div>" +
     "<span>Uncertainty</span><div>± " + nf(h.radius_km) + " km</div>" +
-    "<span>First seen</span><div>" + ago(h.first_seen) + "</div><span>Updated</span><div>" + ago(h.last_updated) + "</div>" +
+    "<span>First seen</span><div>" + agoHtml(h.first_seen) + "</div><span>Updated</span><div>" + agoHtml(h.last_updated) + "</div>" +
     (hist ? "<span>History</span><div>" + hist + " pass(es)</div>" : "") + "</div>" +
     '<div class="nv-sec">Indicator breakdown</div>' + rows +
     (names ? '<div class="nv-sec">Candidate names</div><ul class="nv-names">' + names + "</ul>" : "") +

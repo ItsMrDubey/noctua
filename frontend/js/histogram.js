@@ -4,6 +4,7 @@
 // Lines: aircraft / ships in the air / at sea, sampled from /api/snapshot (lazy, sequential).
 import { $, esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
+import { fmtDate, fmtTime, fmtDateTime, tzOffset, tzLabel, utcTitle, onTzChange } from "/static/js/timefmt.js";
 
 const COL = { fires: "#ff6a1a", quakes: "#ffd24a", events: "#a99bff", hist: "#8f86c9", air: "#5ee3ea", sea: "#7fa8ff" };
 const HOUR = 3600e3, DAY = 86400e3, CHUNK_H = 168;
@@ -48,6 +49,7 @@ export function binCounts(counts, t0, binMs, n) {
 export class Histogram {
   constructor(spanMin) {
     this.cv = $("tl-hist");
+    onTzChange(() => this.draw());
     this.ctx = this.cv.getContext("2d");
     this.cursor = null; this.gen = 0; this.sgen = 0;
     this._configure(spanMin);
@@ -139,16 +141,21 @@ export class Histogram {
       const d = new Date(t0); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
       for (d.setUTCMonth(d.getUTCMonth() + 1); d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + 1)) {
         const m = d.getUTCMonth();
-        out.push([d.getTime(), m === 0 ? String(d.getUTCFullYear()) : d.toISOString().slice(5, 7), m === 0]);
+        out.push([d.getTime(), m === 0 ? String(d.getUTCFullYear()) : String(m + 1).padStart(2, "0"), m === 0]);
       }
       return out;
     }
+    // hour / day boundaries of the display zone (timefmt.js): step through wall-clock time
     const step = days <= 2 ? 6 * HOUR : DAY;
-    for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
-      const d = new Date(t), h = d.getUTCHours(), dom = d.getUTCDate();
-      if (days <= 2) out.push([t, h === 0 ? d.toISOString().slice(5, 10) : String(h).padStart(2, "0") + "Z", h === 0]);
-      else if (days <= 8) out.push([t, d.toISOString().slice(5, 10), true]);
-      else out.push([t, dom % 5 === 1 && dom < 30 ? d.toISOString().slice(5, 10) : null, dom === 1]);
+    const off0 = tzOffset(t0) * 60000;
+    for (let w = Math.ceil((t0 + off0) / step) * step; ; w += step) {
+      const t = w - tzOffset(w - off0) * 60000;
+      if (t > t1) break;
+      if (t < t0) continue;
+      const hh = fmtTime(t).slice(0, 2), dom = +fmtDate(t).slice(8, 10);
+      if (days <= 2) out.push([t, hh === "00" ? fmtDate(t, { short: true }) : hh + "h", hh === "00"]);
+      else if (days <= 8) out.push([t, fmtDate(t, { short: true }), true]);
+      else out.push([t, dom % 5 === 1 && dom < 30 ? fmtDate(t, { short: true }) : null, dom === 1]);
     }
     return out;
   }
@@ -225,7 +232,8 @@ export class Histogram {
       const t = new Date(this.t0 + i * this.binMs);
       const near = (pts) => { let b = null; for (const p of pts) if (!b || Math.abs(p.t - t) < Math.abs(b.t - t)) b = p; return b && Math.abs(b.t - t) < 0.6 * (this.spanMs / SAMPLES) ? b.n : null; };
       const a = near(this.air), s = near(this.sea);
-      const head = this.binMs === HOUR ? esc(t.toISOString().slice(5, 13).replace("T", " ")) + ":00Z</b> +1 h" : esc(t.toISOString().slice(0, 10)) + "</b> +1 d";
+      const head = this.binMs === HOUR ? esc(fmtDateTime(t, { short: true }) + " " + tzLabel(t).split(" ")[0]) + "</b> +1 h" : esc(fmtDateTime(t, { zone: true })) + "</b> +1 d";
+      tip.title = utcTitle(t);
       tip.innerHTML = "<b>" + head + "<br>" + (this.firesNA ? "" : "fires " + this.fires[i] + " · ") + "quakes " + this.quakes[i] + " · events " + this.events[i] +
         (this.hist[i] ? " · UCDP " + this.hist[i] : "") +
         (a != null ? "<br>aircraft ≈ " + a + (s != null ? " · ships ≈ " + s : "") : "");

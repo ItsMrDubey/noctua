@@ -4,7 +4,7 @@
 // matched track shows the sanction programme, risk and source link. Matching runs server-side
 // (worker job); this module only polls /api/watch/active and /api/watch/alerts.
 import { fetchJson } from "/static/js/api.js";
-import { esc, kv, ago } from "/static/js/ui.js";
+import { esc, kv, agoHtml } from "/static/js/ui.js";
 
 const C = Cesium;
 const FONT = "600 10px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
@@ -130,7 +130,7 @@ export function watchHtml(id, overlay) {
       ]) + "</section>";
   }
   if (prox) {
-    html += '<section class="dz-sec watch-hit" style="--wc:' + SEV_COLOR.warn + '"><h3>Infrastructure proximity<small>' + esc(ago(prox.ts)) + "</small></h3>" +
+    html += '<section class="dz-sec watch-hit" style="--wc:' + SEV_COLOR.warn + '"><h3>Infrastructure proximity<small>' + agoHtml(prox.ts) + "</small></h3>" +
       kv([["Alert", esc(prox.title)], ["Reason", esc(prox.sub)], ["Asset", esc(prox.detail && prox.detail.infra && prox.detail.infra.name)],
         ["Distance", prox.detail && prox.detail.km != null ? esc(prox.detail.km) + " km" : ""]]) + "</section>";
   }

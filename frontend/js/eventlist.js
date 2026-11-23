@@ -1,5 +1,6 @@
 // Right-panel EVENTS tab: virtualised list (latest report desc), filter box, click to select + fly.
 import { $, esc, evTitle, trPending, TR_TAG } from "/static/js/ui.js";
+import { fmtDateTime, utcTitle } from "/static/js/timefmt.js";
 import { uiGlyph, threatColor, eventCat, EVENT_STATUS } from "/static/js/symbology.js";
 
 const ROW_H = 42, OVERSCAN = 6;
@@ -13,6 +14,9 @@ export const relTime = (ts) => {
   const s = Math.max(0, (Date.now() - t) / 1000);
   return s < 60 ? "now" : s < 3600 ? Math.floor(s / 60) + "m" : s < 86400 ? Math.floor(s / 3600) + "h" : Math.floor(s / 86400) + "d";
 };
+// hover text: each time in the display zone (timefmt.js) + its exact UTC instant
+const evTimes = (it) => [["First report", it.t_start], ["Latest report", it.t_end], ["Processed", it.updated_at]]
+  .map(([k, t]) => k + " " + (t ? fmtDateTime(t, { zone: true }) + " (" + utcTitle(t) + ")" : "?")).join("\n");
 export const statusPill = (st) => '<span class="pill st-' + esc(String(st).replace(/[^a-z-]/g, "")) + '">' + esc(EVENT_STATUS[st] || st || "?") + "</span>";
 
 export class EventList {
@@ -73,7 +77,7 @@ export class EventList {
       const c = threatColor("events", it);
       html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + 'px;--c:' + c + '" title="' + esc(eventCat(it.category)[0]) + '">' +
         '<div class="g" style="color:' + c + '">' + uiGlyph("events", it) + '</div><div class="t">' + esc(evTitle(it) || it.id) + (trPending(it) ? " " + TR_TAG : "") + "</div>" +
-        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc("First report " + (it.t_start || "?") + "\nLatest report " + (it.t_end || "?") + "\nProcessed " + (it.updated_at || "?")) + '">' + relTime(activeAt(it)) + "</time></div></div>";
+        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc(evTimes(it)) + '">' + relTime(activeAt(it)) + "</time></div></div>";
     }
     if (html !== this._painted) { this._painted = html; this.space.innerHTML = html; }
   }

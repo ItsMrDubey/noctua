@@ -1,4 +1,4 @@
-/* Signals & space: space weather widget, command-bar pill, chips, inspector bits. */
+/* Signals & space: space weather widget, chips, inspector bits. */
 .sig-wx { margin: 2px 0 6px 21px; padding: 7px 9px; border: 1px solid var(--line); background: rgba(0, 0, 0, .22); font: 10.5px/1.35 var(--f-mono); color: var(--fg-2); }
 .sig-wx:empty { display: none; }
 .sig-wx .kp { display: flex; align-items: baseline; gap: 8px; }
@@ -12,10 +12,6 @@
 .sig-wx .ln { display: flex; justify-content: space-between; gap: 8px; }
 .sig-wx .ln b { font-weight: 500; color: var(--fg); }
 .sig-wx .al { margin-top: 4px; color: var(--amber); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sig-pill { gap: 9px; }
-.sig-pill .sc b { color: var(--fg); font-weight: 600; }
-.sig-pill .sc .hot { color: #ff8a8f; }
-.sig-pill .evs-pop { width: 290px; }
 #sat-chips .chip { cursor: pointer; }
 .sig-legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0; font: 10px var(--f-mono); color: var(--fg-2); }
 .sig-legend i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; background: var(--c); }

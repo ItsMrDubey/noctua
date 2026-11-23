@@ -33,133 +33,178 @@
     <input id="search" type="search" placeholder="Search tracks, places, layers, actions" autocomplete="off" spellcheck="false" aria-label="Search">
     <kbd>Ctrl K</kbd>
   </label>
-  <div id="sources" class="sources" aria-label="Source health"></div>
-  <div id="ev-score" class="src evs hidden" tabindex="0" aria-label="GDELT scorecard"></div>
-  <div id="sig-pill" class="src evs sig-pill hidden" tabindex="0" aria-label="Signals &amp; space status"></div>
+  <span class="cmd-fill"></span>
+  <div class="sys">
+    <button id="sys-pill" class="sys-pill" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="sys-pop" title="System status: feeds, GDELT, signals, alerts">
+      <i id="sys-dot" class="dot starting"></i><span id="sys-text" class="sys-t">Connecting…</span><b id="sys-alerts" class="sys-al" title="Unread alerts"></b>
+    </button>
+    <div id="sys-pop" class="sys-pop hidden" role="dialog" aria-label="System status" tabindex="-1">
+      <div class="sp-head"><h4>System status</h4><span id="sys-sum" class="num"></span><button id="sys-close" class="ghost" type="button" aria-label="Close system status (Esc)">&times;</button></div>
+      <section class="sp-sec">
+        <h5>Feeds<small>status · data age · rate · last error</small></h5>
+        <div id="sources" class="sources" role="list" aria-label="Source health"></div>
+      </section>
+      <section class="sp-sec sp-row">
+        <h5>Alerts</h5>
+        <button id="sys-alerts-open" class="ghost sp-link" type="button"><b id="sys-alerts-n" class="num">0</b> unread · open Alerts tab</button>
+      </section>
+      <section class="sp-sec">
+        <h5>GDELT scorecard</h5>
+        <div id="ev-score" class="sp-card" aria-label="GDELT scorecard"><div class="none">loading…</div></div>
+      </section>
+      <section class="sp-sec">
+        <h5>Signals &amp; space</h5>
+        <div id="sig-pill" class="sp-card" aria-label="Signals &amp; space status"><div class="none">loading…</div></div>
+      </section>
+    </div>
+  </div>
   <div id="mode-pill" class="mode-pill" role="status"><i></i><span id="mode-text">LIVE</span></div>
   <div class="clocks"><div id="clock" class="num">--:--:--<small>UTC</small></div><div id="clock-local" class="num">--:--<small>LCL</small></div></div>
+  <div class="cfg">
+    <button id="cfg-btn" class="cfg-btn ghost" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="cfg-pop" title="Settings: time display"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.6" /><path d="M10 1.8v2.4M10 15.8v2.4M1.8 10h2.4M15.8 10h2.4M4.2 4.2l1.7 1.7M14.1 14.1l1.7 1.7M4.2 15.8l1.7-1.7M14.1 5.9l1.7-1.7" /></svg></button>
+    <div id="cfg-pop" class="sys-pop cfg-pop hidden" role="dialog" aria-label="Settings" tabindex="-1"></div>
+  </div>
 </header>
 
 <nav id="rail" class="glass" aria-label="Layer groups">
-  <button class="rail-btn" data-g="live" title="Live tracks"><svg viewBox="0 0 20 20"><path d="M10 2.5l1.2 5.3 5.8 3.2-5.8 1-1.2 5.5-1.2-5.5-5.8-1 5.8-3.2z" /></svg><i class="rail-dot"></i></button>
-  <button class="rail-btn" data-g="events" title="Events"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.2" /><circle cx="10" cy="10" r="6" /><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3" /></svg></button>
-  <button class="rail-btn" data-g="moves" title="Military movements"><svg viewBox="0 0 20 20"><path d="M3 15c3-8 11-8 14 0" /><path d="M14.5 12.5l2.5 2.5-3.3.6" /><circle cx="3" cy="15" r="1.3" /></svg></button>
-  <button class="rail-btn" data-g="naval" title="Naval activity (hypotheses)"><svg viewBox="0 0 20 20"><path d="M3 12h14l-2.5 4h-9z" /><path d="M7 12V8h5l1.5 4" /><path d="M10 8V4" /></svg></button>
-  <button class="rail-btn" data-g="sensors" title="Public webcams"><svg viewBox="0 0 20 20"><rect x="2.5" y="6" width="10" height="8" rx="1.2" /><path d="M12.5 9l4.5-2.5v7L12.5 11" /></svg></button>
-  <button class="rail-btn" data-g="ref" title="Reference geography"><svg viewBox="0 0 20 20"><path d="M10 2.5l7 7.5-7 7.5-7-7.5z" /><path d="M3 10h14M10 2.5v15" /></svg></button>
-  <button class="rail-btn" data-g="density" title="Density"><svg viewBox="0 0 20 20"><path d="M6 3.5l4 2.3v4.6L6 12.7 2 10.4V5.8zM14 7.3l4 2.3v4.6l-4 2.3-4-2.3V9.6z" /></svg></button>
-  <button class="rail-btn" data-g="imagery" title="Imagery"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
+  <button class="rail-btn" data-g="live" title="Tracks"><svg viewBox="0 0 20 20"><path d="M10 2.5l1.2 5.3 5.8 3.2-5.8 1-1.2 5.5-1.2-5.5-5.8-1 5.8-3.2z" /></svg><i class="rail-dot"></i></button>
+  <button class="rail-btn" data-g="events" title="Events &amp; stories"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.2" /><circle cx="10" cy="10" r="6" /><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3" /></svg></button>
+  <button class="rail-btn" data-g="sensors" title="Sensors: fires, quakes, webcams"><svg viewBox="0 0 20 20"><path d="M10 2.5c3 3.2 4.5 5.8 4.5 8.2a4.5 4.5 0 0 1-9 0c0-1.6.7-3 1.8-4.3.2 1.4.9 2.3 1.9 2.6C9 7 9.3 4.6 10 2.5z" /></svg></button>
   <button class="rail-btn" data-g="signals" title="Signals &amp; space"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="1.6" /><path d="M6.2 6.2a5.4 5.4 0 0 0 0 7.6M13.8 6.2a5.4 5.4 0 0 1 0 7.6M3.6 3.6a9 9 0 0 0 0 12.8M16.4 3.6a9 9 0 0 1 0 12.8" /></svg><i class="rail-dot" id="sig-rail-dot"></i></button>
-  <button class="rail-btn" data-g="weather" title="Weather &amp; lighting"><svg viewBox="0 0 20 20"><path d="M5.5 14.5h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 5.5 14.5z" /></svg></button>
+  <button class="rail-btn" data-g="infra" title="Infrastructure &amp; watchlists"><svg viewBox="0 0 20 20"><path d="M2 15c3-4 5-4 8 0s5 4 8 0" /><path d="M6 3v6M14 3v6M4 6h4M12 6h4" /></svg></button>
+  <button class="rail-btn" data-g="analysis" title="Analysis: movements, naval, density"><svg viewBox="0 0 20 20"><path d="M3 15c3-8 11-8 14 0" /><path d="M14.5 12.5l2.5 2.5-3.3.6" /><circle cx="3" cy="15" r="1.3" /></svg></button>
+  <button class="rail-btn" data-g="ref" title="Reference geography"><svg viewBox="0 0 20 20"><path d="M10 2.5l7 7.5-7 7.5-7-7.5z" /><path d="M3 10h14M10 2.5v15" /></svg></button>
+  <button class="rail-btn" data-g="map" title="Map &amp; display: imagery, weather, lighting"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
   <span class="rail-fill"></span>
   <button class="rail-btn" id="rail-dossier" title="Dossier browser (B)"><svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" /><path d="M2.5 7h15M9 7v9.5" /></svg></button>
   <button id="rail-toggle" class="rail-btn" title="Collapse layer panel ( [ )"><svg viewBox="0 0 20 20"><path d="M12.5 5l-5 5 5 5" /></svg></button>
 </nav>
 
 <aside id="left" class="glass" aria-label="Layers">
+  <div class="lt-tools">
+    <div class="lt-find">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4L14 14" /></svg>
+      <input id="lt-filter" type="search" placeholder="Filter layers" autocomplete="off" spellcheck="false" aria-label="Filter layers">
+      <button id="lt-active" class="lt-tog" type="button" aria-pressed="false" title="Show only layers that are switched on">Active</button>
+    </div>
+    <div id="lt-presets" class="lt-presets" role="group" aria-label="Layer presets"></div>
+  </div>
+  <div id="lt-empty" class="lt-empty hidden">No layers match.</div>
+
   <section class="grp" data-g="live">
-    <header><h3>Live tracks</h3><b id="g-live-n" class="num">–</b></header>
+    <header><h3>Tracks</h3><b id="g-live-n" class="num">–</b></header>
     <label class="row"><input type="checkbox" id="t-aircraft" checked><span class="sw gl" style="--c:#9ff3ff"></span>Military aircraft<b id="c-aircraft" class="num">–</b></label>
     <label class="row sub"><input type="checkbox" id="t-aircraft-hp"><span class="sw gl" style="--c:#ff4b55"></span>High-priority only</label>
     <label class="row"><input type="checkbox" id="t-ships" checked><span class="sw hull" style="--c:#7fa8ff"></span>Ships<b id="c-ships" class="num">–</b></label>
     <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw hull" style="--c:#ff4b55"></span>Military ships only</label>
-    <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a1a"></span>Fires 24 h<b id="c-fires" class="num">–</b></label>
-    <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw ring" style="--c:#ffd24a"></span>Quakes 24 h<b id="c-quakes" class="num">–</b></label>
     <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw ln" style="--c:#9ff3ff"></span>Trails, all mil aircraft 1 h</label>
     <label class="row" title="Nearest 250 tracks in view drawn as 3D models with dead-reckoned motion"><input type="checkbox" id="t-models3d" checked><span class="sw gl" style="--c:#d3dee8"></span>3D models <small>zoom &lt; 300 km</small></label>
     <label class="row" title="Where each track will be if it keeps its course and speed"><input type="checkbox" id="t-leaders"><span class="sw ln" style="--c:#ffa040"></span>Velocity leaders</label>
     <label class="row field sub">Leader horizon <select id="t-leader-min" class="mini"><option value="1">1 min</option><option value="5" selected>5 min</option><option value="10">10 min</option></select></label>
   </section>
+
   <section class="grp" data-g="events">
-    <header><h3>Events</h3><b id="g-events-n" class="num">–</b></header>
+    <header><h3>Events &amp; stories</h3><b id="g-events-n" class="num">–</b></header>
     <label class="row"><input type="checkbox" id="t-events" checked><span class="sw ring" style="--c:#a99bff"></span>News events<b id="c-events" class="num">–</b></label>
     <div id="ev-cats" class="chips"></div>
     <div id="ev-status" class="chips"></div>
-    <label class="row field" title="Hide events below this confidence">Min confidence <input type="range" id="ev-conf" min="0" max="1" step="0.05" value="0"><output id="ev-conf-v" class="num">0.00</output></label>
+    <label class="row field sub" title="Hide events below this confidence">Min confidence <input type="range" id="ev-conf" min="0" max="1" step="0.05" value="0"><output id="ev-conf-v" class="num">0.00</output></label>
+    <label class="row" title="Storylines: threads of linked events (right panel, Stories tab)"><input type="checkbox" id="t-stories" checked><span class="sw ln" style="--c:#f2ad3d"></span>Storyline overlay</label>
     <label class="row" title="UCDP Georeferenced Event Dataset: curated, historical armed-conflict events within the timeline range"><input type="checkbox" id="t-historical"><span class="sw" style="--c:#8f86c9"></span>Historical conflict (UCDP)<b id="c-historical" class="num"></b></label>
     <div id="hist-note" class="row-note"></div>
-    <label class="row" title="Storylines: threads of linked events (right panel, Stories tab)"><input type="checkbox" id="t-stories" checked><span class="sw ln" style="--c:#f2ad3d"></span>Storyline overlay</label>
   </section>
-  <section class="grp" data-g="moves">
-    <header><h3>Movements</h3><b id="g-moves-n" class="num">–</b></header>
+
+  <section class="grp" data-g="sensors">
+    <header><h3>Sensors</h3><b id="g-sensors-n" class="num">–</b></header>
+    <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a1a"></span>Fires 24 h<b id="c-fires" class="num">–</b></label>
+    <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw ring" style="--c:#ffd24a"></span>Quakes 24 h<b id="c-quakes" class="num">–</b></label>
+    <label class="row" title="Only cameras whose operators openly publish them"><input type="checkbox" id="s-webcams"><span class="sw sq" style="--c:#5ee3ea"></span>Public webcams<b id="c-webcams" class="num"></b></label>
+    <div id="wc-chips" class="chips"></div>
+  </section>
+
+  <section class="grp" data-g="signals">
+    <header><h3>Signals &amp; space</h3><b id="g-signals-n" class="num">–</b></header>
+    <label class="row" title="Share of aircraft reporting degraded GPS navigation accuracy (ADS-B NIC / NACp, the gpsjam.org method) per H3 cell, from all traffic in the watch regions (adsb.fi). Green &lt; 2 %, yellow 2-10 %, red &gt; 10 %."><input type="checkbox" id="s-gnss"><span class="sw hexo" style="--c:#ff4b55"></span>GNSS interference<b id="c-gnss" class="num"></b></label>
+    <label class="row field sub">Window <select id="s-gnss-h" class="mini"><option value="1" selected>1 h live</option><option value="6">6 h</option><option value="24">24 h</option><option value="168">7 d</option></select></label>
+    <label class="row sub" title="Dashed circles: areas the GNSS map is computed for"><input type="checkbox" id="s-gnss-regions" checked><span class="sw ring" style="--c:#66798c"></span>Coverage areas</label>
+    <label class="row" title="Aircraft squawking 7500 (unlawful interference), 7600 (radio failure), 7700 (emergency), worldwide, one entry per flight; last 24 h"><input type="checkbox" id="s-squawks" checked><span class="sw dm" style="--c:#ff3b3b"></span>Emergency squawks<b id="c-squawks" class="num"></b></label>
+    <label class="row" title="Satellites from CelesTrak GP element sets, propagated in the browser (SGP4). Click one for its orbit, ground track and coverage footprint."><input type="checkbox" id="s-sats"><span class="sw" style="--c:#b8f7ff"></span>Satellites<b id="c-sats" class="num"></b></label>
+    <div id="sat-chips" class="chips"></div>
+    <label class="row" title="Country-level internet outages detected by IODA (Georgia Tech): BGP, active probing, Google traffic, network telescope; last 24 h"><input type="checkbox" id="s-outages"><span class="sw sq" style="--c:#e86bff"></span>Internet outages<b id="c-outages" class="num"></b></label>
+    <h4 class="sub-h">Space weather</h4>
+    <div id="sig-wx" class="sig-wx" aria-label="Space weather"></div>
+    <label class="row" title="NOAA SWPC OVATION aurora nowcast (probability of visible aurora), refreshed every 30 min"><input type="checkbox" id="s-aurora"><span class="sw" style="--c:#4fdf8c"></span>Aurora oval</label>
+    <label class="row" title="Ambient gamma dose rate: BfS ODL network (Germany) and Safecast realtime devices. Ringed red = elevated against the station's own 7-day median."><input type="checkbox" id="s-radiation"><span class="sw ring" style="--c:#ffd24a"></span>Radiation dose rate<b id="c-radiation" class="num"></b></label>
+    <div class="row-note">No lightning layer: no free live source permits reuse (Blitzortung forbids it).</div>
+  </section>
+
+  <!-- filled by infra.js mountInfraTree (infrastructure layers); the watchlist toggle is wired in app.js -->
+  <section class="grp" data-g="infra">
+    <header><h3>Infrastructure &amp; watchlists</h3><b id="g-infra-n" class="num">–</b></header>
+    <label class="row" title="Live tracks matching OpenSanctions or config/watchlist.yaml: pulsing ring + tag on the globe (matching runs server-side)"><input type="checkbox" id="w-watch" checked><span class="sw ring" style="--c:#ff3b4e"></span>Watchlist matches<b id="c-watch" class="num"></b></label>
+    <div id="infra-slot"></div>
+  </section>
+
+  <section class="grp" data-g="analysis">
+    <header><h3>Analysis</h3><b id="g-analysis-n" class="num">–</b></header>
+    <h4 class="sub-h">Movements<b id="g-moves-n" class="num">–</b></h4>
     <label class="row" title="Origin → destination of military flights over 7 days, by role"><input type="checkbox" id="m-corridors"><span class="sw ln flow" style="--c:#36c5ff"></span>Airlift corridors 7 d<b id="c-corridors" class="num"></b></label>
     <label class="row"><input type="checkbox" id="m-legs"><span class="sw ln" style="--c:#9fb0c0"></span>Recent legs 24 h<b id="c-legs" class="num"></b></label>
     <div id="mv-roles" class="chips"></div>
     <label class="row" title="Military aircraft per H3 cell vs the trailing 7-day baseline for the same 6 h slot"><input type="checkbox" id="m-surges"><span class="sw hexo" style="--c:#f2ad3d"></span>Surge cells<b id="c-surges" class="num"></b></label>
     <label class="row"><input type="checkbox" id="m-naval"><span class="sw hull" style="--c:#ff4b55"></span>Naval units<b id="c-naval" class="num"></b></label>
-  </section>
-  <section class="grp" data-g="naval">
-    <header><h3>Naval · hypotheses</h3><b id="g-naval-n" class="num">–</b></header>
+    <h4 class="sub-h">Naval · hypotheses<b id="g-naval-n" class="num">–</b></h4>
     <label class="row" title="Probabilistic carrier strike group activity from public signals; never a confirmed position"><input type="checkbox" id="n-carriers"><span class="sw ring" style="--c:#5ee3ea"></span>Carrier activity<b id="c-carriers" class="num"></b></label>
     <label class="row sub"><input type="checkbox" id="n-indicators" checked><span class="sw" style="--c:#ff8a3d"></span>Indicators<b id="c-indicators" class="num"></b></label>
     <label class="row sub"><input type="checkbox" id="n-surface" checked><span class="sw hexo" style="--c:#5ee3ea"></span>Probability surface</label>
     <div class="row-note">Estimates, not positions · refreshed every 10 min</div>
+    <h4 class="sub-h">Density · H3</h4>
+    <label class="row"><input type="checkbox" id="d-aircraft"><span class="sw hex"></span>Aircraft density</label>
+    <label class="row"><input type="checkbox" id="d-ships"><span class="sw hex"></span>Ship density</label>
+    <label class="row"><input type="checkbox" id="d-fires"><span class="sw hex"></span>Fire density</label>
+    <label class="row"><input type="checkbox" id="d-quakes"><span class="sw hex"></span>Quake density</label>
+    <label class="row field sub">Resolution <select id="d-res" class="mini"><option value="3">3 · coarse</option><option value="4">4</option><option value="5">5 · fine</option></select></label>
   </section>
-  <section class="grp" data-g="sensors">
-    <header><h3>Sensors</h3><b id="g-sensors-n" class="num">–</b></header>
-    <label class="row" title="Only cameras whose operators openly publish them"><input type="checkbox" id="s-webcams"><span class="sw sq" style="--c:#5ee3ea"></span>Public webcams<b id="c-webcams" class="num"></b></label>
-    <div id="wc-chips" class="chips"></div>
-  </section>
+
   <section class="grp" data-g="ref">
     <header><h3>Reference</h3></header>
-    <label class="row"><input type="checkbox" id="r-airports" checked><span class="sw sq" style="--c:#36c5ff"></span>Airports</label>
-    <label class="row sub"><input type="checkbox" id="r-airports-med"><span class="sw sq" style="--c:#36c5ff"></span>Include medium</label>
-    <label class="row sub"><input type="checkbox" id="r-airports-mil"><span class="sw sq" style="--c:#ff4d4d"></span>Military only</label>
-    <label class="row"><input type="checkbox" id="r-runways"><span class="sw sq" style="--c:#36c5ff"></span>Runways <small>zoom &lt; 400 km</small></label>
-    <label class="row"><input type="checkbox" id="r-ports"><span class="sw sq" style="--c:#3ddcc2"></span>Seaports</label>
+    <span id="slot-frontline" hidden></span>
     <label class="row"><input type="checkbox" id="r-bases" checked><span class="sw dm" style="--c:#ff5a5a"></span>Military bases</label>
     <div id="r-chips" class="chips"></div>
     <label class="row sub"><input type="checkbox" id="r-rings"><span class="sw ring" style="--c:#ff5a5a"></span>Range rings 100/300/500 km</label>
     <label class="row"><input type="checkbox" id="r-nuclear"><span class="sw tre" style="--c:#ffd24a"></span>Nuclear sites<b id="c-nuclear" class="num"></b></label>
     <div id="nuc-chips" class="chips"></div>
     <label class="row sub"><input type="checkbox" id="r-nuc-rings"><span class="sw ring" style="--c:#ffd24a"></span>Rings 30/100 km</label>
+    <label class="row"><input type="checkbox" id="r-airports" checked><span class="sw sq" style="--c:#36c5ff"></span>Airports</label>
+    <label class="row sub"><input type="checkbox" id="r-airports-med"><span class="sw sq" style="--c:#36c5ff"></span>Include medium</label>
+    <label class="row sub"><input type="checkbox" id="r-airports-mil"><span class="sw sq" style="--c:#ff4d4d"></span>Military only</label>
+    <label class="row sub"><input type="checkbox" id="r-runways"><span class="sw sq" style="--c:#36c5ff"></span>Runways <small>zoom &lt; 400 km</small></label>
+    <label class="row"><input type="checkbox" id="r-ports"><span class="sw sq" style="--c:#3ddcc2"></span>Seaports</label>
     <label class="row"><input type="checkbox" id="r-borders" checked><span class="sw ln" style="--c:#36c5ff"></span>Country borders</label>
     <label class="row"><input type="checkbox" id="r-disputed"><span class="sw ln dash" style="--c:#ffb020"></span>Disputed boundaries</label>
     <label class="row"><input type="checkbox" id="r-maritime"><span class="sw ln dash" style="--c:#3ddcc2"></span>Maritime lines</label>
     <label class="row"><input type="checkbox" id="r-choke" checked><span class="sw sq" style="--c:#ffb020"></span>Chokepoints</label>
     <label class="row"><input type="checkbox" id="r-clabels"><span class="sw txt" style="--c:#36c5ff">A</span>Country labels</label>
   </section>
-  <section class="grp" data-g="density">
-    <header><h3>Density · H3</h3></header>
-    <label class="row"><input type="checkbox" id="d-aircraft"><span class="sw hex"></span>Aircraft</label>
-    <label class="row"><input type="checkbox" id="d-ships"><span class="sw hex"></span>Ships</label>
-    <label class="row"><input type="checkbox" id="d-fires"><span class="sw hex"></span>Fires</label>
-    <label class="row"><input type="checkbox" id="d-quakes"><span class="sw hex"></span>Quakes</label>
-    <label class="row field">Resolution <select id="d-res"><option value="3">3 · coarse</option><option value="4">4</option><option value="5">5 · fine</option></select></label>
-  </section>
-  <section class="grp" data-g="imagery">
-    <header><h3>Imagery</h3></header>
-    <label class="row"><input type="checkbox" id="t-grid"><span class="sw grid" style="--c:#5ee3ea"></span>Graticule 15°</label>
-    <label class="row"><input type="checkbox" id="t-daynight"><span class="sw half"></span>Day / night shading</label>
-    <label class="row"><input type="checkbox" id="t-labels"><span class="sw txt" style="--c:#c8d4de">A</span>Place labels</label>
+
+  <section class="grp" data-g="map">
+    <header><h3>Map &amp; display</h3></header>
+    <h4 class="sub-h">Imagery</h4>
     <label class="row"><input type="checkbox" id="t-viirs"><span class="sw" style="--c:#6aa8ff"></span>NASA VIIRS true colour</label>
+    <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
+    <label class="row field sub">GIBS date <input type="date" id="gibs-date"></label>
+    <label class="row"><input type="checkbox" id="t-labels"><span class="sw txt" style="--c:#c8d4de">A</span>Place labels</label>
+    <label class="row"><input type="checkbox" id="t-grid"><span class="sw grid" style="--c:#5ee3ea"></span>Graticule 15°</label>
     <label class="row" title="OSM Buildings via Cesium ion; drawn below 60 km eye altitude"><input type="checkbox" id="t-buildings"><span class="sw sq" style="--c:#9aa3ad"></span>3D buildings <small>ion</small></label>
     <label class="row" title="Hillshade terrain with a light from the upper left of the view (below 400 km eye altitude; off while day/night shading is on)"><input type="checkbox" id="t-relief" checked><span class="sw half" style="--c:#b8c4cf"></span>Relief lighting <small>terrain</small></label>
-    <label class="row field" title="Vertical exaggeration of Cesium World Terrain">Terrain relief <select id="t-exag"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option></select></label>
-    <label class="row"><input type="checkbox" id="t-night"><span class="sw" style="--c:#c9a7ff"></span>NASA night lights</label>
-    <label class="row field">GIBS date <input type="date" id="gibs-date"></label>
-  </section>
-  <section class="grp" data-g="weather">
-    <header><h3>Weather &amp; lighting</h3></header>
+    <label class="row field sub" title="Vertical exaggeration of Cesium World Terrain">Terrain relief <select id="t-exag" class="mini"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option></select></label>
+    <h4 class="sub-h">Weather &amp; lighting</h4>
     <label class="row" title="Geostationary infrared cloud tops (GOES-East/West, Himawari ABI band 13), NASA GIBS, refreshed every 10 min (~30 min latency)"><input type="checkbox" id="t-wx-ir"><span class="sw" style="--c:#e8f0f7"></span>Satellite clouds (IR)</label>
     <label class="row" title="Precipitation radar mosaic (RainViewer), latest frame, refreshed every 10 min"><input type="checkbox" id="t-wx-radar"><span class="sw" style="--c:#4fd07a"></span>Precipitation radar</label>
     <label class="row" title="Volumetric clouds at low / mid / high levels from current cloud cover (Open-Meteo); below 450 km eye altitude"><input type="checkbox" id="t-wx-clouds"><span class="sw" style="--c:#ffffff"></span>3D clouds <small id="wx-clouds-n"></small></label>
+    <label class="row"><input type="checkbox" id="t-daynight"><span class="sw half"></span>Day / night shading</label>
     <label class="row" title="Sun lighting with soft shadows on models / buildings / terrain, and bloom. GPU heavy: turn off if the globe stutters."><input type="checkbox" id="t-cinematic"><span class="sw half" style="--c:#ffd27a"></span>Cinematic lighting <small>GPU</small></label>
-    <label class="row field" title="Sun position used for lighting and shadows">Sun <select id="t-sun"><option value="">Real time</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="golden">Golden hour</option><option value="dusk">Dusk</option></select></label>
-  </section>
-  <section class="grp" data-g="signals">
-    <header><h3>Signals &amp; space</h3><b id="g-signals-n" class="num">–</b></header>
-    <div id="sig-wx" class="sig-wx" aria-label="Space weather"></div>
-    <label class="row" title="Share of aircraft reporting degraded GPS navigation accuracy (ADS-B NIC / NACp, the gpsjam.org method) per H3 cell, from all traffic in the watch regions (adsb.fi). Green &lt; 2 %, yellow 2-10 %, red &gt; 10 %."><input type="checkbox" id="s-gnss"><span class="sw hexo" style="--c:#ff4b55"></span>GNSS interference<b id="c-gnss" class="num"></b></label>
-    <label class="row field sub">Window <select id="s-gnss-h" class="mini"><option value="1" selected>1 h live</option><option value="6">6 h</option><option value="24">24 h</option><option value="168">7 d</option></select></label>
-    <label class="row sub" title="Dashed circles: areas the GNSS map is computed for"><input type="checkbox" id="s-gnss-regions" checked><span class="sw ring" style="--c:#66798c"></span>Coverage areas</label>
-    <label class="row" title="Aircraft squawking 7500 (unlawful interference), 7600 (radio failure), 7700 (emergency), worldwide, one entry per flight; last 24 h"><input type="checkbox" id="s-squawks" checked><span class="sw dm" style="--c:#ff3b3b"></span>Emergency squawks<b id="c-squawks" class="num"></b></label>
-    <label class="row" title="Country-level internet outages detected by IODA (Georgia Tech): BGP, active probing, Google traffic, network telescope; last 24 h"><input type="checkbox" id="s-outages"><span class="sw sq" style="--c:#e86bff"></span>Internet outages<b id="c-outages" class="num"></b></label>
-    <label class="row" title="Satellites from CelesTrak GP element sets, propagated in the browser (SGP4). Click one for its orbit, ground track and coverage footprint."><input type="checkbox" id="s-sats"><span class="sw" style="--c:#b8f7ff"></span>Satellites<b id="c-sats" class="num"></b></label>
-    <div id="sat-chips" class="chips"></div>
-    <label class="row" title="NOAA SWPC OVATION aurora nowcast (probability of visible aurora), refreshed every 30 min"><input type="checkbox" id="s-aurora"><span class="sw" style="--c:#4fdf8c"></span>Aurora oval</label>
-    <label class="row" title="Ambient gamma dose rate: BfS ODL network (Germany) and Safecast realtime devices. Ringed red = elevated against the station's own 7-day median."><input type="checkbox" id="s-radiation"><span class="sw ring" style="--c:#ffd24a"></span>Radiation dose rate<b id="c-radiation" class="num"></b></label>
-    <div class="row-note">No lightning layer: no free live source permits reuse (Blitzortung forbids it).</div>
+    <label class="row field sub" title="Sun position used for lighting and shadows">Sun <select id="t-sun" class="mini"><option value="">Real time</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="golden">Golden hour</option><option value="dusk">Dusk</option></select></label>
   </section>
 </aside>
 

@@ -20,6 +20,7 @@
 // 4 = 2x2, 5 = master + 2x2, 6 = 3x2, then 3 or 4 columns. Drag a pane header onto another
 // pane to swap them; the star promotes a pane to master; zoom shows one pane alone.
 import { esc } from "/static/js/ui.js";
+import { fmtDateTime, utcTitle } from "/static/js/timefmt.js";
 import { fetchJson } from "/static/js/api.js";
 import { renderIntel, intelKey } from "/static/js/panels/intel-view.js";
 import { renderStoryline, storyKey } from "/static/js/panels/storyline-view.js";
@@ -627,7 +628,7 @@ export class Dossier {
     const when = r.published ? new Date(r.published) : null;
     body.innerHTML = '<article class="rd">' +
       (r.image ? '<div class="rd-hero"><img src="' + esc(r.image) + '" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"></div>' : "") +
-      '<div class="rd-in"><div class="rd-site">' + esc(r.site || h) + (when && !isNaN(when) ? " · " + esc(when.toISOString().slice(0, 16).replace("T", " ")) + " UTC" : "") + (r.author ? " · " + esc(r.author) : "") + "</div>" +
+      '<div class="rd-in"><div class="rd-site">' + esc(r.site || h) + (when && !isNaN(when) ? ' · <time title="' + esc(utcTitle(when)) + '">' + esc(fmtDateTime(when, { zone: true })) + "</time>" : "") + (r.author ? " · " + esc(r.author) : "") + "</div>" +
       "<h1>" + esc(r.title || h) + "</h1>" + (r.description ? '<p class="rd-lede">' + esc(r.description) + "</p>" : "") +
       (r.paragraphs.length ? r.paragraphs.map((p) => "<p>" + esc(p) + "</p>").join("") :
         '<div class="ds-err"><b>No readable text</b><span>' + esc(r.status >= 400 ? "The site answered HTTP " + r.status + " (likely a bot wall)." : "The page has no extractable article text.") + '</span><a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">Open in system browser</a></div>') +
