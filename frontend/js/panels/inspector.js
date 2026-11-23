@@ -90,7 +90,7 @@ export class Inspector {
     const pos = detail && detail.position;
     const prov = [pos && pos.source ? ["Feed", pos.source] : null, tr.first_seen ? ["First seen", ago(tr.first_seen)] : null, tr.last_seen ? ["Track updated", ago(tr.last_seen)] : null,
       ["Record", detail ? "Full record · /api/track" : "List item (full record unavailable)"]].filter(Boolean);
-    const html = this._head(kind, it, eyebrow, it.name || it.id, sub) + '<div class="dz-tags">' + tags + "</div>" + prof +
+    const html = this._head(kind, it, eyebrow, it.name || it.id, sub) + '<div class="dz-tags">' + tags + "</div>" + (this.trackExtra ? this.trackExtra(kind, it) : "") + prof +
       '<section class="dz-sec"><h3>Telemetry</h3>' + kv(tele) + '</section><section class="dz-sec"><h3>Identity</h3>' + kv(ident) + "</section>" +
       '<section class="dz-sec"><h3>Provenance</h3><div class="prov">' + prov.map(([k, v]) => "<div><i></i>" + esc(k) + ": " + v + "</div>").join("") + "</div></section>";
     this._show(html, threatColor(kind, it));
@@ -179,10 +179,10 @@ export class Inspector {
   reference(ref, title, bodyHtml) {
     this.cur = null;
     const label = { airport: "Airport", medairport: "Airport", runway: "Runway", port: "Seaport", base: "Military installation", chokepoint: "Maritime chokepoint", boundary: "Boundary",
-      nuclear: "Nuclear site", historical: "Historical conflict · UCDP GED", corridor: "Military movements · corridor", leg: "Military movements · flight leg", surge: "Military movements · surge", naval: "Military movements · naval unit" }[ref.kind] || "Reference";
+      nuclear: "Nuclear site", historical: "Historical conflict · UCDP GED", corridor: "Military movements · corridor", leg: "Military movements · flight leg", surge: "Military movements · surge", naval: "Military movements · naval unit" }[ref.kind] || ref.label || "Reference";
     const it = ref.item || {};
     const mov = /^(corridor|leg|surge|naval)$/.test(ref.kind);
-    const tint = ref.kind === "nuclear" ? "#ffd24a" : ref.kind === "historical" ? "#8f86c9" : ref.kind === "surge" ? "#f2ad3d" : ref.kind === "naval" ? "#ff4b55" : mov ? "#36c5ff" : "#3ddcc2";
+    const tint = ref.tint || (ref.kind === "nuclear" ? "#ffd24a" : ref.kind === "historical" ? "#8f86c9" : ref.kind === "surge" ? "#f2ad3d" : ref.kind === "naval" ? "#ff4b55" : mov ? "#36c5ff" : "#3ddcc2");
     const head = this._head("ref", it, (mov ? "" : "Reference · ") + label, title, it.lat != null ? nf(it.lat, 3) + ", " + nf(it.lon, 3) : "").replace(/--threat:[^;"]*/, "--threat:" + tint);
     const html = head + '<section class="dz-sec">' + bodyHtml + "</section>";
     this._show(html, tint);

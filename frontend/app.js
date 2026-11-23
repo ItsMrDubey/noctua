@@ -30,6 +30,8 @@ import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 import { Weather, setCinematic, sunTime } from "/static/js/weather.js";
 import { Dossier } from "/static/js/browser.js";
+import { InfraLayers, mountInfraTree, infraDetails } from "/static/js/infra.js";
+import { WatchOverlay, watchHtml } from "/static/js/watch.js";
 
 const errors = {};
 let lastStatus = null;
@@ -350,6 +352,7 @@ async function main() {
     for (const picked of hits) if (picked && picked.id && (picked.id.navalHyp || picked.id.navalIndicator) && mods.naval.pick(picked)) return;
     for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.histCell) { histLayer.zoomCell(picked.id.histCell); return; }
+    for (const picked of hits) if (picked && picked.id && picked.id.watch && byKind[picked.id.kind] && byKind[picked.id.kind].items.has(picked.id.id)) { select(picked.id.kind, picked.id.id); return; }
     for (const picked of hits) {
       if (!picked || !picked.primitive) continue;
       if (picked.id && picked.id.ref) { refHit = refHit || picked.id; continue; }
@@ -408,6 +411,7 @@ async function main() {
       }).catch(() => {});
       return;
     }
+    if (ref.kind === "infra") { const [t, b, label, tint] = infraDetails(ref); inspector.reference({ ...ref, label, tint }, t, b); buttons(); return; }
     const [title, body] = ref.kind === "nuclear" ? nuclearDetails(it) : MOV_KINDS[ref.kind] ? movementDetails(ref) : refDetails(ref);
     inspector.reference(ref, title, body);
     buttons();
@@ -729,6 +733,12 @@ async function main() {
   air.onChange = () => { prevAir && prevAir(); clearTimeout(haloT); haloT = setTimeout(() => reticle.syncHalos(air), 300); };
   ctx.tracklist = tracklist;
   ctx.dossier = dossier;
+  // ---- Critical infrastructure layers + watchlist matches (self-mounting modules) ----
+  ctx.infra = new InfraLayers(viewer);
+  mountInfraTree(ctx.infra, tree);
+  ctx.watch = new WatchOverlay(viewer, { byKind, alerts });
+  inspector.trackExtra = (kind, it) => watchHtml(it.id, ctx.watch);
+  ctx.watch.start();
   ctx.palette = new Palette(ctx);
   window.__osint = ctx;
   return ctx;
