@@ -344,6 +344,7 @@ class EventBuilder:
         self.verifier: Any = None  # extraction store (pipeline.extract), set by wire()
         self.verdicts: dict[str, str] = {}  # event id -> applied extraction verdict
         self._verdict_cursor: datetime | None = None
+        self._impact_cursor: datetime | None = None
         self.clusterer = Clusterer(self.cfg, make_scorer(
             self.cfg, lambda eid: self.sensor_scores.get(eid, 0.0),
             lambda eid: self.verdicts.get(eid)),
@@ -391,6 +392,7 @@ class EventBuilder:
         if self.corroborator is not None:
             self.corroborator.warm_start(now)
         self.verdicts = {k: v["verdict"] for k, v in self.store.verifications().items()}
+        self._impact_cursor = None  # re-apply impact upgrades to the reloaded index
         cursor = self._cursor()
         if cursor is not None:
             horizon = cursor - timedelta(minutes=self.cfg.cursor_overlap_min)
@@ -477,6 +479,11 @@ class EventBuilder:
             except Exception:  # verification must never stop event building
                 self.metrics.inc("verification_errors_total")
                 log.exception("applying extraction verdicts failed")
+        try:
+            self.apply_impacts(now)
+        except Exception:  # impact upgrades must never stop event building
+            self.metrics.inc("impact_errors_total")
+            log.exception("applying impact sites failed")
         cres = None
         if self.corroborator is not None:
             try:
@@ -572,6 +579,59 @@ class EventBuilder:
             self.store.save_events(rows, fields=fields)
             self.store.save_verifications(verifs)
         return len(verifs)
+
+    def apply_impacts(self, now: datetime) -> int:
+        """Upgrade events in the index to their best impact site (``event_impacts``,
+        written by pipeline.impact_job): only a fine site (exact / facility /
+        neighbourhood / settlement), only when the record was computed from the event's
+        current location (an event moved meanwhile waits for a recompute), never across
+        countries. The old location is kept as field ``location_before_impact``."""
+        from osint.enrich.impact import FINE
+
+        since = self._impact_cursor or now - timedelta(hours=self.cfg.index_window_h)
+        recs = self.store.impacts_since(since - timedelta(minutes=1))
+        self._impact_cursor = now
+        rows, fields = [], []
+        for eid, rec in recs.items():
+            ev = self.clusterer.events.get(eid)
+            best = rec.get("best") or {}
+            if ev is None or best.get("precision") not in FINE or best.get("lat") is None:
+                continue
+            lat, lon = float(best["lat"]), float(best["lon"])
+            if ev.lat is not None and abs(ev.lat - lat) < 1e-6 and abs(ev.lon - lon) < 1e-6:
+                continue  # already there
+            origin = rec.get("origin") or {}
+            if ev.lat is None or origin.get("lat") is None or abs(
+                    ev.lat - origin["lat"]) > 1e-6 or abs(ev.lon - origin["lon"]) > 1e-6:
+                continue  # computed from another location: wait for the recompute
+            if origin.get("country") and ev.country and \
+                    origin["country"].upper() != ev.country.upper():
+                continue
+            name = str(best.get("name") or f"{lat:.4f}, {lon:.4f}")
+            old_place = ev.place_name or ""
+            old = f"{old_place} ({ev.lat}, {ev.lon}, {ev.precision})"
+            old_cell = ev.h3_3
+            ev.lat, ev.lon, ev.precision = lat, lon, "point"
+            city = old_place.split(",")[0].strip()
+            ev.place_name = name if not city or city.casefold() in name.casefold() \
+                else f"{name}, {city}"
+            ev.geo_confidence = float(best.get("confidence") or 0.6)
+            ev.h3_3, ev.h3_5, ev.h3_7 = (h3.str_to_int(h3.latlng_to_cell(lat, lon, r))
+                                         for r in (3, 5, 7))
+            self.clusterer._index_geo(ev, old_cell)
+            ev.status, ev.confidence = self.clusterer.scorer(ev, now)
+            ev.updated_at = now
+            rows.append(ev.to_row())
+            note = (f"impact site ({best.get('precision')}, {best.get('resolver')}): "
+                    f"{best.get('quote') or ''}")[:300]
+            fields += [{"event_id": eid, "field": "location_before_impact",
+                        "value": old[:300], "doc_id": "impact", "quote": note},
+                       {"event_id": eid, "field": "location", "value": ev.place_name[:300],
+                        "doc_id": "impact", "quote": note}]
+            self.metrics.inc("event_impact_upgrades_total")
+        if rows:
+            self.store.save_events(rows, fields=fields)
+        return len(rows)
 
     @staticmethod
     def _may_refine(ev: EventState, rec: dict, geo: dict, quotes: list[dict]) -> bool:

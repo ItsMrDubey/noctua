@@ -91,6 +91,19 @@ CREATE TABLE IF NOT EXISTS event_verification (
   quotes TEXT NOT NULL DEFAULT '[]', fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS event_verification_verdict ON event_verification(verdict);
 """
+# Impact sites and affected areas (osint.pipeline.impact_job, worker only). One row per
+# event: sites (resolved impact sites with evidence quotes), best (the site that located the
+# event, or null), areas (GeoJSON geometries, each with its basis), origin (the event's
+# location before the impact upgrade). The bbox columns cover sites + areas (layer queries);
+# input_fp skips recomputation when nothing that feeds the cascade changed.
+IMPACT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS event_impacts (
+  event_id TEXT PRIMARY KEY, version INTEGER NOT NULL, sites TEXT NOT NULL DEFAULT '[]',
+  best TEXT, areas TEXT NOT NULL DEFAULT '[]', origin TEXT, input_fp TEXT NOT NULL,
+  min_lat REAL, min_lon REAL, max_lat REAL, max_lon REAL,
+  computed_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS event_impacts_updated ON event_impacts(updated_at);
+"""
 CORROBORATION_KINDS = ("fire", "quake", "aircraft", "ship", "ais_gap", "imagery")
 
 EVENT_COLUMNS = (
@@ -130,6 +143,29 @@ def _json_col(value: object, column: str) -> str:
     if value is None:
         value = _JSON_DEFAULTS[column]
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _dump_json(value: object) -> str | None:
+    return None if value is None else json.dumps(value, ensure_ascii=False,
+                                                  separators=(",", ":"))
+
+
+def _bbox_cols(bbox) -> tuple:
+    """(min_lat, min_lon, max_lat, max_lon) from a (west, south, east, north) bbox."""
+    if not bbox:
+        return (None, None, None, None)
+    w, s, e, n = bbox
+    return (s, w, n, e)
+
+
+def _impact_out(row: sqlite3.Row) -> dict:
+    return {"event_id": row["event_id"], "version": row["version"],
+            "sites": json.loads(row["sites"] or "[]"),
+            "best": json.loads(row["best"]) if row["best"] else None,
+            "areas": json.loads(row["areas"] or "[]"),
+            "origin": json.loads(row["origin"]) if row["origin"] else None,
+            "input_fp": row["input_fp"], "computed_at": row["computed_at"],
+            "updated_at": row["updated_at"]}
 
 
 def event_origin(e: dict) -> str:
@@ -212,6 +248,7 @@ class SqliteStore:
         self._db.executescript(EVENTS_SCHEMA)
         self._db.executescript(CORROBORATION_SCHEMA)
         self._db.executescript(VERIFICATION_SCHEMA)
+        self._db.executescript(IMPACT_SCHEMA)
         self._migrate_origin(heal=migrate)
 
     def _migrate_origin(self, heal: bool = True) -> None:
@@ -654,6 +691,110 @@ class SqliteStore:
             d = dict(r)
             d["reasons"], d["quotes"] = json.loads(d["reasons"]), json.loads(d["quotes"])
             out[d.pop("event_id")] = d
+        return out
+
+    # ------------------------------------------------------------ impact sites
+
+    def save_impacts(self, rows: list[dict]) -> None:
+        """Upsert event_impacts rows {event_id, version, sites, best, areas, origin,
+        input_fp, bbox (west, south, east, north) or None, computed_at}."""
+        now = iso(utcnow())
+        with self._lock, self._db:
+            self._db.executemany(
+                "INSERT INTO event_impacts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(event_id) DO UPDATE SET version=excluded.version, "
+                "sites=excluded.sites, best=excluded.best, areas=excluded.areas, "
+                "origin=excluded.origin, "
+                "input_fp=excluded.input_fp, min_lat=excluded.min_lat, "
+                "min_lon=excluded.min_lon, max_lat=excluded.max_lat, max_lon=excluded.max_lon,"
+                " computed_at=excluded.computed_at, updated_at=excluded.updated_at",
+                [(r["event_id"], int(r["version"]), _dump_json(r.get("sites") or []),
+                  _dump_json(r.get("best")), _dump_json(r.get("areas") or []),
+                  _dump_json(r.get("origin")), r["input_fp"], *_bbox_cols(r.get("bbox")),
+                  r["computed_at"], now) for r in rows])
+
+    def impacts(self, event_ids: list[str]) -> dict[str, dict]:
+        """event id -> full impact record (sites, best, areas, origin, ...)."""
+        rows = []
+        for i in range(0, len(event_ids), 900):
+            chunk = event_ids[i: i + 900]
+            with self._lock:
+                rows += self._db.execute(
+                    f"SELECT * FROM event_impacts WHERE event_id IN "
+                    f"({','.join('?' * len(chunk))})", chunk).fetchall()
+        return {r["event_id"]: _impact_out(r) for r in rows}
+
+    def impact_summaries(self, event_ids: list[str]) -> dict[str, dict]:
+        """event id -> slim map fields: impact_precision / impact_lat / impact_lon (best
+        site), impact_sites (number of sites) and has_area."""
+        out: dict[str, dict] = {}
+        for i in range(0, len(event_ids), 900):
+            chunk = event_ids[i: i + 900]
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT event_id, json_extract(best, '$.precision'), "
+                    "json_extract(best, '$.lat'), json_extract(best, '$.lon'), "
+                    "json_array_length(sites), json_array_length(areas) FROM event_impacts "
+                    f"WHERE event_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            for r in rows:
+                out[r[0]] = {"impact_precision": r[1], "impact_lat": r[2], "impact_lon": r[3],
+                             "impact_sites": int(r[4] or 0), "has_area": bool(r[5])}
+        return out
+
+    def impacts_since(self, since: datetime) -> dict[str, dict]:
+        """Impact records updated since ``since`` (the event builder applies them)."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM event_impacts WHERE updated_at >= ?",
+                                    (iso(since),)).fetchall()
+        return {r["event_id"]: _impact_out(r) for r in rows}
+
+    def impact_fingerprints(self, event_ids: list[str]) -> dict[str, tuple]:
+        """event id -> (version, input_fp, computed_at) of its stored impact record."""
+        out: dict[str, tuple] = {}
+        for i in range(0, len(event_ids), 900):
+            chunk = event_ids[i: i + 900]
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT event_id, version, input_fp, computed_at FROM event_impacts "
+                    f"WHERE event_id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            out.update({r[0]: (r[1], r[2], r[3]) for r in rows})
+        return out
+
+    def impacts_in_bbox(self, bbox: tuple[float, float, float, float] | None = None, *,
+                        since: datetime | None = None, limit: int = 2000) -> list[dict]:
+        """Impact records with sites or areas (plus their event's category / status /
+        confidence / t_start) whose bounds intersect ``bbox`` (west, south, east, north;
+        west > east wraps the antimeridian), most recently updated event first. Records
+        of deleted events are skipped (inner join)."""
+        where: list[str] = ["(i.sites != '[]' OR i.areas != '[]')"]
+        params: list[object] = []
+        if bbox is not None:
+            w, s, e, n = bbox
+            where.append("i.max_lat >= ? AND i.min_lat <= ?")
+            params += [s, n]
+            if w <= e:
+                where.append("i.max_lon >= ? AND i.min_lon <= ?")
+            else:
+                where.append("(i.max_lon >= ? OR i.min_lon <= ?)")
+            params += [w, e]
+        if since is not None:
+            where.append("e.updated_at >= ?")
+            params.append(iso(since))
+        params.append(max(0, int(limit)))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT i.*, e.category AS e_category, e.status AS e_status, "
+                "e.confidence AS e_confidence, e.t_start AS e_t_start, "
+                "e.updated_at AS e_updated_at FROM event_impacts i "
+                "JOIN events e ON e.id = i.event_id WHERE " + " AND ".join(where)
+                + " ORDER BY e.updated_at DESC LIMIT ?", params).fetchall()
+        out = []
+        for r in rows:
+            d = _impact_out(r)
+            d.update({"category": r["e_category"], "status": r["e_status"],
+                      "confidence": r["e_confidence"], "t_start": r["e_t_start"],
+                      "event_updated_at": r["e_updated_at"]})
+            out.append(d)
         return out
 
     # ------------------------------------------------------------ corroboration

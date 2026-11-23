@@ -11,12 +11,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from osint.core.geo import haversine_km
+from osint.enrich.coords import grounded_coordinate
 from osint.pipeline.extract.schema import (
     CLAIM_TYPES,
     EVENT_TYPES,
+    IMPACT_KINDS,
+    IMPACT_SITES_MAX,
     PRECISIONS,
     QUOTE_MAX,
     ROLES,
+    SCHEMA_VERSION,
     SUMMARY_MAX_WORDS,
 )
 
@@ -74,6 +78,41 @@ def _int(v) -> int | None:
     return None
 
 
+def _num(v) -> float | None:
+    if isinstance(v, bool) or not isinstance(v, int | float):
+        return None
+    return float(v)
+
+
+def impact_sites(raw_sites, text: str, folded_text: str | None = None) -> list[dict]:
+    """Grounded impact sites: a site is kept only when its quote is verbatim in the text;
+    coordinates only when the same coordinates are written in the text (an LLM-supplied
+    point that is not in the article is dropped, never used)."""
+    folded_text = _fold(text) if folded_text is None else folded_text
+    out: list[dict] = []
+    seen: set[str] = set()
+    for s in raw_sites or []:
+        if not isinstance(s, dict):
+            continue
+        name, quote = _str(s.get("name"), 120), _str(s.get("quote"), QUOTE_MAX)
+        if not name or not quote or _fold(quote) not in folded_text:
+            continue  # ungrounded: the evidence span is not in the article
+        key = _fold(name)
+        if key in seen:
+            continue
+        seen.add(key)
+        coords = grounded_coordinate(_num(s.get("lat")), _num(s.get("lon")), quote, text)
+        out.append({"name": name,
+                    "kind": s.get("kind") if s.get("kind") in IMPACT_KINDS else "other",
+                    "context": _str(s.get("context"), 160),
+                    "lat": coords[0] if coords else None,
+                    "lon": coords[1] if coords else None,
+                    "coords_stated": coords is not None, "quote": quote, "verbatim": True})
+        if len(out) >= IMPACT_SITES_MAX:
+            break
+    return out
+
+
 def normalise(raw: dict, text: str) -> dict:
     """Coerce an LLM result into the schema; quotes are capped and checked verbatim."""
     where = raw.get("where") if isinstance(raw.get("where"), dict) else {}
@@ -119,6 +158,8 @@ def normalise(raw: dict, text: str) -> dict:
         "claim_type": raw.get("claim_type") if raw.get("claim_type") in CLAIM_TYPES
         else "unverified",
         "quotes": quotes[:20],
+        "impact_sites": impact_sites(raw.get("impact_sites"), text, folded_text),
+        "schema_version": SCHEMA_VERSION,
     }
 
 

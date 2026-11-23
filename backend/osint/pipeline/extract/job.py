@@ -19,7 +19,7 @@ import httpx
 from osint.llm import CallRateLimiter, LLMBackend, LLMError, make_backend
 from osint.pipeline.extract.config import ExtractionConfig
 from osint.pipeline.extract.fetch import get_article_text
-from osint.pipeline.extract.schema import EXTRACTION_SCHEMA, INSTRUCTION
+from osint.pipeline.extract.schema import EXTRACTION_SCHEMA, INSTRUCTION, SCHEMA_VERSION
 from osint.pipeline.extract.store import ExtractionStore
 from osint.pipeline.extract.verdict import Geocoder, gazetteer_geocoder, judge, normalise
 
@@ -65,6 +65,7 @@ class WorkItem:
     event: dict
     doc: dict
     attempts: int = 0
+    previous: dict | None = None  # stale-schema re-extraction: the result it replaces
 
 
 class ExtractionJob:
@@ -112,17 +113,21 @@ class ExtractionJob:
         done = self.store.get_many([e["id"] for e in events])
         retry = timedelta(minutes=cfg.retry_after_min)
         due: list[tuple[dict, dict | None]] = []
+        stale: set[str] = set()
         for e in events:
             rec = done.get(e["id"])
             if rec is None:
                 due.append((e, None))
             elif rec["status"] == "done":
-                if rec.get("event_version") != e.get("version"):
+                if self._stale_schema(e, rec, now):
+                    due.append((e, rec))  # older schema: re-extract (after new events)
+                    stale.add(e["id"])
+                elif rec.get("event_version") != e.get("version"):
                     due.append((e, rec))  # changed: re-extract only if primary doc changed
             elif rec["attempts"] < cfg.max_attempts and (_parse(rec["updated_at"]) or now) \
                     + retry <= now:
                 due.append((e, rec))
-        due.sort(key=lambda pair: priority_key(pair[0]))
+        due.sort(key=lambda pair: (pair[0]["id"] in stale, priority_key(pair[0])))
         items: list[WorkItem] = []
         for e, rec in due:
             if len(items) >= cfg.max_per_run:
@@ -131,14 +136,29 @@ class ExtractionJob:
             doc = best_document((full or {}).get("documents") or [])
             if doc is None:
                 continue  # sensor-only / no article: nothing to extract
-            if rec is not None and rec["status"] == "done" and rec["doc_id"] == doc["doc_id"]:
+            if rec is not None and rec["status"] == "done" and rec["doc_id"] == doc["doc_id"] \
+                    and e["id"] not in stale:
                 self.store.save(  # same article: keep result, remember the version
                     e["id"], **_keep(rec), event_version=e.get("version"), now=now)
                 continue
             attempts = rec["attempts"] if rec is not None and rec["status"] == "error" else 0
-            items.append(WorkItem(e, doc, attempts))
+            items.append(WorkItem(e, doc, attempts, rec if e["id"] in stale else None))
         self.queue_size = len(due)
         return items
+
+    def _stale_schema(self, e: dict, rec: dict, now: datetime) -> bool:
+        """A done result from an older SCHEMA_VERSION worth re-extracting: recent,
+        kinetic/disaster type, not unsupported (cost bound: see config reextract_*)."""
+        result = rec.get("result") or {}
+        if int(result.get("schema_version") or 1) >= SCHEMA_VERSION or \
+                int(result.get("reextract_failed") or 0) >= SCHEMA_VERSION:
+            return False
+        if rec.get("verdict") == "unsupported" or not result.get("is_real_event"):
+            return False
+        if result.get("event_type") not in set(self.cfg.reextract_types):
+            return False
+        upd = _parse(e.get("updated_at"))
+        return upd is not None and upd >= now - timedelta(hours=self.cfg.reextract_age_h)
 
     # --------------------------------------------------------------- one event
 
@@ -170,8 +190,15 @@ class ExtractionJob:
         except (LLMError, NotImplementedError, OSError) as exc:
             err = f"{type(exc).__name__}: {exc}"
             self.store.log_call(self.clock(), event_id=ev["id"], ok=False, error=err)
-            self.store.save(ev["id"], **base, status="error", now=now, error=err,
-                            attempts=item.attempts + 1)
+            if item.previous is not None:
+                # a failed schema upgrade keeps the old result (never retried for this
+                # schema version: the marker stops _stale_schema selecting it again)
+                kept = _keep(item.previous)
+                kept["result"] = {**(kept["result"] or {}), "reextract_failed": SCHEMA_VERSION}
+                self.store.save(ev["id"], **kept, event_version=ev.get("version"), now=now)
+            else:
+                self.store.save(ev["id"], **base, status="error", now=now, error=err,
+                                attempts=item.attempts + 1)
             self.errors.appendleft({"at": now.isoformat(timespec="seconds"),
                                     "event_id": ev["id"], "error": err[:300]})
             return None

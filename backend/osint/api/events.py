@@ -13,6 +13,7 @@ from osint.translate import english
 from osint.translate import job as translate_job
 
 MAX_LIMIT = 10000
+IMPACT_LIMIT = 3000
 KML_LIMIT = 5000
 _ENCODER = msgspec.json.Encoder()
 
@@ -96,6 +97,41 @@ def add_corroboration(store, items: list[dict]) -> None:
             it["detector"] = s["detector"]
 
 
+def add_impacts(store, items: list[dict]) -> None:
+    """Slim impact fields on list items: ``impact_precision`` (best site precision label:
+    exact / facility / neighbourhood / settlement / city, or None), ``impact_sites``
+    (number of sites) and ``has_area``. The event's lat/lon already is the best site when
+    that site is finer than the original location."""
+    summ = store.impact_summaries([it["id"] for it in items])
+    for it in items:
+        s = summ.get(it["id"])
+        it["impact_precision"] = s["impact_precision"] if s else None
+        it["impact_sites"] = s["impact_sites"] if s else 0
+        it["has_area"] = bool(s and s["has_area"])
+
+
+def impact_detail(rec: dict | None) -> dict | None:
+    """Full impact record for the event detail: sites (with evidence quotes, resolver and
+    source), best site, affected areas (GeoJSON + basis) and the pre-impact location."""
+    if rec is None:
+        return None
+    return {"sites": rec["sites"], "best": rec["best"], "areas": rec["areas"],
+            "original_location": rec["origin"], "computed_at": rec["computed_at"],
+            "version": rec["version"]}
+
+
+def impact_layer_item(rec: dict) -> dict:
+    """Compact layer row: located sites (no quotes) and area geometries with basis."""
+    return {"event_id": rec["event_id"], "category": rec.get("category"),
+            "status": rec.get("status"), "confidence": rec.get("confidence"),
+            "t_start": rec.get("t_start"), "updated_at": rec.get("event_updated_at"),
+            "sites": [{k: s.get(k) for k in ("name", "kind", "lat", "lon", "precision",
+                                             "confidence", "resolver")}
+                      for s in rec["sites"] if s.get("lat") is not None],
+            "areas": [{k: a.get(k) for k in ("kind", "basis", "geometry", "radius_km")}
+                      for a in rec["areas"]]}
+
+
 def mount_events(app: FastAPI, runtime) -> None:
     store = runtime.store
 
@@ -122,13 +158,27 @@ def mount_events(app: FastAPI, runtime) -> None:
             include_unlocated=all_ or include_unlocated,
             map_default=not all_ and not status)
         await asyncio.to_thread(add_corroboration, store, items)
+        await asyncio.to_thread(add_impacts, store, items)
         await asyncio.to_thread(add_english, items)
         return _json({"layer": "events", "count": len(items), "items": items})
+
+    @app.get("/api/events/impacts")
+    async def impacts_layer(bbox: str | None = None, since: str | None = None,
+                            limit: int = Query(1000, ge=1, le=IMPACT_LIMIT)) -> Response:
+        """Impact sites + affected areas (GeoJSON, each with its ``basis``) of events
+        whose sites/areas intersect ``bbox``; read-only (computed by the worker)."""
+        recs = await asyncio.to_thread(store.impacts_in_bbox, parse_bbox(bbox),
+                                       since=parse_since(since), limit=limit)
+        items = [impact_layer_item(r) for r in recs]
+        return _json({"layer": "impacts", "count": len(items), "items": items})
 
     @app.get("/api/events/stats")
     async def event_stats() -> Response:
         stats = await asyncio.to_thread(store.event_stats)
         stats["sensor"] = await asyncio.to_thread(store.corroboration_stats)
+        job = getattr(runtime, "impact_job", None)
+        if job is not None:
+            stats["impact"] = job.status()
         corr = getattr(getattr(runtime, "event_builder", None), "corroborator", None)
         if corr is not None and corr.last is not None:
             stats["sensor"]["last_corroboration_pass"] = msgspec.to_builtins(
@@ -159,6 +209,9 @@ def mount_events(app: FastAPI, runtime) -> None:
         v = (await asyncio.to_thread(store.verifications, [event_id])).get(event_id)
         ev["verification"] = None if v is None else {
             "verdict": v["verdict"], "reasons": v["reasons"], "quotes": v["quotes"]}
+        rec = (await asyncio.to_thread(store.impacts, [event_id])).get(event_id)
+        ev["impact"] = impact_detail(rec)
+        ev["impact_precision"] = ((rec or {}).get("best") or {}).get("precision")
         return _json(ev)
 
     @app.get("/kml/events.kml")
