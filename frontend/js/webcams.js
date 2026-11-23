@@ -273,7 +273,7 @@ export async function renderNearbyCameras(lat, lon, containerEl, { radiusKm = 25
   containerEl.innerHTML = '<div class="wc-near-h">Cameras nearby <span>' + items.length + "</span></div>" +
     '<div class="wc-near">' + items.map((w, i) =>
       '<button type="button" class="wc-thumb" data-i="' + i + '" title="' + esc(w.name) + '">' +
-      '<img loading="lazy" alt="" src="' + esc(cacheBust(w.snapshot_url || "")) + '"><span>' + esc(w.name) + "</span><em>" + w.distance_km.toFixed(1) + " km</em></button>").join("") +
+      '<img decoding="async" alt="" src="' + esc(cacheBust(w.snapshot_url || "")) + '"><span>' + esc(w.name) + "</span><em>" + w.distance_km.toFixed(1) + " km</em></button>").join("") +
     "</div>" + '<div class="wc-credit">' + [...new Set(items.map((w) => w.attribution).filter(Boolean))].map(esc).join(" · ") + "</div>";
   containerEl.querySelectorAll(".wc-thumb img").forEach((im) => { im.onerror = () => im.classList.add("wc-bad"); });
   containerEl.querySelectorAll(".wc-thumb").forEach((btn) => btn.addEventListener("click", () => {

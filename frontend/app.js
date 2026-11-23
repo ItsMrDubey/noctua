@@ -6,7 +6,7 @@ import { DensityLayer } from "/static/js/density.js";
 import { Timeline } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $, esc } from "/static/js/ui.js";
+import { $, esc, evTitle } from "/static/js/ui.js";
 import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
 import { BASE_URL } from "/static/js/layers.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
@@ -23,7 +23,6 @@ import { refreshEventStats } from "/static/js/panels/evstats.js";
 import { NuclearLayer, NUC_GROUPS, nuclearDetails } from "/static/js/nuclear.js";
 import { MovementsLayer, MOV_ROLES, MOV_KINDS, movementDetails } from "/static/js/movements.js";
 import { WebcamLayer, renderNearbyCameras } from "/static/js/webcams.js";
-import { renderEventImagery } from "/static/js/imagery.js";
 import { initLicences } from "/static/js/licences.js";
 import { CarrierLayer } from "/static/js/naval.js";
 import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
@@ -294,24 +293,35 @@ async function main() {
     fx.setTarget(() => (selected ? byKind[selected.kind].positionOf(selected.id) : null), kind);
     trails.clearSelected();
     trailSelected(true);
-    if (kind === "events" && nearFor !== id) showNearbyCameras(id);
   }
-  // "Cameras near this event": rendered once per selection, outside the 5 s-refreshed dossier
-  function showNearbyCameras(id) {
-    const it = events.items.get(id);
-    if (!it) return;
-    nearFor = id;
-    const root = $("dz-extra");
-    root.innerHTML = "";
-    const imBox = root.appendChild(document.createElement("div")), box = root.appendChild(document.createElement("div"));
-    renderEventImagery(id, imBox).catch(() => {});
-    if (it.lat == null || it.precision === "country") return; // a country centroid has no meaningful neighbours
-    renderNearbyCameras(it.lat, it.lon, box, { onSelect: (w) => showWebcam(w) })
-      .then((items) => { if (nearFor === id && !items.length) box.innerHTML = '<div class="wc-near-h">Cameras near this event</div><div class="wc-loading">None within 25 km</div>'; })
-      .catch(() => {});
+  // "Cameras nearby" inside the event dossier's Context section (re-rendered with it)
+  function eventCameras(el) {
+    const it = selected && selected.kind === "events" ? events.items.get(selected.id) : null;
+    if (!el || !it) return;
+    if (it.lat == null || it.precision === "country") { el.innerHTML = '<div class="wc-loading">No point location (country-level event)</div>'; return; }
+    renderNearbyCameras(it.lat, it.lon, el, { onSelect: (w) => showWebcam(w) }).catch(() => {});
+  }
+  // evidence / timeline hover: temporary markers (and a line from the event) on the globe
+  const hlSrc = new Cesium.CustomDataSource("intel-highlight");
+  viewer.dataSources.add(hlSrc);
+  function highlight(pts) {
+    hlSrc.entities.removeAll();
+    const list = (pts || []).filter((p) => p && p.lat != null && p.lon != null);
+    const origin = list.find((p) => p.origin);
+    for (const p of list) {
+      const pos = Cesium.Cartesian3.fromDegrees(p.lon, p.lat);
+      hlSrc.entities.add({ position: pos, point: { pixelSize: p.origin ? 7 : 11, color: p.origin ? Cesium.Color.WHITE : Cesium.Color.fromCssColorString("#f2ad3d"),
+        outlineColor: Cesium.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+        label: p.origin || !p.label ? undefined : { text: p.label, font: "11px Consolas, monospace", fillColor: Cesium.Color.fromCssColorString("#f2ad3d"), showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString("rgba(5,8,13,0.8)"), pixelOffset: new Cesium.Cartesian2(10, -10), horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+      if (origin && !p.origin) hlSrc.entities.add({ polyline: { positions: [Cesium.Cartesian3.fromDegrees(origin.lon, origin.lat), pos], width: 1.2,
+        material: Cesium.Color.fromCssColorString("#f2ad3d").withAlpha(0.7), clampToGround: false } });
+    }
+    scene.requestRender();
   }
   function clearSelection() {
-    setFollow(false); selected = null; refSel = null; detail = null;
+    setFollow(false); selected = null; refSel = null; detail = null; highlight(null);
     releaseModules(); clearNear();
     trails.clearSelected(); tracklist.setSelected(null); evList.setSelected(null); fx.setTarget(null);
     inspector.hide();
@@ -329,6 +339,11 @@ async function main() {
     },
     follow: () => setFollow(!following),
     trail: () => { trailOn = !trailOn; if (trailOn) trailSelected(true); else trails.clearSelected(); buttons(); },
+    flyToPoint: (lat, lon, alt) => flyTo(lat, lon, alt),
+    highlight: (pts) => highlight(pts),
+    select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); },
+    intel: () => intel().catch((e) => console.warn("intel", e)),
+    cameras: (el) => eventCameras(el),
     pin: () => {
       if (!selected) return;
       if (pins.has(selected.id)) pins.delete(selected.id); else pins.add(selected.id);
@@ -732,31 +747,33 @@ async function main() {
   };
 
   // ---- Dossier (in-app browser) ----
-  const dossier = new Dossier({ flyTo });
+  const dossier = new Dossier({ flyTo, highlight, select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); } });
   // build the best dossier for the current selection
+  // Intel (I): an all-source intel pane around the selection (backend /api/intel); the
+  // Wikidata / Wikipedia background is one card inside it, not the pane itself.
+  const REF_KIND = { airport: "facility", medairport: "facility", runway: "facility", port: "facility", base: "facility", nuclear: "facility", chokepoint: "place", webcam: "point", historical: "point" };
+  const OBS_KIND = { fires: "fire", quakes: "quake", aircraft: "aircraft", ships: "ship" };
   async function intel() {
     const open = (spec) => dossier.open(spec);
     if (refSel) {
-      const it = refSel.item || {}, k = refSel.kind;
-      if (it.wikidata && /^Q\d+$/.test(it.wikidata)) return open({ type: "entity", qid: it.wikidata });
-      if (/airport/.test(k) && (it.icao || it.ident)) return open({ type: "resolve", icao: it.icao || it.ident, q: it.name, lat: it.lat, lon: it.lon, label: it.name });
-      if (it.name && it.lat != null) return open({ type: "resolve", q: it.name, lat: it.lat, lon: it.lon, label: it.name });
-      if (it.lat != null) return open({ type: "nearby", lat: it.lat, lon: it.lon, label: it.name || "" });
-      return;
+      const it = refSel.item || {};
+      if (it.lat == null) return;
+      return open({ type: "intel", kind: REF_KIND[refSel.kind] || "point", id: it.id || it.ident || null, lat: it.lat, lon: it.lon, label: it.name || refSel.kind, wikidata: it.wikidata || null, icao: it.icao || null });
     }
     if (!selected) { dossier.toggle(); return; }
     const it = byKind[selected.kind] && byKind[selected.kind].items.get(selected.id);
     if (!it) return;
-    if (selected.kind === "events") {
-      const d = detail && detail.id === selected.id ? detail : await fetchJson("/api/events/" + encodeURIComponent(selected.id), 8000).catch(() => null);
-      const urls = ((d && d.documents) || []).map((x) => x.url).filter((u) => /^https?:\/\//.test(u || ""));
-      for (const u of [...new Set(urls)].slice(0, 3)) dossier.openUrl(u, { focus: false });
-      if (it.lat != null && it.precision !== "country") open({ type: "nearby", lat: it.lat, lon: it.lon, label: it.place_name || it.title || "" });
-      return;
-    }
-    if (selected.kind === "ships" && it.name) return open({ type: "resolve", q: it.name, label: it.name });
-    if (it.operator) open({ type: "resolve", q: it.operator, label: it.operator });
-    if (it.lat != null) open({ type: "nearby", lat: it.lat, lon: it.lon, label: it.name || it.id });
+    if (selected.kind === "events") return open({ type: "intel", kind: "event", id: selected.id, label: evTitle(it) || it.title || selected.id });
+    if (it.lat == null) return;
+    return open({ type: "intel", kind: OBS_KIND[selected.kind] || "point", id: selected.id, lat: it.lat, lon: it.lon, t: typeof it.ts === "string" ? it.ts : null,
+      label: it.name || it.place || (selected.kind === "fires" ? "FIRMS hotspot " + String(it.ts || "").slice(0, 16).replace("T", " ") + "Z" : selected.id) });
+  }
+  // a related event that is not in the loaded layer (filtered / older): fly there, open intel
+  async function selectUnlisted(id) {
+    const d = await fetchJson("/api/events/" + encodeURIComponent(id), 8000).catch(() => null);
+    if (!d) return;
+    if (d.lat != null) flyTo(d.lat, d.lon, 4e5);
+    dossier.open({ type: "intel", kind: "event", id, label: d.title_en || d.title || id });
   }
   $("d-intel").addEventListener("click", () => intel().catch((e) => console.warn("intel", e)));
   $("rail-dossier").addEventListener("click", () => dossier.toggle());
