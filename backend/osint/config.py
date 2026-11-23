@@ -1,5 +1,6 @@
 """Runtime settings (.env + environment) and YAML source config."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +37,15 @@ class Settings(BaseSettings):
     allowed_hosts: str = Field(default="", alias="OSINT_ALLOWED_HOSTS")
     # when set, /api, /ws, /kml, /metrics and /docs require it (Bearer header or ?token=)
     api_token: str = Field(default="", alias="OSINT_API_TOKEN")
+    # contact (URL or mailbox) for User-Agents of services that require one (Wikimedia);
+    # read by modules from the environment, so a value from .env is exported on load
+    contact: str = Field(default="", alias="OSINT_CONTACT")
     # `osint worker` publishes its state (live positions, health, job status) this often
     state_interval_s: float = Field(default=1.0, alias="OSINT_STATE_INTERVAL_S")
+
+    def model_post_init(self, context: Any, /) -> None:
+        if self.contact:
+            os.environ.setdefault("OSINT_CONTACT", self.contact)
 
     @property
     def allowed_host_list(self) -> list[str]:

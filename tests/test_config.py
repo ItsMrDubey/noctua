@@ -31,3 +31,13 @@ def test_repo_sources_yaml_lists_collectors():
         "adsb", "ais", "firms", "usgs", "gdelt", "rss", "news_alterlab", "nga_msi", "acled",
         "ucdp_candidate", "telegram", "gdacs", "eonet", "reliefweb", "adsb_signals", "celestrak",
         "ioda", "swpc", "radiation"}
+
+def test_contact_from_env_file_is_exported(tmp_path, monkeypatch):
+    import os
+
+    from osint.config import Settings
+    monkeypatch.delenv("OSINT_CONTACT", raising=False)
+    (tmp_path / ".env").write_text("OSINT_CONTACT=https://example.org/contact\n", encoding="utf-8")
+    s = Settings(_env_file=tmp_path / ".env")
+    assert s.contact == "https://example.org/contact"
+    assert os.environ["OSINT_CONTACT"] == "https://example.org/contact"
