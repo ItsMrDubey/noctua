@@ -360,7 +360,29 @@ DATASETS: dict[str, Dataset] = {d.id: d for d in [
             "CC BY-NC 4.0 (free for non-commercial use)", "https://www.opensanctions.org/licensing/",
             "Sanctions data: OpenSanctions.org (CC BY-NC 4.0)", "no",
             "Commercial use requires an OpenSanctions data licence."),
+    # asset profiles (osint.profiles): relationships + sanction records, aircraft types
+    Dataset("os_assets", "OpenSanctions vessel / aircraft graph (owners, managers, sanction "
+            "records; sanctions + War & Sanctions FtM exports)", ("os_assets.sqlite",), 7,
+            lambda f: _profiles("osgraph").fetch(f),
+            "CC BY-NC 4.0 (free for non-commercial use)", "https://www.opensanctions.org/licensing/",
+            "Sanctions and ownership data: OpenSanctions.org (CC BY-NC 4.0); War & Sanctions "
+            "register: GUR of Ukraine via OpenSanctions", "no",
+            "Downloads ~420 MB of FtM JSON weekly (streamed to a temp file, reduced to a ~30 MB "
+            "SQLite graph, then deleted)."),
+    Dataset("aircraft_types", "ICAO Doc 8643 aircraft type designators (tar1090-db copy)",
+            ("aircraft_types.json",), 90, lambda f: _profiles("actypes").fetch(f),
+            "No licence stated (factual ICAO type data via Mictronics / tar1090-db)",
+            "https://github.com/wiedehopf/tar1090-db",
+            "Aircraft types: ICAO Doc 8643 via wiedehopf/tar1090-db (Mictronics)", "review",
+            "Manufacturer / model, class, engine count and type, wake category per designator."),
 ]}
+
+
+def _profiles(name: str):
+    """osint.profiles.<name>, imported lazily (keeps this module's imports light)."""
+    import importlib
+
+    return importlib.import_module(f"osint.profiles.{name}")
 
 
 # ------------------------------------------------------------------ refresh
