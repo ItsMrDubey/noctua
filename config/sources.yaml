@@ -230,6 +230,8 @@ adsb_signals:
     min_aircraft: 3     # hide cells with fewer aircraft
     medium_pct: 2.0     # gpsjam.org colour bands: <2 % green, 2-10 % yellow, >10 % red
     high_pct: 10.0
+    carried_min: 30     # degraded continuously this long over carried_km = degradation carried
+    carried_km: 300     # from elsewhere (GPS deselected after jamming/spoofing): not counted
   regions:              # radius in NM (max 250)
     - {name: Baltic / Kaliningrad, lat: 55.5, lon: 20.0, dist: 250}
     - {name: Gulf of Finland, lat: 60.0, lon: 27.0, dist: 200}

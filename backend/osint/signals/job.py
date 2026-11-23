@@ -49,7 +49,8 @@ SQUAWK_CONFIDENCE = {"7700": 0.85, "7600": 0.7, "7500": 0.6}
 DEFAULTS: dict[str, Any] = {
     "interval_s": 120.0, "initial_delay_s": 45.0,
     "squawk": {"enabled": True, "max_age_h": 24},
-    "gnss_jam": {"enabled": True, "min_aircraft": 5, "min_pct": 25.0, "merge_gap_h": 6},
+    "gnss_jam": {"enabled": True, "min_aircraft": 5, "min_pct": 25.0, "min_bad": 3,
+                 "merge_gap_h": 6},
     "outage": {"enabled": True},
     "radiation": {"enabled": True, "baseline_days": 7, "baseline_refresh_min": 60,
                   "category": "disaster"},
@@ -181,6 +182,8 @@ class SignalsJob:
                         stack.append(nb)
             n = sum(x["n"] for x in group)
             bad = sum(x["bad"] for x in group)
+            if bad < int(c["min_bad"]):
+                continue
             lat = sum(x["lat"] * x["n"] for x in group) / n
             lon = sum(x["lon"] * x["n"] for x in group) / n
             pct = 100.0 * bad / n

@@ -63,6 +63,25 @@ def test_aggregator_live_window_and_closed_hours():
     assert agg.snapshot(t0 + 60 + 3601) == []  # aged out of the 60 min window
 
 
+def test_aggregator_ignores_degradation_carried_from_elsewhere():
+    agg = gnss.GnssAggregator({"min_aircraft": 1})
+    t0 = 1795406400.0
+    # a long-haul arrival degraded for 40 min over ~550 km (GPS deselected after spoofing)
+    agg.add([gnss.nav_sample(ac(hex="a350", nic=0, nac_p=0, lat=45.0 + i, lon=10.0),
+                             t0 + i * 600) for i in range(5)])
+    cells = {c["h3"]: c for c in agg.snapshot(t0 + 2400)}
+    assert sum(c["bad"] for c in cells.values()) == 0
+    assert sum(c["carried"] for c in cells.values()) == 5  # every cell it passed, retroactively
+    assert sum(bad for *_, bad in agg.pop_closed_hours(t0 + 3600)) == 0
+    # a jammed aircraft circling locally stays degraded
+    agg.add([gnss.nav_sample(ac(hex="local", nic=0, lat=34.7, lon=33.0 + i * 0.05),
+                             t0 + 3600 + i * 600) for i in range(5)])
+    assert any(c["bad"] for c in agg.snapshot(t0 + 6000))
+    # good navigation again ends the run
+    agg.add([gnss.nav_sample(ac(hex="a350", lat=49.5, lon=10.0), t0 + 6000)])
+    assert "a350" not in agg.carried
+
+
 # ------------------------------------------------------------------ squawks
 
 

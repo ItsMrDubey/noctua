@@ -9,6 +9,7 @@ gnss_jam:
   enabled: true
   min_aircraft: 5        # a cell needs this many aircraft ...
   min_pct: 25.0          # ... and this share degraded (and level "high") to become an event
+  min_bad: 3             # ... and the cluster this many degraded aircraft
   merge_gap_h: 6         # interference continuing nearby within this extends the event
 outage:
   enabled: true          # thresholds: sources.yaml -> ioda (event_min_weight / event_min_score)

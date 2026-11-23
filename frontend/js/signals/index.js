@@ -217,7 +217,7 @@ export class Signals {
     const near = (m.regions || []).slice().sort((a, b) => Math.hypot(a.lat - c.lat, a.lon - c.lon) - Math.hypot(b.lat - c.lat, b.lon - c.lon))[0];
     return ["GNSS interference · " + (this.gnss.hours === 1 ? "live 1 h" : this.gnss.hours + " h"), col,
       '<h2 class="dz-title">' + esc(nf(c.pct, 1)) + "% degraded</h2>" + '<div class="sig-gauge" style="--c:' + col + '"><i style="width:' + Math.min(100, c.pct) + '%"></i></div>' +
-      kv([["Assessment", esc(label)], ["Aircraft", nf(c.n)], ["Degraded", nf(c.bad)], ["Cell (H3 r" + (m.res || 3) + ")", esc(c.h3)], ["Centre", nf(c.lat, 3) + ", " + nf(c.lon, 3)],
+      kv([["Assessment", esc(label)], ["Aircraft", nf(c.n)], ["Degraded", nf(c.bad) + (c.carried ? " (+" + nf(c.carried) + " carried from elsewhere, not counted)" : "")], ["Cell (H3 r" + (m.res || 3) + ")", esc(c.h3)], ["Centre", nf(c.lat, 3) + ", " + nf(c.lon, 3)],
         ["Watch region", esc(near ? near.name : "")], ["Updated", ago(ts(m.updated))]]) +
       '<div class="sig-legend">' + Object.values(GNSS_LEVELS).map(([l, cc]) => '<span><i style="--c:' + cc + '"></i>' + esc(l) + "</span>").join("") + "</div>" +
       '<div class="row-note" style="padding-left:0">Degraded = ADS-B NIC &lt; ' + esc(th.nic_min || 7) + " or NACp &lt; " + esc(th.nacp_min || 8) + " or GPS reported lost. Jamming, not spoofing: a spoofed receiver still reports high integrity. Source: adsb.fi open data (all traffic in the watch regions).</div>"];

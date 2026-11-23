@@ -8,6 +8,13 @@ map: below ``medium_pct`` (2 %) normal, up to ``high_pct`` (10 %) elevated, abov
 jamming. Only direct ADS-B (``type == adsb_icao``) airborne reports are used: MLAT / TIS-B
 positions are computed on the ground and carry no aircraft-reported integrity.
 
+Carried degradation: after flying through jamming or spoofing some airliners keep reporting
+NIC/NACp 0 for the rest of the flight (GPS deselected until landing), which would paint
+"jamming" along their whole route (seen live: long-haul A350s arriving in Germany from the
+Gulf). An aircraft continuously degraded for at least ``carried_min`` minutes while moving at
+least ``carried_km`` km is treated as carrying its degradation: it still counts as an aircraft
+but no longer as degraded, in every cell of the live window and of its open hourly buckets.
+
 Spoofing (a false position reported with high integrity) is not detectable this way.
 """
 
@@ -17,6 +24,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import h3
+
+from osint.core.geo import haversine_km
 
 DEFAULTS: dict[str, Any] = {
     "res": 3,  # H3 resolution of the map cells (~60 km edge; gpsjam aggregates per day)
@@ -30,6 +39,8 @@ DEFAULTS: dict[str, Any] = {
     "medium_pct": 2.0,
     "high_pct": 10.0,
     "min_bad_high": 2,  # "high" needs at least this many degraded aircraft
+    "carried_min": 30,  # continuously degraded this long ...
+    "carried_km": 300,  # ... over this distance = degradation carried from elsewhere
 }
 
 
@@ -111,10 +122,28 @@ class GnssAggregator:
         self.live: dict[str, dict[str, tuple[float, bool]]] = {}
         # hour start (unix s) -> cell -> hex -> degraded
         self.hours: dict[int, dict[str, dict[str, bool]]] = {}
+        # hex -> (degraded since ts, lat, lon at that time, last seen ts) while degraded
+        self._run: dict[str, tuple[float, float, float, float]] = {}
+        self.carried: set[str] = set()
         self.samples = 0
+
+    def _track_run(self, s: NavSample) -> None:
+        run = self._run.get(s.hex)
+        if not s.bad:
+            self._run.pop(s.hex, None)
+            self.carried.discard(s.hex)
+            return
+        if run is None or s.ts - run[3] > 1800:  # a long gap starts a new run
+            self._run[s.hex] = (s.ts, s.lat, s.lon, s.ts)
+            return
+        self._run[s.hex] = (run[0], run[1], run[2], max(run[3], s.ts))
+        if s.ts - run[0] >= float(self.cfg["carried_min"]) * 60 and haversine_km(
+                run[1], run[2], s.lat, s.lon) >= float(self.cfg["carried_km"]):
+            self.carried.add(s.hex)
 
     def add(self, samples: list[NavSample]) -> None:
         for s in samples:
+            self._track_run(s)
             cell = h3.latlng_to_cell(s.lat, s.lon, self.res)
             per = self.live.setdefault(cell, {})
             prev = per.get(s.hex)
@@ -126,6 +155,8 @@ class GnssAggregator:
 
     def prune(self, now_s: float) -> None:
         cutoff = now_s - float(self.cfg["window_min"]) * 60
+        self._run = {h: r for h, r in self._run.items() if r[3] >= now_s - 3 * 3600}
+        self.carried &= set(self._run)
         for cell in list(self.live):
             per = {h: v for h, v in self.live[cell].items() if v[0] >= cutoff}
             if per:
@@ -141,8 +172,10 @@ class GnssAggregator:
             n = len(per)
             if n < int(self.cfg["min_aircraft"]):
                 continue
-            bad = sum(1 for _, b in per.values() if b)
-            out.append(cell_item(cell, n, bad, self.cfg))
+            bad = sum(1 for h, (_, b) in per.items() if b and h not in self.carried)
+            item = cell_item(cell, n, bad, self.cfg)
+            item["carried"] = sum(1 for h, (_, b) in per.items() if b and h in self.carried)
+            out.append(item)
         out.sort(key=lambda c: (-c["pct"], -c["n"]))
         return out
 
@@ -152,7 +185,8 @@ class GnssAggregator:
         out = []
         for hour in sorted(h for h in self.hours if h < current):
             for cell, per in self.hours.pop(hour).items():
-                out.append((hour, cell, len(per), sum(1 for b in per.values() if b)))
+                bad = sum(1 for h, b in per.items() if b and h not in self.carried)
+                out.append((hour, cell, len(per), bad))
         return out
 
 
