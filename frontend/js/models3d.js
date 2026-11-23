@@ -25,6 +25,8 @@ const C = Cesium;
 
 export const HEADING_OFFSET = -Math.PI / 2;
 export const MODEL_BASE = "/static/models/";
+export const MODEL_NAMES = ["aircraft_airliner", "aircraft_generic", "aircraft_fighter", "aircraft_transport", "aircraft_tanker", "aircraft_awacs", "aircraft_helo", "aircraft_uav",
+  "ship_cargo", "ship_tanker", "ship_small", "ship_passenger", "ship_destroyer", "ship_carrier"];
 const KT = 0.514444; // knots -> m/s
 const FT = 0.3048;
 const G = 9.80665;
@@ -143,13 +145,14 @@ export class Kinematics {
     this.map = new Map();
   }
   get(kind, id) { return this.map.get(kind + ":" + id); }
-  /** Feed the latest snapshot for one kind; tracks absent from it are dropped. */
-  ingest(kind, items, now = Date.now()) {
-    const seen = new Set();
+  /** Feed the latest snapshot for one kind; tracks absent from it are dropped, unless
+   * `partial` (a websocket delta: only the changed tracks; removals go through drop()). */
+  ingest(kind, items, now = Date.now(), partial = false) {
+    const seen = partial ? null : new Set();
     for (const it of items) {
       if (!it || it.id == null || it.lat == null || it.lon == null) continue;
       const key = kind + ":" + it.id;
-      seen.add(key);
+      if (seen) seen.add(key);
       let st = this.map.get(key);
       const alt = altOf(kind, it);
       let t = Date.parse(it.ts);
@@ -180,8 +183,9 @@ export class Kinematics {
       let dlon = prev.lon - dr.lon; if (dlon > 180) dlon -= 360; if (dlon < -180) dlon += 360;
       st.off = Math.abs(prev.lat - dr.lat) + Math.abs(dlon) < 0.5 ? { lat: prev.lat - dr.lat, lon: dlon, alt: prev.altM - dr.altM, at: now } : null;
     }
-    for (const [k, st] of this.map) if (st.kind === kind && !seen.has(k)) this.map.delete(k);
+    if (seen) for (const [k, st] of this.map) if (st.kind === kind && !seen.has(k)) this.map.delete(k);
   }
+  drop(kind, ids) { for (const id of ids) this.map.delete(kind + ":" + id); }
   /** Drawn state at time now: {lat, lon, altM, heading, pitch, roll, alpha, live}. */
   predict(st, now = Date.now(), raw = false) {
     if (typeof st === "string") st = this.map.get(st);
@@ -240,6 +244,9 @@ export class Models3D {
    * @param opts.hideBillboard (kind, id) => void   hide the 2D glyph of a track drawn in 3D
    * @param opts.showBillboard (kind, id) => void   restore it (respecting the layer filter)
    * @param opts.getItems () => ({aircraft, ships})  optional pull source used on camera moves
+   * @param opts.layers {aircraft, ships} Layer objects (items Map + filter + show), read
+   *   directly while 3D is active, so updates never build arrays of every track
+   * @param opts.maxNewPerFrame  models created per frame when many engage at once (default 12)
    * @param opts.maxModels  nearest N tracks in view drawn in 3D (default 250)
    * @param opts.maxAltitudeM  eye altitude below which 3D engages (default 300 km)
    * @param opts.kinematics  shared Kinematics (else one is created; exposed as .kinematics)
@@ -253,6 +260,11 @@ export class Models3D {
     this.getItems = opts.getItems || null;
     this.maxModels = opts.maxModels ?? 250;
     this.maxAlt = opts.maxAltitudeM ?? 300e3;
+    this.layers = opts.layers || null;
+    // creating ~250 glTF models at once froze the UI for ~1 s (model + shader setup):
+    // nearest-first batches per frame keep it responsive while the rest stream in
+    this.maxNew = opts.maxNewPerFrame ?? 12;
+    this._more = 0;
     this.base = opts.baseUrl || MODEL_BASE;
     this.kinematics = opts.kinematics || new Kinematics(opts);
     this.col = this.scene.primitives.add(new C.PrimitiveCollection({ destroyPrimitives: true }));
@@ -277,6 +289,22 @@ export class Models3D {
     if (aircraftItems) { this.items.aircraft = aircraftItems; this.kinematics.ingest("aircraft", aircraftItems, now); }
     if (shipItems) { this.items.ships = shipItems; this.kinematics.ingest("ships", shipItems, now); }
     this.refresh();
+  }
+
+  /** Websocket delta for one kind: only the changed tracks and the removed ids (with
+   * opts.layers for the full set). Cost scales with the delta, not with every track.
+   * Call refresh() once after the kinds of one delta are fed. */
+  delta(kind, changed, removedIds) {
+    this.kinematics.ingest(kind, changed, Date.now(), true);
+    if (removedIds && removedIds.length) this.kinematics.drop(kind, removedIds);
+  }
+
+  // tracks of one kind eligible for 3D: the layer (shown + filtered) or the last update()
+  *_candidates(kind) {
+    const l = this.layers && this.layers[kind];
+    if (!l) { yield* this.items[kind]; return; }
+    if (!l.show) return;
+    for (const it of l.items.values()) if (l.filter(it)) yield it;
   }
 
   active() { return this.enabled && eyeHeight(this.scene) < this.maxAlt; }
@@ -322,9 +350,9 @@ export class Models3D {
 
   /** Re-select the 3D set (nearest N in view) and diff models. */
   refresh() {
-    if (this.getItems) { const g = this.getItems(); if (g) { this.items.aircraft = g.aircraft || []; this.items.ships = g.ships || []; } }
     const want = new Map();
     if (this.active()) {
+      if (this.getItems) { const g = this.getItems(); if (g) { this.items.aircraft = g.aircraft || []; this.items.ships = g.ships || []; } }
       const cam = this.scene.camera;
       // ground footprint of the view, padded: aircraft at altitude seen obliquely project
       // outside it, and a model must not pop in/out at the frame edge
@@ -332,7 +360,7 @@ export class Models3D {
       const eye = cam.positionWC;
       const cand = [];
       for (const kind of ["aircraft", "ships"]) {
-        for (const it of this.items[kind]) {
+        for (const it of this._candidates(kind)) {
           if (!it || it.lat == null || it.lon == null) continue;
           if (rect && !C.Rectangle.contains(rect, C.Cartographic.fromDegrees(it.lon, it.lat, 0, scratchCarto))) continue;
           const p = C.Cartesian3.fromDegrees(it.lon, it.lat, altOf(kind, it), undefined, scratchPos);
@@ -344,11 +372,12 @@ export class Models3D {
       // the followed track always gets its model, wherever the view footprint falls
       if (this.pinned) {
         const [pk, pid] = this.pinned, key = pk + ":" + pid;
-        const it = !want.has(key) && this.items[pk] && this.items[pk].find((x) => x && x.id === pid);
+        const l = this.layers && this.layers[pk];
+        const it = !want.has(key) && (l ? l.items.get(pid) : this.items[pk] && this.items[pk].find((x) => x && x.id === pid));
         if (it) want.set(key, [0, pk, it]);
       }
     }
-    let changed = false;
+    let changed = false, budget = this.maxNew, deferred = 0;
     for (const [key, e] of this.entries) {
       if (want.has(key)) continue;
       this._remove(key, e);
@@ -358,7 +387,11 @@ export class Models3D {
       const name = kind === "aircraft" ? aircraftModel(it) : shipModel(it);
       let e = this.entries.get(key);
       if (e && e.name !== name) { this._remove(key, e); e = null; }
-      if (!e) { this._create(key, kind, it, name); changed = true; continue; }
+      if (!e) {
+        if (budget <= 0) { deferred++; continue; } // nearest first; the rest next frame
+        budget--;
+        this._create(key, kind, it, name); changed = true; continue;
+      }
       e.it = it;
       if (e.ready) this.hide(kind, it.id); // layers may have re-shown it during sync
       const hp = !!(kind === "aircraft" && it.high_priority);
@@ -367,6 +400,42 @@ export class Models3D {
     this._place(Date.now());
     if (changed || this.entries.size) this.scene.requestRender();
     this._kick();
+    if (deferred && !this._more) this._more = requestAnimationFrame(() => { this._more = 0; this.refresh(); });
+  }
+
+  /** Compile the model shaders before they are needed. The first frame that draws freshly
+   * loaded models blocks on WebGL shader linking (~1.3 s for this set on ANGLE/D3D11), which
+   * froze the globe the moment 3D engaged. Each glb is drawn once, sub-pixel, just in front
+   * of the camera, one per idle slot, then hidden (not freed); later models reuse the cached
+   * programs. */
+  prewarm(names = MODEL_NAMES) {
+    const queue = [...names];
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+    const next = () => {
+      const name = queue.shift();
+      if (!name || this.col.isDestroyed()) return;
+      const cam = this.scene.camera;
+      const at = C.Cartesian3.add(cam.positionWC, C.Cartesian3.multiplyByScalar(cam.directionWC, 200, new C.Cartesian3()), new C.Cartesian3());
+      C.Model.fromGltfAsync({
+        url: this.base + name + ".glb", modelMatrix: C.Transforms.eastNorthUpToFixedFrame(at),
+        upAxis: C.Axis.Y, forwardAxis: C.Axis.Z, scale: 1e-4, minimumPixelSize: 0,
+        silhouetteColor: HP_SIL, silhouetteSize: 0, shadows: C.ShadowMode.DISABLED,
+        colorBlendMode: C.ColorBlendMode.MIX, colorBlendAmount: 0,
+      }).then((model) => {
+        if (this.col.isDestroyed()) { model.destroy(); return; }
+        this.col.add(model);
+        // kept (hidden) rather than destroyed: Cesium frees a program once no primitive
+        // references it, and the next model would compile it again
+        const done = () => { model.show = false; idle(next, { timeout: 3000 }); };
+        model.readyEvent.addEventListener(() => {
+          // drawn once after ready = programs linked
+          const off = this.scene.postRender.addEventListener(() => { off(); setTimeout(done, 0); });
+          this.scene.requestRender();
+        });
+        this.scene.requestRender();
+      }).catch(() => idle(next, { timeout: 3000 }));
+    };
+    idle(next, { timeout: 3000 });
   }
 
   _create(key, kind, it, name) {
@@ -471,11 +540,14 @@ const LEADER = {
 };
 
 export class VectorLeaders {
-  /** @param opts.kinematics shared Kinematics (adds climb from vertical rate); opts.maxTracks (1500) */
+  /** @param opts.kinematics shared Kinematics (adds climb from vertical rate); opts.maxTracks (1500)
+   *  @param opts.layers {aircraft, ships} Layer objects read directly (see Models3D) */
   constructor(viewer, opts = {}) {
     this.viewer = viewer;
     this.scene = viewer.scene;
     this.kin = opts.kinematics || null;
+    this.layers = opts.layers || null;
+    this._timer = 0; this._lastBuild = -1e9;
     this.maxTracks = opts.maxTracks ?? 1500;
     this.minutes = 5;
     this.lines = this.scene.primitives.add(new C.PolylineCollection());
@@ -489,6 +561,20 @@ export class VectorLeaders {
   setVisible(b) { this.lines.show = this.ticks.show = !!b; this.scene.requestRender(); }
   /** items for one kind ("aircraft" | "ships"); diffed by id within that kind. */
   update(items, kind = "aircraft") { this.items[kind] = items || []; this._rebuild(); }
+  rebuild() { clearTimeout(this._timer); this._timer = 0; this._rebuild(); }
+  /** Track data changed (with opts.layers): rebuild at most once a second. A leader moves a
+   * few pixels between 2 s websocket deltas; a full pass over every track each time is waste. */
+  touch() {
+    if (!this.lines.show || this._timer) return;
+    const wait = Math.max(0, 1000 - (performance.now() - this._lastBuild));
+    this._timer = setTimeout(() => { this._timer = 0; this._rebuild(); }, wait);
+  }
+  *_candidates(kind) {
+    const l = this.layers && this.layers[kind];
+    if (!l) { yield* this.items[kind]; return; }
+    if (!l.show) return;
+    for (const it of l.items.values()) if (l.filter(it)) yield it;
+  }
 
   _color(kind, it) {
     if (kind === "ships") return it.is_mil ? LEADER.shipMil : LEADER.ship;
@@ -497,11 +583,12 @@ export class VectorLeaders {
 
   _rebuild() {
     if (!this.lines.show) return;
+    this._lastBuild = performance.now();
     const rect = this.scene.camera.computeViewRectangle(this.scene.globe.ellipsoid);
     const center = rect ? C.Rectangle.center(rect) : null;
     const cand = [];
     for (const kind of ["aircraft", "ships"]) {
-      for (const it of this.items[kind]) {
+      for (const it of this._candidates(kind)) {
         if (!it || it.lat == null || !(+it.speed_kts > 0.5) || it.heading_deg == null) continue;
         const c = C.Cartographic.fromDegrees(it.lon, it.lat, 0, scratchCarto);
         if (rect && !C.Rectangle.contains(rect, c)) continue;

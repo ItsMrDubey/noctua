@@ -97,7 +97,8 @@ export function setupHud(viewer) {
   return { home, toggleMode, toggleTilt, set onEnter25(fn) { onEnter25 = fn; } };
 }
 
-// FPS meter: main-thread frames (rAF), scene renders/s, worst render time over the last second.
+// FPS meter: main-thread frames (rAF), scene renders/s, worst render time over the last second,
+// plus whatever `extra()` reports (app.js: live websocket cost).
 export function setupFps(viewer) {
   const el = document.createElement("div");
   el.id = "fps";
@@ -115,11 +116,12 @@ export function setupFps(viewer) {
   setInterval(() => {
     if (on) {
       el.textContent = "UI " + frames + " fps · max gap " + worstGap.toFixed(0) + " ms   GLOBE " + renders + " renders/s · max " + worst.toFixed(1) + " ms" +
-        (viewer.scene.requestRenderMode ? "  (on demand)" : "  (continuous)");
+        (viewer.scene.requestRenderMode ? "  (on demand)" : "  (continuous)") + (api.extra ? api.extra() : "");
     }
     frames = 0; renders = 0; worst = 0; worstGap = 0;
   }, 1000);
   const toggle = () => { on = !on; el.classList.toggle("hidden", !on); if (on) { last = performance.now(); requestAnimationFrame(loop); } };
   window.__fps = () => ({ on });
-  return { toggle };
+  const api = { toggle, extra: null };
+  return api;
 }

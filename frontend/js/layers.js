@@ -63,6 +63,8 @@ export class Layer {
     this.removeIds([...this.map.keys()].filter((id) => !seen.has(id)));
   }
   refilter() { for (const [id, p] of this.map) p.show = this.filter(this.items.get(id)); if (this.onChange) this.onChange(); }
+  // re-apply every primitive (after a styling hook changed), same as a data change
+  restyle() { for (const p of this.map.values()) p._k = null; this.upsert([...this.items.values()]); }
   visibleItems() { return this.col.show ? [...this.items.values()].filter(this.filter) : []; }
   positionOf(id) { const p = this.map.get(id); return p ? p.position : null; }
 }
@@ -107,14 +109,19 @@ export class ShipLayer extends Layer {
   }
 }
 
+// Items are kept exactly as the API sent them (all attributes intact, e.g. for scoring).
+// Hook points for per-fire styling: `fires.style = (it) => ({ color, size })` (either may be
+// omitted; null/undefined keeps the FRP ramp), `fires.filter = (it) => bool` for visibility;
+// call restyle() / refilter() after changing them.
 export class FireLayer extends PointLayer {
-  constructor(scene) { super(scene); this.kind = "fires"; }
+  constructor(scene) { super(scene); this.kind = "fires"; this.style = null; }
   key(it) { return it.lat + "|" + it.lon + "|" + it.frp; }
   apply(p, it) {
     p.position = pos(it.lat, it.lon, 0);
     const t = Math.min(1, Math.max(0, (it.frp || 0) / 100));
-    p.color = FIRE_RAMP[Math.round(t * 10)]; // orange -> red
-    p.pixelSize = 6 + 3 * t;
+    const s = this.style ? this.style(it) : null;
+    p.color = (s && s.color) || FIRE_RAMP[Math.round(t * 10)]; // orange -> red
+    p.pixelSize = (s && s.size) || 6 + 3 * t;
   }
 }
 

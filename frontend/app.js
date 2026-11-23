@@ -30,6 +30,7 @@ import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 import { Weather, setCinematic, sunTime } from "/static/js/weather.js";
 import { Dossier } from "/static/js/browser.js";
+import { Freshness } from "/static/js/freshness.js";
 
 const errors = {};
 let lastStatus = null;
@@ -55,6 +56,7 @@ async function main() {
   const fps = setupFps(viewer);
   const tree = new LayerTree();
   const statusBar = new StatusBar();
+  const freshness = new Freshness();
 
   // ---- Data layers ----
   const air = new AircraftLayer(scene), ships = new ShipLayer(scene), fires = new FireLayer(scene), quakes = new QuakeLayer(scene), events = new EventLayer(scene);
@@ -63,22 +65,35 @@ async function main() {
   const byKind = { aircraft: air, ships, fires, quakes, events };
 
   // ---- 3D level of detail: glTF models near the camera + velocity leader lines ----
+  const trackLayers = { aircraft: air, ships };
   const models = new Models3D(viewer, {
+    layers: trackLayers,
     hideBillboard: (kind, id) => { const p = byKind[kind].map.get(id); if (p) p.show = false; },
     showBillboard: (kind, id) => { const l = byKind[kind], p = l.map.get(id); if (p) p.show = l.filter(l.items.get(id)); },
   });
-  const leaders = new VectorLeaders(viewer, { kinematics: models.kinematics });
-  // after every aircraft / ship sync (REST, websocket, replay), filter change or layer toggle:
-  // Layer.upsert/refilter re-show billboards, update() hides the ones drawn in 3D again
+  const leaders = new VectorLeaders(viewer, { kinematics: models.kinematics, layers: trackLayers });
+  // after every full aircraft / ship sync (REST, websocket snapshot, replay), filter change or
+  // layer toggle: Layer.upsert/refilter re-show billboards, update() hides the ones drawn in 3D again
   const sync3d = () => {
-    const a = air.visibleItems(), s = ships.visibleItems();
-    models.update(a, s);
-    leaders.update(a, "aircraft"); leaders.update(s, "ships");
+    models.update(air.visibleItems(), ships.visibleItems());
+    leaders.rebuild();
+  };
+  // websocket delta: kinematics of the changed tracks only (not all ~20k ships every 2 s),
+  // one re-selection of the 3D set, leaders at most once a second
+  const sync3dDelta = (aircraft, shipItems, removed) => {
+    models.delta("aircraft", aircraft, removed); models.delta("ships", shipItems, removed);
+    models.refresh();
+    leaders.touch();
   };
   models.setEnabled($("t-models3d").checked);
   leaders.setHorizonMinutes(+$("t-leader-min").value);
   leaders.setVisible($("t-leaders").checked);
-  $("t-models3d").addEventListener("change", (e) => { models.setEnabled(e.target.checked); sync3d(); });
+  // compile the 3D model shaders in idle time after start-up (or when 3D is switched on),
+  // not in the frame where zooming in first engages them
+  let warmed = false;
+  const warm3d = () => { if (!warmed && models.enabled) { warmed = true; models.prewarm(); } };
+  setTimeout(warm3d, 6000);
+  $("t-models3d").addEventListener("change", (e) => { models.setEnabled(e.target.checked); sync3d(); warm3d(); });
   $("t-leaders").addEventListener("change", (e) => { leaders.setVisible(e.target.checked); sync3d(); });
   $("t-leader-min").addEventListener("change", (e) => leaders.setHorizonMinutes(+e.target.value));
   // OSM Buildings load lazily on first use (needs the Cesium ion token from /api/config)
@@ -151,6 +166,7 @@ async function main() {
     const data = await fetchJson(url);
     const items = Array.isArray(data && data.items) ? data.items : [];
     layer.sync(items);
+    freshness.note(kind, items);
     if (kind === "aircraft" || kind === "ships") sync3d();
     setCount(kind, items.length, data && data.truncated);
     if (kind === "aircraft") alerts.aircraft(items);
@@ -566,7 +582,7 @@ async function main() {
     const c = $("events-count"), t = n ? String(n > 999 ? "999+" : n) : "";
     if (c.textContent !== t) c.textContent = t;
   }
-  const evFeed = new EventFeed(events, (items) => { tick_ev_count(); if (!replayAt) alerts.events([...events.items.values()]); if (selected && selected.kind === "events") refreshSelected(); });
+  const evFeed = new EventFeed(events, (items) => { freshness.note("events", items, "updated_at"); tick_ev_count(); if (!replayAt) alerts.events([...events.items.values()]); if (selected && selected.kind === "events") refreshSelected(); });
 
   // ---- Historical conflict events (UCDP), default off ----
   const histLayer = new HistoricalLayer(viewer);
@@ -645,19 +661,55 @@ async function main() {
   histLayer.setSince(new Date(timeline.start()));
 
   // ---- WebSocket live push (falls back to polling while closed) ----
-  live = new LiveSocket((m) => {
-    if (replayAt || !m) return;
-    if (m.type === "snapshot") { air.sync(m.aircraft || []); ships.sync(m.ships || []); }
-    else if (m.type === "delta") {
-      air.upsert(m.aircraft || []); ships.upsert(m.ships || []);
-      const rm = m.removed || [];
-      air.removeIds(rm); ships.removeIds(rm);
-    } else return;
-    sync3d();
+  // Track snapshot/deltas, plus layer versions: when new fires / quakes / events land in the
+  // store the server bumps their version and the layer is refetched at once (the 5 min polls
+  // below are only the fallback).
+  let layerVer = null; // kept across reconnects: changes missed while disconnected still refetch
+  const refetch = {
+    fires: () => ticks[2](true), quakes: () => ticks[3](true), events: () => evFeed.tick(),
+  };
+  const onLayerVersions = (v) => {
+    const prev = layerVer;
+    layerVer = v || {};
+    if (!prev || replayAt) return; // first message after page load: the initial polls cover it
+    for (const k of Object.keys(refetch)) {
+      if (!layerVer[k] || layerVer[k] === prev[k]) continue;
+      refetch[k]().then(() => onErr(k, null), (e) => onErr(k, String((e && e.message) || e)));
+    }
+  };
+  live = new LiveSocket((batch) => {
+    let full = false, any = false;
+    const airCh = [], shipCh = [], removed = [];
+    for (const m of batch) {
+      if (!m) continue;
+      if (m.type === "layers") { onLayerVersions(m.layers); continue; }
+      if (replayAt) continue;
+      const a = m.aircraft || [], s = m.ships || [];
+      if (m.type === "snapshot") { air.sync(a); ships.sync(s); full = true; }
+      else if (m.type === "delta") {
+        air.upsert(a); ships.upsert(s);
+        const rm = m.removed || [];
+        air.removeIds(rm); ships.removeIds(rm);
+        for (const x of a) airCh.push(x);
+        for (const x of s) shipCh.push(x);
+        for (const x of rm) removed.push(x);
+      } else continue;
+      any = true;
+      freshness.note("aircraft", a); freshness.note("ships", s);
+      alerts.aircraft(a);
+    }
+    if (!any) return;
+    if (full) sync3d(); else sync3dDelta(airCh, shipCh, removed);
     setCount("aircraft", air.items.size); setCount("ships", ships.items.size);
-    alerts.aircraft(m.aircraft || []);
     if (selected && isTrack(selected.kind)) { refreshSelected(); trailSelected(false); }
   });
+  // dev overlay (F): live message rate and main-thread cost of parsing + applying them
+  let liveLast = { n: 0, ms: 0, bytes: 0 };
+  fps.extra = () => {
+    const s = live.stats, d = { n: s.n - liveLast.n, ms: s.ms - liveLast.ms, kb: (s.bytes - liveLast.bytes) / 1024 };
+    liveLast = { ...s };
+    return "   LIVE " + d.n + " msg/s · " + d.kb.toFixed(0) + " KB/s · " + d.ms.toFixed(1) + " ms/s · max batch " + s.max.toFixed(1) + " ms";
+  };
 
   // ---- Dossier (in-app browser) ----
   const dossier = new Dossier({ flyTo });
@@ -714,7 +766,7 @@ async function main() {
   ];
   poll("events", 60000, () => evFeed.tick(), onErr);
   poll("events-stats", 60000, () => refreshEventStats(), onErr);
-  poll("status", 5000, async () => { lastStatus = await fetchJson("/api/status", 8000); }, onErr);
+  poll("status", 5000, async () => { lastStatus = await fetchJson("/api/status", 8000); freshness.setStatus(lastStatus); }, onErr);
   poll("aircraft", 10000, ticks[0], onErr);
   poll("ships", 30000, ticks[1], onErr);
   poll("fires", 300000, ticks[2], onErr);
@@ -729,6 +781,7 @@ async function main() {
   air.onChange = () => { prevAir && prevAir(); clearTimeout(haloT); haloT = setTimeout(() => reticle.syncHalos(air), 300); };
   ctx.tracklist = tracklist;
   ctx.dossier = dossier;
+  ctx.live = live;
   ctx.palette = new Palette(ctx);
   window.__osint = ctx;
   return ctx;
