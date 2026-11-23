@@ -620,6 +620,70 @@ def watch_flags(runtime, tracks: list[dict]) -> None:
                           f" ({h.get('strength')})"})
 
 
+# AIS-gap notability: a ship that stops reporting matters at sea, not on a river or in port
+# (inland barges and moored ships drop out of terrestrial AIS coverage all the time), and only
+# when the silence is long compared with how often the ship normally reaches the platform.
+AIS_GAP_NOTABLE_MIN = 180.0  # floor for a notable gap
+AIS_GAP_EXPECTED_X = 12.0  # ... and at least this many times the track's mean report interval
+AIS_OPEN_WATER_KM = 15.0  # gap position this far from the land mask = open water
+# The land mask (osint.naval.geo: Natural Earth on H3 res 4, coastline cells count as land)
+# puts rivers, lakes and harbours on "land"; AIS ship types cannot tell a Rhine barge (70/79/
+# 80) from a seagoing cargo ship, so the position decides.
+
+
+def _water_at(lat: float | None, lon: float | None,
+              ref_dir: Path | None = None) -> tuple[str, float | None]:
+    """('open' | 'coastal' | 'inland_or_port' | 'unknown', distance to land km)."""
+    if lat is None or lon is None:
+        return "unknown", None
+    try:
+        from osint.naval.geo import get_geo
+        mask = get_geo(ref_dir).mask
+    except Exception:  # no reference data: cannot classify
+        log.debug("ocean mask unavailable", exc_info=True)
+        return "unknown", None
+    if not mask.land:
+        return "unknown", None
+    if mask.is_land_cell(_naval_cell(lat, lon)):
+        return "inland_or_port", 0.0
+    d = mask.coast_km(lat, lon)
+    return ("open" if d >= AIS_OPEN_WATER_KM else "coastal"), round(d, 1)
+
+
+def _ref_dir(runtime) -> Path | None:
+    d = getattr(getattr(runtime, "settings", None), "data_dir", None)
+    return Path(d) / "reference" if d else None
+
+
+def _naval_cell(lat: float, lon: float) -> str:
+    from osint.naval.geo import cell
+    return cell(lat, lon)
+
+
+def ais_gap_notability(g: dict, ref_dir: Path | None = None) -> dict:
+    """{water, coast_km, expected_min, threshold_min, notable, why} for an AIS gap row
+    (``gap_at`` = [lat, lon] where the gap ended, ``mean_interval_min``, ``max_gap_min``)."""
+    at = g.get("gap_at") or [None, None]
+    water, coast = _water_at(at[0], at[1], ref_dir)
+    expected = g.get("mean_interval_min")
+    threshold = max(AIS_GAP_NOTABLE_MIN, AIS_GAP_EXPECTED_X * (expected or 0.0))
+    gap = float(g.get("max_gap_min") or 0)
+    if water == "inland_or_port":
+        why = "inland waterway / port (land mask): terrestrial AIS drops out routinely"
+    elif water == "unknown":
+        why = "position not classifiable as open water"
+    elif water == "coastal":
+        why = f"within {AIS_OPEN_WATER_KM:.0f} km of land (anchorage / coastal coverage)"
+    elif gap < threshold:
+        why = (f"gap below {threshold:.0f} min (x{AIS_GAP_EXPECTED_X:.0f} the ship's mean "
+               "report interval, min 3 h)")
+    else:
+        why = "seagoing silence in open water, long for this ship's reporting rate"
+    return {"water": water, "coast_km": coast, "expected_min": expected,
+            "threshold_min": round(threshold), "why": why,
+            "notable": water == "open" and gap >= threshold}
+
+
 def section_activity(runtime, subj: dict, now: datetime) -> dict:
     from osint.intel.aggregate import bbox_around
 
@@ -635,7 +699,8 @@ def section_activity(runtime, subj: dict, now: datetime) -> dict:
     try:
         tracks = runtime.lake.query(
             "SELECT track_id, kind, count(*), min(epoch_us(ts)), max(epoch_us(ts)), min(d), "
-            "max(gap) FROM (SELECT *, epoch_us(ts) - lag(epoch_us(ts)) OVER "
+            "max(gap), arg_max(lat, gap), arg_max(lon, gap) FROM (SELECT *, "
+            "epoch_us(ts) - lag(epoch_us(ts)) OVER "
             f"(PARTITION BY track_id ORDER BY ts) AS gap FROM ({inner}) WHERE d <= {float(r)}) "
             "GROUP BY track_id, kind", params, start=lo, end=now)
         hours = runtime.lake.query(
@@ -659,9 +724,12 @@ def section_activity(runtime, subj: dict, now: datetime) -> dict:
     ids = [t[0] for t in tracks]
     meta = runtime.store.get_tracks(ids) if ids else {}
     items = []
-    for tid, kind, cnt, first, last, dmin, gap in tracks:
+    for tid, kind, cnt, first, last, dmin, gap, *at in tracks:
         m = meta.get(tid) or {}
         items.append({"id": tid, "kind": kind, "fixes": int(cnt),
+                      "gap_at": [at[0], at[1]] if len(at) >= 2 and at[0] is not None else None,
+                      "mean_interval_min": round((last - first) / 6e7 / (cnt - 1), 1)
+                      if cnt and cnt > 1 else None,
                       "first": datetime.fromtimestamp(first / 1e6, UTC).isoformat(timespec="seconds"),
                       "last": datetime.fromtimestamp(last / 1e6, UTC).isoformat(timespec="seconds"),
                       "closest_km": round(float(dmin), 1),
@@ -674,6 +742,9 @@ def section_activity(runtime, subj: dict, now: datetime) -> dict:
     _flag_tracks(runtime, items)
     gaps = sorted([x for x in items if x["kind"] == "ship" and (x["max_gap_min"] or 0) >= 60],
                   key=lambda x: -x["max_gap_min"])
+    for g in gaps:
+        g.update(ais_gap_notability(g, _ref_dir(runtime)))
+    gaps.sort(key=lambda x: (not x["notable"], -x["max_gap_min"]))
     notable = sorted([x for x in items if x["is_mil"] or x["high_priority"] or x["flags"]],
                      key=lambda x: (not x["flags"], not x["is_mil"], x["closest_km"]))
     alerts = []
@@ -744,16 +815,18 @@ def section_country(runtime, subj: dict, now: datetime) -> dict:
     base_days = [v for i, v in enumerate(series[:-7])
                  if first and (since + timedelta(days=i + 1)).strftime("%Y-%m-%d") >= first]
     base = statistics.mean(base_days) if len(base_days) >= 3 else None
-    from osint.intel.aggregate import bbox_around
     from osint.storylines.store import get_store
 
     stories = []
     if subj.get("lat") is not None:
         try:
-            for s in get_store(runtime).list(bbox=bbox_around(subj["lat"], subj["lon"], 400),
+            # a thread counts only with a member event within 400 km (its bounds can span
+            # a continent: Kyiv + Lisbon members would otherwise match a point in Germany)
+            for s in get_store(runtime).list(near=(subj["lat"], subj["lon"], 400.0),
                                              since=now - timedelta(days=7), limit=8):
                 stories.append({k: s.get(k) for k in ("id", "title", "theatre_label", "t_last",
-                                                      "n_events", "lat", "lon")})
+                                                      "n_events", "lat", "lon",
+                                                      "distance_km")})
         except Exception:
             log.debug("storylines unavailable", exc_info=True)
     return {"cc": cc, "name": name,

@@ -660,7 +660,10 @@ function notes(id, D, PV) {
     case "traf": {
       if (!A || A.error) return null;
       if (A.flagged || (A.watch_alerts || []).length) return { level: "alert", text: nf(A.flagged) + " watchlisted track(s) / " + nf((A.watch_alerts || []).length) + " watch alert(s) nearby" };
-      if ((A.gaps || []).length && A.gaps[0].max_gap_min >= 180) return { level: "warn", text: "AIS gap " + A.gaps[0].max_gap_min + " min nearby (" + (A.gaps[0].name || A.gaps[0].id) + ")" };
+      // only seagoing silences in open water, long for the ship's reporting rate (backend
+      // ais_gap_notability); river barges / moored ships drop out of AIS coverage routinely
+      const g = (A.gaps || []).find((x) => x.notable);
+      if (g) return { level: "warn", text: "AIS gap " + g.max_gap_min + " min at sea nearby (" + (g.name || g.id) + ")" };
       const now = D.traffic && D.traffic.now;
       if (!A.aircraft && !A.ships && !(now && now.items.length)) return { quiet: "no aircraft or ships recorded within " + nf(A.radius_km) + " km in 24 h" };
       return null;
