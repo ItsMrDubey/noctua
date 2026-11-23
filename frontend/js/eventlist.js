@@ -73,9 +73,7 @@ export class EventList {
       const c = threatColor("events", it);
       html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + 'px;--c:' + c + '" title="' + esc(eventCat(it.category)[0]) + '">' +
         '<div class="g" style="color:' + c + '">' + uiGlyph("events", it) + '</div><div class="t">' + esc(evTitle(it) || it.id) + (trPending(it) ? " " + TR_TAG : "") + "</div>" +
-        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc("First report " + (it.t_start || "?") + "
-Latest report " + (it.t_end || "?") + "
-Processed " + (it.updated_at || "?")) + '">' + relTime(activeAt(it)) + "</time></div></div>";
+        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc("First report " + (it.t_start || "?") + "\nLatest report " + (it.t_end || "?") + "\nProcessed " + (it.updated_at || "?")) + '">' + relTime(activeAt(it)) + "</time></div></div>";
     }
     if (html !== this._painted) { this._painted = html; this.space.innerHTML = html; }
   }

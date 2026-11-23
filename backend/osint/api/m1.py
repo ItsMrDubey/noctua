@@ -19,6 +19,7 @@ from osint.api.movements import mount_movements
 from osint.api.nuclear import mount_nuclear
 from osint.api.reference import mount_reference
 from osint.api.security import is_loopback
+from osint.api.storylines import mount_storylines
 from osint.api.weather import mount_weather
 from osint.api.webcams import mount_webcams
 from osint.config import ROOT
@@ -118,6 +119,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_events(app, runtime)
     mount_imagery(app, runtime)
     mount_intel(app, runtime)
+    mount_storylines(app, runtime)
     mount_extraction(app, runtime)
     mount_webcams(app)
     mount_weather(app)

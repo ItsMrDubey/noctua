@@ -9,6 +9,8 @@
 //   search  - candidate Wikidata items for a name
 //   intel   - all-source intel buildup around a selection (panels/intel-view.js, /api/intel);
 //             Wikidata / Wikipedia is its "Background" card. Entities pivot within the pane.
+//   story   - a storyline: linked events of one thread, lanes timeline, globe playback
+//             (panels/storyline-view.js, /api/storylines/{id})
 //
 // Wikidata / Wikipedia / Commons are queried straight from the app (CORS, origin=*): this is
 // user-driven browsing. Links clicked anywhere in the app (target=_blank) open here; Ctrl- or
@@ -20,6 +22,7 @@
 import { esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
 import { renderIntel, intelKey } from "/static/js/panels/intel-view.js";
+import { renderStoryline, storyKey } from "/static/js/panels/storyline-view.js";
 
 const WD = "https://www.wikidata.org/w/api.php";
 const COMMONS = "https://commons.wikimedia.org/w/api.php";
@@ -47,6 +50,7 @@ const ICON = {
   nearby: '<svg viewBox="0 0 16 16"><path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 0 0-9 0C3.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/></svg>',
   search: '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
   intel: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>',
+  story: '<svg viewBox="0 0 16 16"><circle cx="3" cy="11" r="1.6"/><circle cx="8" cy="5" r="1.6"/><circle cx="13" cy="9" r="1.6"/><path d="M4.2 9.8L6.9 6.3M9.4 5.8l2.3 2.2"/></svg>',
 };
 const B = {
   back: '<svg viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>',
@@ -271,10 +275,11 @@ export function tileLayout(n, wide = true) {
 let uid = 0;
 
 export class Dossier {
-  constructor({ flyTo, select, highlight } = {}) {
+  constructor({ flyTo, select, highlight, story } = {}) {
     this.flyTo = flyTo || (() => {});
     this.select = select || (() => {});
     this.highlight = highlight || (() => {});
+    this.story = story || null; // storyline panes: {overlay, replay(t)} (app.js)
     this.panes = [];
     this.focused = null;
     this.zoomed = null;
@@ -544,6 +549,12 @@ export class Dossier {
       else if (spec.type === "search") await this._search(pane, body, stale);
       else if (spec.type === "resolve") await this._resolve(pane, body, stale);
       else if (spec.type === "intel") await renderIntel(spec, body, { head: (h) => this._head(pane, h), stale, wdResolve, wdEntity, highlight: this.highlight });
+      else if (spec.type === "story") {
+        const st = this.story || {}, noop = () => {};
+        await renderStoryline(spec, body, { head: (h) => this._head(pane, h), stale, highlight: this.highlight, flyTo: this.flyTo,
+          overlay: st.overlay || { show: noop, fit: noop, setTime: noop, clear: noop }, replay: st.replay,
+          intelEvent: (id, label) => this.open({ type: "intel", kind: "event", id, label: label || id }) });
+      }
     } catch (err) {
       if (stale()) return;
       this._head(pane, { title: pane.title === "Loading…" ? "Error" : pane.title, sub: spec.url || spec.qid || "", icon: spec.type, ext: spec.url });
@@ -686,6 +697,7 @@ function specKey(s) {
   if (s.type === "nearby") return "n:" + (+s.lat).toFixed(3) + "," + (+s.lon).toFixed(3);
   if (s.type === "search") return "s:" + s.q;
   if (s.type === "intel") return intelKey(s);
+  if (s.type === "story") return storyKey(s);
   return "r:" + [s.q, s.icao, s.lat, s.lon].join("|");
 }
 const tab = (id, label, disabled) => '<button data-tab="' + id + '"' + (disabled ? " disabled" : "") + ">" + label + "</button>";

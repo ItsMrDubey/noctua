@@ -19,6 +19,8 @@ reads one store and returns plain dicts:
   imagery     before / after satellite imagery state (events)
   sources     the reports (outlet, language, time, link, repost groups) and diversity
   entities    actors and places to pivot on
+  storyline   the thread an event belongs to (osint.storylines: role, span, members), or
+              for a point / actor the storylines around it / naming it
 
 Every section is independent (the API runs the requested ones concurrently) and returns
 ``{"error": ...}`` instead of raising, so one failing store never blanks the pane.
@@ -37,7 +39,7 @@ from osint.timeline.build import bearing_deg, build_timeline, compass, parse_ts
 log = logging.getLogger(__name__)
 
 SECTIONS = ("assessment", "timeline", "related", "history", "sensors", "traffic", "assets",
-            "imagery", "sources", "entities")
+            "imagery", "sources", "entities", "storyline")
 RADIUS_BY_PRECISION = {"point": 25.0, "city": 40.0, "admin1": 150.0, "country": 400.0}
 MAX_RADIUS_KM = 500.0
 DAY = timedelta(days=1)
@@ -539,6 +541,36 @@ def section_entities(runtime, subj: dict, now: datetime) -> dict:
     return {"items": items[:30]}
 
 
+def section_storyline(runtime, subj: dict, now: datetime) -> dict:
+    """Storyline context (worker-derived, osint.storylines): for an event its thread
+    (role, span by best-known event time, members); otherwise threads around the point (or
+    naming the actor) with activity in the last 30 days, latest first."""
+    from osint.storylines.store import get_store
+
+    st = get_store(runtime)
+    if subj["kind"] == "event":
+        eid = (subj.get("event") or {}).get("id") or subj.get("id") or ""
+        m = st.for_events([eid]).get(eid)
+        if m is None:
+            return {"member": None}
+        s = st.get(m["storyline_id"]) or {}
+        keep = ("event_id", "role", "role_basis", "title", "t", "t_basis", "t_precision",
+                "category", "place_name", "lat", "lon", "origin")
+        return {"member": m, "storyline": {
+            k: s.get(k) for k in ("id", "title", "title_basis", "theatre_label", "t_first",
+                                  "t_first_basis", "t_last", "n_events", "places", "roles")},
+            "members": [{k: x.get(k) for k in keep} for x in s.get("members") or []]}
+    since = now - timedelta(days=30)
+    if subj["kind"] == "actor":
+        items = st.list(q=subj.get("q"), since=since, limit=10)
+    else:
+        items = st.list(bbox=bbox_around(subj["lat"], subj["lon"], subj["radius_km"] * 2),
+                        since=since, limit=10)
+    keep = ("id", "title", "theatre_label", "t_first", "t_first_basis", "t_last", "n_events",
+            "lat", "lon")
+    return {"member": None, "nearby": [{k: s.get(k) for k in keep} for s in items]}
+
+
 def section_assessment(runtime, subj: dict, now: datetime, ctx: dict) -> dict | None:
     """Known / corroborated / unconfirmed statements, each with its data basis."""
     ev = subj.get("event")
@@ -652,7 +684,7 @@ def section_timeline(runtime, subj: dict, now: datetime, ctx: dict) -> dict | No
 SIMPLE = {"related": section_related, "history": section_history,
           "sensors": section_sensors, "traffic": section_traffic, "assets": section_assets,
           "imagery": section_imagery, "sources": section_sources,
-          "entities": section_entities}
+          "entities": section_entities, "storyline": section_storyline}
 DEPENDENT = {"timeline": section_timeline, "assessment": section_assessment}
 
 
@@ -660,7 +692,7 @@ def run_section(name: str, runtime, subj: dict, now: datetime, ctx: dict | None 
     try:
         if name in DEPENDENT:
             return DEPENDENT[name](runtime, subj, now, ctx or {})
-        if subj["kind"] == "actor" and name not in ("related", "entities"):
+        if subj["kind"] == "actor" and name not in ("related", "entities", "storyline"):
             return None
         return SIMPLE[name](runtime, subj, now)
     except Exception as exc:
