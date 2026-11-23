@@ -104,6 +104,30 @@ CREATE TABLE IF NOT EXISTS event_impacts (
   computed_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS event_impacts_updated ON event_impacts(updated_at);
 """
+# Status history (event timeline): every insert and every status change of a news or sensor
+# event, written by triggers so no writer (clusterer, corroborator, sensor detector) has to
+# know about it. ``source`` is 'insert', 'change' or 'baseline' (the status an event already
+# had when history recording started: its true start time is unknown). Historical (curated
+# dataset) rows are not tracked. Created after the origin migration (the triggers read it).
+STATUS_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS event_status_history (
+  event_id TEXT NOT NULL, status TEXT NOT NULL, prev_status TEXT, at TEXT NOT NULL,
+  source TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS event_status_history_event ON event_status_history(event_id, at);
+CREATE TRIGGER IF NOT EXISTS events_status_ins AFTER INSERT ON events
+  WHEN NEW.origin != 'historical' BEGIN
+  INSERT INTO event_status_history VALUES (NEW.id, NEW.status, NULL,
+    strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'), 'insert');
+END;
+CREATE TRIGGER IF NOT EXISTS events_status_upd AFTER UPDATE OF status ON events
+  WHEN NEW.origin != 'historical' AND NEW.status IS NOT OLD.status BEGIN
+  INSERT INTO event_status_history VALUES (NEW.id, NEW.status, OLD.status,
+    strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'), 'change');
+END;
+CREATE TRIGGER IF NOT EXISTS events_status_del AFTER DELETE ON events BEGIN
+  DELETE FROM event_status_history WHERE event_id = OLD.id;
+END;
+"""
 CORROBORATION_KINDS = ("fire", "quake", "aircraft", "ship", "ais_gap", "imagery")
 
 EVENT_COLUMNS = (
@@ -250,6 +274,9 @@ class SqliteStore:
         self._db.executescript(VERIFICATION_SCHEMA)
         self._db.executescript(IMPACT_SCHEMA)
         self._migrate_origin(heal=migrate)
+        self._db.executescript(STATUS_HISTORY_SCHEMA)
+        if migrate:
+            self._status_baseline()
 
     def _migrate_origin(self, heal: bool = True) -> None:
         """Add/backfill ``events.origin`` (idempotent; cheap on later starts)."""
@@ -273,6 +300,23 @@ class SqliteStore:
                 "UPDATE events SET origin='sensor' WHERE origin='news' AND id IN "
                 "(SELECT event_id FROM sensor_events)")
             self._db.execute("CREATE INDEX IF NOT EXISTS events_origin ON events(origin)")
+
+    def _status_baseline(self) -> None:
+        """One 'baseline' history row (status as of now) for events that predate history
+        recording; idempotent (events with any history row are skipped)."""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO event_status_history SELECT id, status, NULL, ?, 'baseline' "
+                "FROM events WHERE origin != 'historical' AND id NOT IN "
+                "(SELECT event_id FROM event_status_history)", (iso(utcnow()),))
+
+    def status_history(self, event_id: str) -> list[dict]:
+        """Recorded status changes of an event, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT status, prev_status, at, source FROM event_status_history "
+                "WHERE event_id=? ORDER BY at, rowid", (event_id,)).fetchall()
+        return [dict(r) for r in rows]
 
     def checkpoint(self) -> dict[str, int]:
         """``wal_checkpoint(TRUNCATE)``: fold the WAL into the database and truncate it
@@ -475,6 +519,56 @@ class SqliteStore:
         with self._lock:
             rows = self._db.execute(sql, params).fetchall()
         return [_event_out(r) for r in rows]
+
+    def search_events(self, q: str, *, since: datetime | None = None, limit: int = 200
+                      ) -> list[dict]:
+        """Slim non-historical events whose title, place or actors contain ``q``
+        (case-insensitive), most recent first (the intel pane's actor / place pivot)."""
+        like = "%" + q.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+        where = ["origin != 'historical'",
+                 ("(title LIKE ? ESCAPE '!' OR place_name LIKE ? ESCAPE '!' "
+                 "OR actors LIKE ? ESCAPE '!')")]
+        params: list[object] = [like, like, like]
+        if since is not None:
+            where.append("t_end >= ?")
+            params.append(iso(since))
+        params.append(max(0, int(limit)))
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT {', '.join(SLIM_EVENT_COLUMNS)}, actors FROM events WHERE "
+                f"{' AND '.join(where)} ORDER BY t_end DESC LIMIT ?", params).fetchall()
+        return [_event_out(r) for r in rows]
+
+    def field_values(self, event_ids: list[str], fields: tuple[str, ...]) -> dict[str, dict]:
+        """event id -> {field: first value} for the given extracted fields."""
+        out: dict[str, dict] = {}
+        fmarks = ",".join("?" * len(fields))
+        for i in range(0, len(event_ids), 800):
+            chunk = event_ids[i: i + 800]
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT event_id, field, value FROM event_fields WHERE field IN ({fmarks}) "
+                    f"AND event_id IN ({','.join('?' * len(chunk))})",
+                    (*fields, *chunk)).fetchall()
+            for eid, f, v in rows:
+                out.setdefault(eid, {}).setdefault(f, v)
+        return out
+
+    def event_actors(self, event_ids: list[str]) -> dict[str, list]:
+        """event id -> actors list (the slim list rows do not carry it)."""
+        out: dict[str, list] = {}
+        for i in range(0, len(event_ids), 800):
+            chunk = event_ids[i: i + 800]
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT id, actors FROM events WHERE id IN ({','.join('?' * len(chunk))})",
+                    chunk).fetchall()
+            for eid, raw in rows:
+                try:
+                    out[eid] = json.loads(raw or "[]")
+                except ValueError:
+                    out[eid] = []
+        return out
 
     def recent_events(self, since: datetime, origins: tuple[str, ...] = ("news",)
                       ) -> list[dict]:

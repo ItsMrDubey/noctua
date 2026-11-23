@@ -55,7 +55,9 @@ def test_migration_backfills_origin_of_existing_rows(tmp_path):
     store.save_events([_ev("N1"), _ucdp(), _ev("U2", cluster_state={"source": "ucdp"})])
     _sensor(store)
     store.close()
-    db = sqlite3.connect(path)  # simulate a pre-origin database
+    db = sqlite3.connect(path)  # simulate a pre-origin database (no status-history triggers)
+    for trig in ("events_status_ins", "events_status_upd", "events_status_del"):
+        db.execute(f"DROP TRIGGER {trig}")
     db.execute("DROP INDEX events_origin")
     db.execute("ALTER TABLE events DROP COLUMN origin")
     db.commit()
