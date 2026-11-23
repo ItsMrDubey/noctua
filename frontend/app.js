@@ -30,6 +30,7 @@ import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 import { Weather, setCinematic, sunTime } from "/static/js/weather.js";
 import { Dossier } from "/static/js/browser.js";
+import { installFireScore } from "/static/js/firescore.js";
 
 const errors = {};
 let lastStatus = null;
@@ -316,6 +317,7 @@ async function main() {
     },
   });
   trails.onPoints = (key, pts) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrail(pts); };
+  installFireScore({ viewer, fires, inspector }); // fire conflict score: style, filter, dossier, front line
 
   // ---- Alerts ----
   const alerts = new AlertCenter((t) => {

@@ -1,0 +1,89 @@
+# Conflict likelihood of NASA FIRMS hotspots (osint.fires, worker only).
+# Each hotspot gets conflict_score 0-100 plus reason codes. Points add up from `base`:
+# conflict context (front line, UCDP history, recent conflict news) is capped at
+# `context_cap`; positive pattern points are scaled by the context (a night-time urban fire
+# far from any conflict stays low); negative points and static-site penalties always apply.
+job:
+  enabled: true
+  interval_s: 300           # scoring pass cadence (new hotspots only)
+  initial_delay_s: 120      # first pass after boot (keeps short-lived test runtimes offline)
+  window_h: 36              # hotspots scored / cluster pool: this far back from now
+  rescore_h: 3              # rescore the whole window this often (news, front line, clusters)
+  retention_days: 8         # stored scores older than this are pruned (replay is <= 7 d)
+  threshold: 50             # default "war-likely" cut (UI slider default, status counts)
+
+frontline:                  # DeepStateMap (Ukraine) occupied / grey-zone polygons
+  enabled: true
+  url: https://deepstatemap.live/api/history/last
+  refresh_h: 6
+  probe_km: 1.0             # an edge is front line if 1 km to one side is occupied and the
+                            # other side is Ukrainian-held land (not Russia, not sea)
+
+reference:                  # static datasets cached under data/reference/
+  refresh_days: 30
+  volcano_url: "https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=GVP-VOTW:Smithsonian_VOTW_Holocene_Volcanoes&outputFormat=application%2Fjson&propertyName=Volcano_Number,Volcano_Name,Last_Eruption_Year,Country,GeoLocation"
+  flare_url: https://eogdata.mines.edu/global_flare_data/VIIRS_Global_flaring_d.7_slope_0.029353_2024_v20240730_web_IDmatch.xlsx
+  volcano_since_year: 1800  # only volcanoes that erupted since (persistent thermal sources)
+
+history:                    # recurrence of a ~450 m cell across past days (lake history)
+  days: 30                  # look-back (max 62)
+  cell_deg: 0.004
+  refresh_h: 6
+  min_history_days: 4       # recurrence is only judged with at least this many days of data
+  min_days: 3               # static if seen on >= max(min_days, min_fraction * history days)
+  min_fraction: 0.3
+  anomaly_factor: 4.0       # a static site burning far above its median FRP is not demoted
+  anomaly_min_frp: 30.0
+
+context:
+  frontline_km: 40          # front-line points fall off linearly to 0 at this distance
+  frontline_full_km: 3      # full points within this distance
+  near_frontline_km: 15     # reason code near_frontline
+  ucdp_km: 25
+  ucdp_years: 5
+  ucdp_saturation: 20       # events within ucdp_km that give full UCDP points (log scale)
+  ucdp_min_events: 3        # reason code ucdp_hist
+  news_hours: 72
+  news_km: 5                # conflict_news_5km (any precision)
+  news_city_km: 12          # conflict_news_city (city-precision events: city centre)
+  news_wide_km: 25          # conflict_news_25km
+  news_categories: [armed_conflict, infrastructure, civil_unrest]
+  news_precisions: [point, city]
+
+pattern:
+  isolated_km: 2.0          # isolated: at most isolated_max other ~450 m sites within isolated_km
+  isolated_max: 2
+  cluster_km: 3.0           # large_cluster: >= cluster_min other sites within cluster_km
+  cluster_min: 15
+  region_km: 25.0           # burn_region: >= region_min other detections within region_km
+  region_min: 150
+  urban_min_pop: 15000      # GeoNames cities15000; radius grows with population
+  poi_km: 3.0               # airbase / port / military base / nuclear site
+  high_frp: 50.0            # MW
+  volcano_km: 5.0
+  flare_km: 1.0
+
+weights:
+  base: 5
+  context_cap: 75
+  frontline: 55             # at <= frontline_full_km
+  ucdp_hist: 25             # at ucdp_saturation events
+  conflict_news_5km: 30
+  conflict_news_city: 22
+  conflict_news_25km: 12
+  # pattern (positive points scaled by context: gate_min + (1 - gate_min) * context/gate_full)
+  gate_min: 0.15
+  gate_full: 40
+  night: 8
+  isolated: 8
+  urban: 10
+  infrastructure: 6
+  high_frp: 6
+  static_anomaly: 10
+  # always applied
+  large_cluster: -20
+  burn_region: -15
+  low_conf: -5
+  static_site: -40
+  gas_flare: -50
+  volcano: -60

@@ -11,6 +11,7 @@ from osint.api.backfill import mount_backfill
 from osint.api.browse import mount_browse
 from osint.api.events import mount_events
 from osint.api.extraction import mount_extraction
+from osint.api.fires import mount_fires
 from osint.api.imagery import mount_imagery
 from osint.api.movements import mount_movements
 from osint.api.nuclear import mount_nuclear
@@ -117,6 +118,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_weather(app)
     mount_browse(app, alterlab_key=runtime.settings.alterlab_api_key or "")
     mount_backfill(app, runtime)
+    mount_fires(app, runtime)
     __import__("osint.api.naval", fromlist=["mount_naval"]).mount_naval(app, runtime)
     __import__("osint.api.benchmark", fromlist=["mount_benchmark"]).mount_benchmark(app, runtime)
 
