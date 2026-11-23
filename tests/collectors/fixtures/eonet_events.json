@@ -1,0 +1,140 @@
+{
+ "title": "EONET Events",
+ "description": "Natural events from EONET.",
+ "link": "https://eonet.gsfc.nasa.gov/api/v3/events",
+ "events": [
+  {
+   "id": "EONET_5359",
+   "title": "Iceberg A76C",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_5359",
+   "closed": null,
+   "categories": [
+    {
+     "id": "seaLakeIce",
+     "title": "Sea and Lake Ice"
+    }
+   ],
+   "sources": [
+    {
+     "id": "NATICE",
+     "url": "https://usicecenter.gov/Products/AntarcIcebergs"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 112.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2021-05-28T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -57.04,
+      -75.57
+     ]
+    },
+    {
+     "magnitudeValue": 112.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-10-22T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -23.74,
+      -56.87
+     ]
+    },
+    {
+     "magnitudeValue": 112.0,
+     "magnitudeUnit": "NM^2",
+     "date": "2026-11-20T00:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      -23.48,
+      -57.66
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_26568",
+   "title": "Wildfire Greene - Caney Creek Lane, Greene, Tennessee",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_26568",
+   "closed": null,
+   "categories": [
+    {
+     "id": "wildfires",
+     "title": "Wildfires"
+    }
+   ],
+   "sources": [
+    {
+     "id": "IRWIN",
+     "url": "https://irwin.doi.gov/observer/incidents/2026-TNTNS-261114"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 500.0,
+     "magnitudeUnit": "acres",
+     "date": "2026-11-18T14:11:00Z",
+     "type": "Point",
+     "coordinates": [
+      -82.7985,
+      36.36301667
+     ]
+    }
+   ]
+  },
+  {
+   "id": "EONET_26494",
+   "title": "Tropical Cyclone Akvan",
+   "description": null,
+   "link": "https://eonet.gsfc.nasa.gov/api/v3/events/EONET_26494",
+   "closed": null,
+   "categories": [
+    {
+     "id": "severeStorms",
+     "title": "Severe Storms"
+    }
+   ],
+   "sources": [
+    {
+     "id": "JTWC",
+     "url": "https://www.metoc.navy.mil/jtwc/products/io0526.tcw"
+    }
+   ],
+   "geometry": [
+    {
+     "magnitudeValue": 35.0,
+     "magnitudeUnit": "kts",
+     "date": "2026-11-16T18:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      86.8,
+      11.4
+     ]
+    },
+    {
+     "magnitudeValue": 35.0,
+     "magnitudeUnit": "kts",
+     "date": "2026-11-19T12:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      85.3,
+      16
+     ]
+    },
+    {
+     "magnitudeValue": 30.0,
+     "magnitudeUnit": "kts",
+     "date": "2026-11-19T18:00:00Z",
+     "type": "Point",
+     "coordinates": [
+      84.7,
+      17.2
+     ]
+    }
+   ]
+  }
+ ]
+}

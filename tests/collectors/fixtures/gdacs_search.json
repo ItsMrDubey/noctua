@@ -1,0 +1,382 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "bbox": [
+    172.2236,
+    -13.5634,
+    172.2236,
+    -13.5634
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     172.2236,
+     -13.5634
+    ]
+   },
+   "properties": {
+    "eventtype": "EQ",
+    "eventid": 1578806,
+    "episodeid": 1748225,
+    "eventname": "",
+    "glide": "",
+    "name": "Earthquake in Vanuatu Islands Region",
+    "description": "Earthquake in Vanuatu Islands Region",
+    "htmldescription": "Green M 4.9 Earthquake in Vanuatu Islands Region at: 23 Nov 2026 03:07:52.",
+    "url": {
+     "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=EQ&eventid=1578806&episodeid=1748225",
+     "report": "https://www.gdacs.org/report.aspx?eventid=1578806&episodeid=1748225&eventtype=EQ",
+     "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=EQ&eventid=1578806"
+    },
+    "alertlevel": "Green",
+    "alertscore": 1,
+    "episodealertlevel": "Green",
+    "episodealertscore": 0.0,
+    "istemporary": "false",
+    "iscurrent": "true",
+    "country": "Vanuatu Islands Region",
+    "fromdate": "2026-11-23T03:07:52",
+    "todate": "2026-11-23T03:07:52",
+    "datemodified": "2026-11-23T03:27:45",
+    "iso3": "",
+    "source": "NEIC",
+    "sourceid": "",
+    "polygonlabel": "Centroid",
+    "Class": "Point_Centroid",
+    "affectedcountries": [],
+    "severitydata": {
+     "severity": 4.9,
+     "severitytext": "Magnitude 4.9M, Depth:595.973km",
+     "severityunit": "M"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "bbox": [
+    -168.8,
+    -11.8,
+    -168.8,
+    -11.8
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -168.8,
+     -11.8
+    ]
+   },
+   "properties": {
+    "eventtype": "TC",
+    "eventid": 1001350,
+    "episodeid": 23,
+    "eventname": "XAVIER-26",
+    "glide": "",
+    "name": "Tropical Cyclone XAVIER-26",
+    "description": "Tropical Cyclone XAVIER-26",
+    "htmldescription": "Green Tropical Cyclone XAVIER-26 in Cook Islands from: 15 Nov 2026  to: 23 Nov 2026 .",
+    "url": {
+     "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001350&episodeid=23",
+     "report": "https://www.gdacs.org/report.aspx?eventid=1001350&episodeid=23&eventtype=TC",
+     "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=TC&eventid=1001350"
+    },
+    "alertlevel": "Green",
+    "alertscore": 1,
+    "episodealertlevel": "Green",
+    "episodealertscore": 1.0,
+    "istemporary": "false",
+    "iscurrent": "true",
+    "country": "Cook Islands",
+    "fromdate": "2026-11-15T06:00:00",
+    "todate": "2026-11-23T00:00:00",
+    "datemodified": "2026-11-23T02:20:04",
+    "iso3": "COK",
+    "source": "JTWC",
+    "sourceid": "",
+    "polygonlabel": "Centroid",
+    "Class": "Point_Centroid",
+    "countryonland": "",
+    "affectedcountries": [],
+    "severitydata": {
+     "severity": 240.7392,
+     "severitytext": "Tropical Depression (maximum wind speed of 241 km/h)",
+     "severityunit": "km/h"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "bbox": [
+    -71.6676,
+    -33.1046,
+    -71.6676,
+    -33.1046
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -71.6676,
+     -33.1046
+    ]
+   },
+   "properties": {
+    "eventtype": "FL",
+    "eventid": 1104293,
+    "episodeid": 1,
+    "eventname": "",
+    "glide": "",
+    "name": "Flood in Chile",
+    "description": "Flood in Chile",
+    "htmldescription": "Green Flood in Chile from: 20 Nov 2026 01 to: 22 Nov 2026 01.",
+    "url": {
+     "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=FL&eventid=1104293&episodeid=1",
+     "report": "https://www.gdacs.org/report.aspx?eventid=1104293&episodeid=1&eventtype=FL",
+     "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=FL&eventid=1104293"
+    },
+    "alertlevel": "Green",
+    "alertscore": 1,
+    "episodealertlevel": "Green",
+    "episodealertscore": 0.5,
+    "istemporary": "false",
+    "iscurrent": "true",
+    "country": "Chile",
+    "fromdate": "2026-11-20T01:00:00",
+    "todate": "2026-11-22T01:00:00",
+    "datemodified": "2026-11-22T11:21:43",
+    "iso3": "CHL",
+    "source": "GLOFAS",
+    "sourceid": "",
+    "polygonlabel": "Centroid",
+    "Class": "Point_Centroid",
+    "affectedcountries": [
+     {
+      "iso2": "CL",
+      "iso3": "CHL",
+      "countryname": "Chile"
+     }
+    ],
+    "severitydata": {
+     "severity": 0.0,
+     "severitytext": "Magnitude 0 ",
+     "severityunit": ""
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "bbox": [
+    -51.7771,
+    -1.2357,
+    -51.7771,
+    -1.2357
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -51.7771,
+     -1.2357
+    ]
+   },
+   "properties": {
+    "eventtype": "WF",
+    "eventid": 1034021,
+    "episodeid": 1,
+    "eventname": "",
+    "glide": "",
+    "name": "Forest fires in Brazil",
+    "description": "Forest fires in Brazil",
+    "htmldescription": "Green Forest fires in Brazil from: 17 Nov 2026 to: 22 Nov 2026.",
+    "url": {
+     "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=WF&eventid=1034021&episodeid=1",
+     "report": "https://www.gdacs.org/report.aspx?eventid=1034021&episodeid=1&eventtype=WF",
+     "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=WF&eventid=1034021"
+    },
+    "alertlevel": "Green",
+    "alertscore": 1,
+    "episodealertlevel": "Green",
+    "episodealertscore": 0.5,
+    "istemporary": "false",
+    "iscurrent": "true",
+    "country": "Brazil",
+    "fromdate": "2026-11-17T00:00:00",
+    "todate": "2026-11-22T00:00:00",
+    "datemodified": "2026-11-23T00:03:45",
+    "iso3": "BRA",
+    "source": "GWIS",
+    "sourceid": "",
+    "polygonlabel": "Centroid",
+    "Class": "Point_Centroid",
+    "affectedcountries": [
+     {
+      "iso2": "BR",
+      "iso3": "BRA",
+      "countryname": "Brazil"
+     }
+    ],
+    "severitydata": {
+     "severity": 5283.0,
+     "severitytext": "Green impact for forestfire in 5283 ha",
+     "severityunit": "ha"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "bbox": [
+    -37.804,
+    -10.702,
+    -37.804,
+    -10.702
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -37.804,
+     -10.702
+    ]
+   },
+   "properties": {
+    "eventtype": "DR",
+    "eventid": 1015915,
+    "episodeid": 7,
+    "eventname": "Eastern Brazil-2026",
+    "glide": "",
+    "name": "Drought in Brazil",
+    "description": "Drought in Brazil",
+    "htmldescription": "Green Drought in Brazil from: 21 Sep 2022  to: 20 Nov 2026 .",
+    "url": {
+     "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=DR&eventid=1015915&episodeid=7",
+     "report": "https://www.gdacs.org/report.aspx?eventid=1015915&episodeid=7&eventtype=DR",
+     "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=DR&eventid=1015915"
+    },
+    "alertlevel": "Green",
+    "alertscore": 1,
+    "episodealertlevel": "Green",
+    "episodealertscore": 0.5,
+    "istemporary": "false",
+    "iscurrent": "false",
+    "country": "Brazil",
+    "fromdate": "2022-09-21T00:00:00",
+    "todate": "2026-11-20T00:00:00",
+    "datemodified": "2026-11-22T05:57:12",
+    "iso3": "BRA",
+    "source": "GDO",
+    "sourceid": "",
+    "polygonlabel": "Centroid",
+    "Class": "Point_Centroid",
+    "affectedcountries": [
+     {
+      "iso2": "BR",
+      "iso3": "BRA",
+      "countryname": "Brazil"
+     }
+    ],
+    "severitydata": {
+     "severity": 45190.0,
+     "severitytext": "Minor impact for agricultural drought in 45190 km2",
+     "severityunit": "km2"
+    }
+   }
+  },
+  {
+   "type": "Feature",
+   "bbox": [
+    -66.243,
+    7.036,
+    -66.243,
+    7.036
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -66.243,
+     7.036
+    ]
+   },
+   "properties": {
+    "eventtype": "DR",
+    "eventid": 1023877,
+    "episodeid": 15,
+    "eventname": "Northern South America, Panama Isthmus-2026",
+    "glide": "DR-2025-000172-SOM",
+    "name": "Drought in Aruba, , Brazil, Colombia, Costa Rica, , French Guiana, Guyana, Panama, Suriname, Venezuela",
+    "description": "Drought in Aruba, , Brazil, Colombia, Costa Rica, , French Guiana, Guyana, Panama, Suriname, Venezuela",
+    "htmldescription": "Orange Drought in Aruba, , Brazil, Colombia, Costa Rica, , French Guiana, Guyana, Panama, Suriname, Venezuela from: 21 Sep 2022  to: 20 Nov 2026 .",
+    "url": {
+     "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=DR&eventid=1023877&episodeid=15",
+     "report": "https://www.gdacs.org/report.aspx?eventid=1023877&episodeid=15&eventtype=DR",
+     "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=DR&eventid=1023877"
+    },
+    "alertlevel": "Orange",
+    "alertscore": 2,
+    "episodealertlevel": "Orange",
+    "episodealertscore": 1.25,
+    "istemporary": "false",
+    "iscurrent": "false",
+    "country": "Aruba, , Brazil, Colombia, Costa Rica, , French Guiana, Guyana, Panama, Suriname, Venezuela",
+    "fromdate": "2022-09-21T00:00:00",
+    "todate": "2026-11-20T00:00:00",
+    "datemodified": "2026-11-22T05:57:07",
+    "iso3": "ABW",
+    "source": "GDO",
+    "sourceid": "",
+    "polygonlabel": "Centroid",
+    "Class": "Point_Centroid",
+    "affectedcountries": [
+     {
+      "iso2": "AW",
+      "iso3": "ABW",
+      "countryname": "Aruba"
+     },
+     {
+      "iso2": "BR",
+      "iso3": "BRA",
+      "countryname": "Brazil"
+     },
+     {
+      "iso2": "CO",
+      "iso3": "COL",
+      "countryname": "Colombia"
+     },
+     {
+      "iso2": "CR",
+      "iso3": "CRI",
+      "countryname": "Costa Rica"
+     },
+     {
+      "iso2": "GF",
+      "iso3": "GUF",
+      "countryname": "French Guiana"
+     },
+     {
+      "iso2": "GY",
+      "iso3": "GUY",
+      "countryname": "Guyana"
+     },
+     {
+      "iso2": "PA",
+      "iso3": "PAN",
+      "countryname": "Panama"
+     },
+     {
+      "iso2": "SR",
+      "iso3": "SUR",
+      "countryname": "Suriname"
+     },
+     {
+      "iso2": "VE",
+      "iso3": "VEN",
+      "countryname": "Venezuela"
+     }
+    ],
+    "severitydata": {
+     "severity": 1683760.0,
+     "severitytext": "Medium impact for agricultural drought in 1683760 km2",
+     "severityunit": "km2"
+    }
+   }
+  }
+ ]
+}

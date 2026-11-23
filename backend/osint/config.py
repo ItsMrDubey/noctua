@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # myACLED account (OAuth password grant; ACLED no longer issues API keys)
     acled_email: str = ""
     acled_password: str = ""
+    # ReliefWeb API v2 needs an approved appname (https://apidoc.reliefweb.int/parameters#appname)
+    reliefweb_appname: str = ""
     data_dir: Path = Field(default=ROOT / "data", alias="OSINT_DATA_DIR")
     config_dir: Path = Field(default=ROOT / "config", alias="OSINT_CONFIG_DIR")
     host: str = Field(default="127.0.0.1", alias="OSINT_HOST")

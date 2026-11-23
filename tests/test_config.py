@@ -29,4 +29,4 @@ def test_load_sources_normalises_empty_blocks(tmp_path: Path):
 def test_repo_sources_yaml_lists_collectors():
     assert set(load_sources(ROOT / "config")) == {
         "adsb", "ais", "firms", "usgs", "gdelt", "rss", "news_alterlab", "nga_msi", "acled",
-        "ucdp_candidate", "telegram"}
+        "ucdp_candidate", "telegram", "gdacs", "eonet", "reliefweb"}

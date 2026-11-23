@@ -108,12 +108,22 @@ export const EVENT_CATS = {
 };
 const EVENT_FALLBACK = ["Event", "#a99bff", '<circle cx="16" cy="16" r="8"/>'];
 export const eventCat = (c) => EVENT_CATS[c] || EVENT_FALLBACK;
+// disaster events from hazard alerts (GDACS / EONET / ReliefWeb): subcategory = hazard type
+export const HAZARDS = {
+  earthquake: ["Earthquake", QUAKE_P],
+  tropical_cyclone: ["Tropical cyclone", '<circle cx="16" cy="16" r="3.4"/><path fill="none" d="M16 4.5c-5.6 0-9.8 3.6-10.6 8.6 2.2-3 5.4-4.2 8.6-3.8M16 27.5c5.6 0 9.8-3.6 10.6-8.6-2.2 3-5.4 4.2-8.6 3.8"/>'],
+  flood: ["Flood", '<path fill="none" d="M3.5 11c3-3 5.5-3 8.3 0s5.5 3 8.3 0 5.5-3 8.4 0M3.5 18c3-3 5.5-3 8.3 0s5.5 3 8.3 0 5.5-3 8.4 0M3.5 25c3-3 5.5-3 8.3 0s5.5 3 8.3 0 5.5-3 8.4 0"/>'],
+  volcano: ["Volcano", '<path d="M3.5 28l8-13h9l8 13z"/><path fill="none" d="M14 11l-2.4-5.5M18 11l2.4-5.5M16 10V3.5"/>'],
+  drought: ["Drought", '<circle cx="16" cy="12" r="5"/><path fill="none" d="M16 3v2.2M7 12H4.8M27.2 12H25M9.6 5.6l1.6 1.6M22.4 5.6l-1.6 1.6M4 23.5h24M10 23.5l2.2 4M20.5 23.5l-1.4 4"/>'],
+  wildfire: ["Wildfire", FIRE_P],
+};
+const innerGlyph = (cat, sub) => (cat === "disaster" && HAZARDS[sub] ? HAZARDS[sub][1] : eventCat(cat)[2]);
 export const EVENT_STATUS = {
   "reported": "Reported", "multi-source": "Multi-source", "sensor-corroborated": "Sensor-corroborated", "official": "Official",
 };
 // map glyph: white strokes (tinted by billboard colour) inside a status ring; country-level = hollow
-const ringSvg = (cat, status, hollow) => {
-  const inner = '<g transform="translate(20 20) scale(.5) translate(-16 -16)" fill="' + (hollow ? "none" : "#fff") + '" fill-opacity=".25" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' + eventCat(cat)[2] + "</g>";
+const ringSvg = (cat, status, hollow, sub) => {
+  const inner = '<g transform="translate(20 20) scale(.5) translate(-16 -16)" fill="' + (hollow ? "none" : "#fff") + '" fill-opacity=".25" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' + innerGlyph(cat, sub) + "</g>";
   const halo = '<g fill="none" stroke="#000" stroke-opacity=".55" stroke-width="3.4">';
   const dbl = status === "sensor-corroborated" || status === "official";
   const dash = status === "reported" ? ' stroke-dasharray="2.4 3"' : "";
@@ -123,14 +133,16 @@ const ringSvg = (cat, status, hollow) => {
     halo + rings + "</g>" + '<g fill="none" stroke="#fff" stroke-width="' + w + '"' + dash + ">" + rings + "</g>" + inner + "</svg>");
 };
 const EVENT_IMG = new Map();
-export function eventGlyph(cat, status, hollow) {
-  const k = cat + "|" + status + "|" + (hollow ? 1 : 0);
+export function eventGlyph(cat, status, hollow, sub) {
+  const hz = cat === "disaster" && HAZARDS[sub] ? sub : "";
+  const k = cat + "|" + status + "|" + (hollow ? 1 : 0) + "|" + hz;
   let v = EVENT_IMG.get(k);
-  if (!v) { v = ringSvg(cat, status, hollow); EVENT_IMG.set(k, v); }
+  if (!v) { v = ringSvg(cat, status, hollow, hz); EVENT_IMG.set(k, v); }
   return v;
 }
 for (const [k, v] of Object.entries(EVENT_CATS)) UI["e:" + k] = plain(v[2]);
 UI["e:"] = plain(EVENT_FALLBACK[2]);
+for (const [k, v] of Object.entries(HAZARDS)) UI["h:" + k] = plain(v[1]);
 
 // palette (CSS) for map + legend
 export const COLORS = { air: "#9ff3ff", airCiv: "#c8d4de", hp: "#ff4b55", ship: "#7fa8ff", shipMil: "#ff4b55", fire: "#ff6a1a", quake: "#ffd24a" };
@@ -147,12 +159,12 @@ export function glyphFor(kind, it) {
   if (kind === "ships") return shipGlyph(shipClass(it));
   if (kind === "fires") return FIRE_GLYPH;
   if (kind === "quakes") return QUAKE_GLYPH;
-  if (kind === "events") return eventGlyph(it && it.category, it && it.status, false);
+  if (kind === "events") return eventGlyph(it && it.category, it && it.status, false, it && it.subcategory);
   return REF_GLYPH;
 }
 
 // CSS-mask glyph for UI chrome: <i class="gi" style="--g:url(..)">, coloured by background
 export function uiGlyph(kind, it) {
-  const k = kind === "aircraft" ? "a:" + aircraftRole(it) : kind === "ships" ? "s:" + shipClass(it) : kind === "fires" ? "fire" : kind === "quakes" ? "quake" : kind === "events" ? "e:" + (EVENT_CATS[it && it.category] ? it.category : "") : "ref";
+  const k = kind === "aircraft" ? "a:" + aircraftRole(it) : kind === "ships" ? "s:" + shipClass(it) : kind === "fires" ? "fire" : kind === "quakes" ? "quake" : kind === "events" ? (it && it.category === "disaster" && HAZARDS[it.subcategory] ? "h:" + it.subcategory : "e:" + (EVENT_CATS[it && it.category] ? it.category : "")) : "ref";
   return '<i class="gi" style="--g:url(&quot;' + UI[k] + '&quot;)"></i>';
 }

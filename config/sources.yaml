@@ -2,10 +2,17 @@
 adsb:
   enabled: true
   interval_s: 30
+  # Verified 2026-11-23: adsb.lol + adsb.fi /v2/mil 200 (merged, deduped by hex); OpenSky
+  # anonymous /states/all 200 (fallback only, filtered to the plane-alert mil DB, <= 1 call
+  # per 15 min = 96 of the 400 daily anonymous credits). airplanes.live answers 403 unless
+  # the project is approved (contact@airplanes.live); re-add it here once it is.
   endpoints:
     adsb.lol: https://api.adsb.lol/v2
-    airplanes.live: https://api.airplanes.live/v2
     adsb.fi: https://opendata.adsb.fi/api/v2
+    opensky: {url: "https://opensky-network.org/api", kind: opensky, fallback: true,
+              min_interval_s: 900}
+  max_backoff_s: 1800       # per-endpoint exponential backoff cap
+  denied_backoff_s: 21600   # 401/403: retry every 6 h, warn once
 ais:
   enabled: true
   batch_seconds: 5
@@ -209,3 +216,30 @@ telegram:
     - {name: OSINTdefender, language: en, country: ""}
     - {name: clashreport, language: en, country: ""}
     - {name: warmonitors, language: en, country: ""}
+# --- natural hazards -> `hazard` observations; the sensor-event detector `hazard`
+# (config/corroboration.yaml) turns them into `disaster` events.
+gdacs:
+  enabled: true
+  interval_s: 1800
+  days: 3              # events overlapping the last N days (ongoing ones included)
+  max_pages: 10        # 100 events per page
+  event_types: [EQ, TC, FL, VO, DR, WF]
+  alert_levels: [Green, Orange, Red]
+eonet:
+  enabled: true
+  interval_s: 1800
+  status: open
+  days: 30             # without a window the open list is ~7000 events (icebergs)
+  exclude_categories: [seaLakeIce, waterColor]
+  # IRWIN lists planned burns as wildfires (2/3 of US entries): not disasters
+  exclude_title_re: "(?i)^prescribed fire|\\bRX\\b"
+reliefweb:
+  # API v2 needs an approved appname (v1 is gone; RSS is bot-blocked). Set
+  # RELIEFWEB_APPNAME in .env (or `appname:` here), then enable.
+  enabled: false
+  interval_s: 3600
+  disaster_limit: 100
+  # the API firewall rejects User-Agents containing "osint" (HTTP 406)
+  user_agent: "noctua/0.1 (ReliefWeb API client; humanitarian situational awareness)"
+  reports: true
+  report_limit: 100

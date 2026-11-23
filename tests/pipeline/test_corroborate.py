@@ -167,6 +167,31 @@ def test_disaster_quake_by_magnitude(env):
     assert r["ref_id"] == "quake:1" and r["rule"] == "quake_magnitude"
 
 
+def test_disaster_hazard_alert_evidence(env):
+    lake, store, corr, _ = env
+    manila = (14.6, 121.0)
+
+    def alert(i, where, level, source="gdacs"):
+        return observation_row(Observation(
+            id=f"hazard:{source}:{i}", type="hazard", ts=NOW - timedelta(hours=5),
+            lat=where[0], lon=where[1], source=source, value=None,
+            attrs={"source": source, "hazard": "tropical_cyclone", "alert_level": level,
+                   "name": "Tropical Cyclone FUNG-26"}))
+
+    lake.write("observations", [alert("TC:1", offset(*manila, km_east=100), "red"),
+                                alert("EONET_1", offset(*manila, km_east=600), None,
+                                      "eonet")])  # out of range
+    res = run(corr, [event(category="disaster", title="Typhoon batters Manila",
+                           where=manila)])
+    [r] = rows(store)
+    assert r["kind"] == "hazard" and r["ref_id"] == "hazard:gdacs:TC:1"
+    assert r["rule"] == "gdacs_red" and r["details"]["alert_level"] == "red"
+    assert r["score"] > 0.5 and "E1" in res.newly_corroborated
+    # hazard alerts are not evidence for other categories
+    run(corr, [event(eid="E2", title="Missile strike hits port", where=manila)])
+    assert rows(store, "E2") == []
+
+
 def test_aircraft_rule_military_only_in_window(env):
     lake, store, corr, _ = env
     store.upsert_tracks([
