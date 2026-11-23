@@ -38,6 +38,7 @@ import { WatchOverlay, watchHtml } from "/static/js/watch.js";
 import { Signals, AREA_SIGNALS } from "/static/js/signals/index.js";
 import { StorylineList, StoryOverlay } from "/static/js/storylines.js";
 import { installDeclutter } from "/static/js/declutter.js";
+import { renderAssetProfile, assetProfileHtml, setAssetProfileHooks } from "/static/js/panels/asset-profile.js";
 
 const errors = {};
 let lastStatus = null;
@@ -879,7 +880,11 @@ async function main() {
   ctx.infra = new InfraLayers(viewer);
   mountInfraTree(ctx.infra, tree);
   ctx.watch = new WatchOverlay(viewer, { byKind, alerts });
-  inspector.trackExtra = (kind, it) => watchHtml(it.id, ctx.watch);
+  // asset profile card (panels/asset-profile.js) in the track inspector; the watchlist box shows
+  // until the profile (which carries the same sanctions facts, sourced) has loaded
+  setAssetProfileHooks({ pivot: (spec) => dossier.open(spec), flyTo: (lat, lon, alt) => flyTo(lat, lon, alt), rerender: () => refreshSelected() });
+  inspector.trackExtra = (kind, it) => assetProfileHtml(kind === "ships" ? "vessel" : "aircraft", String(it.id).replace(/^(air|sea):/, ""),
+    { compact: true, fallback: () => watchHtml(it.id, ctx.watch) });
   ctx.watch.start();
   // "Watchlist matches" toggle (Infrastructure & watchlists group)
   $("w-watch").addEventListener("change", (e) => ctx.watch.setOn(e.target.checked));
