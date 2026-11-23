@@ -22,7 +22,7 @@ usgs:
 firms:                      # needs FIRMS_MAP_KEY; skipped (with a message) without it
   default_days: 365
   area: world
-  chunk_days: 10            # API maximum per request
+  chunk_days: 5             # API maximum per request (was 10 before 2026-11)
   nrt_days: 60              # use NRT products for the most recent N days, SP before
   sp_products: [MODIS_SP, VIIRS_SNPP_SP]
   nrt_products: [MODIS_NRT, VIIRS_SNPP_NRT]

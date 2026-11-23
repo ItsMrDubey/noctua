@@ -2,6 +2,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 import respx
 
 from osint.backfill import firms, usgs
@@ -82,15 +83,20 @@ CSV = ("latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,ins
 
 def test_firms_plan_uses_sp_then_nrt():
     w = Window(datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 25, 12, tzinfo=UTC))
-    reqs = firms.plan(w, nrt_days=6, chunk_days=10)
+    reqs = firms.plan(w, nrt_days=6, chunk_days=5)
     sp = [(p, c.start.day, (c.end - c.start).days) for p, c in reqs if p.endswith("_SP")]
     nrt = [(p, c.start.day) for p, c in reqs if p.endswith("_NRT")]
-    # day-aligned end is Jan 26, so NRT covers the last 6 days from Jan 20
-    assert sp == [("MODIS_SP", 1, 10), ("VIIRS_SNPP_SP", 1, 10), ("MODIS_SP", 11, 9),
-                  ("VIIRS_SNPP_SP", 11, 9)]
-    assert nrt == [("MODIS_NRT", 20), ("VIIRS_SNPP_NRT", 20)]
+    # day-aligned end is Jan 26, so NRT covers the last 6 days from Jan 20; the API takes at
+    # most 5 days per request
+    assert sp == [("MODIS_SP", 1, 5), ("VIIRS_SNPP_SP", 1, 5), ("MODIS_SP", 6, 5),
+                  ("VIIRS_SNPP_SP", 6, 5), ("MODIS_SP", 11, 5), ("VIIRS_SNPP_SP", 11, 5),
+                  ("MODIS_SP", 16, 4), ("VIIRS_SNPP_SP", 16, 4)]
+    assert nrt == [("MODIS_NRT", 20), ("VIIRS_SNPP_NRT", 20), ("MODIS_NRT", 25),
+                   ("VIIRS_SNPP_NRT", 25)]
+    with pytest.raises(ValueError, match="at most 5 days"):
+        firms.plan(w, nrt_days=6, chunk_days=10)
     assert firms.area_url("K", "MODIS_SP", reqs[0][1]) == \
-        "https://firms.modaps.eosdis.nasa.gov/api/area/csv/K/MODIS_SP/world/10/2026-01-01"
+        "https://firms.modaps.eosdis.nasa.gov/api/area/csv/K/MODIS_SP/world/5/2026-01-01"
 
 
 def test_firms_history_filter():

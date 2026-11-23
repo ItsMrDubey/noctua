@@ -1,6 +1,6 @@
 """NASA FIRMS archive backfill via the area API with a start date.
 
-``/api/area/csv/{MAP_KEY}/{SOURCE}/world/{days<=10}/{YYYY-MM-DD}``. Standard-processing
+``/api/area/csv/{MAP_KEY}/{SOURCE}/world/{days<=MAX_DAYS}/{YYYY-MM-DD}``. Standard-processing
 products (MODIS_SP, VIIRS_SNPP_SP) for older dates, NRT products for the last
 ``nrt_days`` (SP lags ~2-3 months). Needs FIRMS_MAP_KEY; without it the source is
 skipped. FIRMS allows 5000 transactions per 10 minutes per key; a token bucket spends
@@ -37,6 +37,7 @@ log = logging.getLogger("osint.backfill.firms")
 
 SP_PRODUCTS = ("MODIS_SP", "VIIRS_SNPP_SP")
 NRT_PRODUCTS = ("MODIS_NRT", "VIIRS_SNPP_NRT")
+MAX_DAYS = 5  # FIRMS area API days per request ("Expects [1..5]" since 2026-11; was 10)
 CONFIDENCE_RANK = {"low": 0, "nominal": 1, "high": 2}
 
 
@@ -56,12 +57,12 @@ def keep(obs: Observation, min_confidence: str, min_frp: float | None) -> bool:
 def area_url(key: str, product: str, w: Window, area: str = "world",
              base_url: str = BASE_URL) -> str:
     days = max(1, round((w.end - w.start) / timedelta(days=1)))
-    if days > 10:
-        raise ValueError("FIRMS area requests cover at most 10 days")
+    if days > MAX_DAYS:
+        raise ValueError(f"FIRMS area requests cover at most {MAX_DAYS} days")
     return f"{base_url}/{key}/{product}/{area}/{days}/{w.start:%Y-%m-%d}"
 
 
-def plan(window: Window, *, nrt_days: int, chunk_days: int = 10,
+def plan(window: Window, *, nrt_days: int, chunk_days: int = MAX_DAYS,
          sp_products: tuple[str, ...] = SP_PRODUCTS,
          nrt_products: tuple[str, ...] = NRT_PRODUCTS) -> list[tuple[str, Window]]:
     """(product, chunk) requests: SP before the NRT horizon, NRT after; day-aligned."""
@@ -91,7 +92,7 @@ async def run(ctx: BackfillContext, window: Window) -> Summary:
     min_frp_raw = ctx.opt("min_frp", 5.0)
     min_frp = None if min_frp_raw in ("", "none", False) else float(min_frp_raw)
     requests = plan(window, nrt_days=int(ctx.opt("nrt_days", 60)),
-                    chunk_days=min(10, int(ctx.opt("chunk_days", 10))),
+                    chunk_days=min(MAX_DAYS, int(ctx.opt("chunk_days", MAX_DAYS))),
                     sp_products=tuple(ctx.opt("sp_products", SP_PRODUCTS)),
                     nrt_products=tuple(ctx.opt("nrt_products", NRT_PRODUCTS)))
     summary.units_total = len(requests)
