@@ -10,8 +10,9 @@ import { eventCat, EVENT_STATUS } from "/static/js/symbology.js";
 import { fmtUtc, since, kmText, mgrs, latLonText, sec, wireSections, chip, gauge, bars, copyBtn, wireCopy } from "/static/js/panels/dossier-kit.js";
 import { renderTimeline, wireTimeline } from "/static/js/panels/timeline-view.js";
 import { imageryHtml, wireImagery } from "/static/js/imagery.js";
+import { storylineHtml } from "/static/js/storylines.js";
 
-const CORE = "assessment,timeline,sources,entities,imagery";
+const CORE = "assessment,timeline,sources,entities,imagery,storyline";
 const AROUND = "related,history,sensors,traffic,assets";
 const KIND_LABEL = { event: "Event", fire: "Thermal anomaly", quake: "Seismic event", hazard: "Hazard", aircraft: "Aircraft", ship: "Vessel", place: "Place", facility: "Facility", point: "Point", actor: "Actor" };
 const LEVEL = { known: ["KNOWN", "ok"], corroborated: ["CORROB", "cor"], unconfirmed: ["UNCONF", "unc"], caveat: ["CAVEAT", "cav"] };
@@ -149,6 +150,7 @@ export async function renderIntel(spec, body, hooks) {
   const isEv = spec.kind === "event";
   body.innerHTML = '<div class="dk-root ip">' + '<div data-slot="head"><div class="dz-empty">Building intel picture…</div></div>' +
     '<div class="ip-cols"><div class="ip-col">' +
+    sec("ip-story", isEv ? "Storyline" : "Storylines", slot("storyline"), { meta: "linked events · event time" }) +
     (isEv ? sec("ip-assess", "Assessment", slot("assessment")) + sec("ip-imagery", "Satellite imagery", slot("imagery")) + sec("ip-timeline", "Timeline", slot("timeline"), { meta: "UTC · hover for local" }) : "") +
     sec("ip-related", spec.kind === "actor" ? "Events mentioning" : "Related events", slot("related")) +
     (isEv ? sec("ip-sources", "Sources & media", slot("sources")) : "") +
@@ -181,6 +183,7 @@ export async function renderIntel(spec, body, hooks) {
     if ("assets" in S) put("assets", assets(S.assets));
     if ("sources" in S) put("sources", sources(S.sources));
     if ("entities" in S) put("entities", entities(S.entities, spec));
+    if ("storyline" in S) put("storyline", storylineHtml(S.storyline, spec.id));
   };
   const fail = (names, err) => names.split(",").forEach((n) => put(n, '<div class="dz-empty">Unavailable: ' + esc(err.message || err) + "</div>"));
   const core = fetchJson(query(spec, CORE), 20000), around = fetchJson(query(spec, AROUND), 30000);

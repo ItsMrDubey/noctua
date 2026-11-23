@@ -15,7 +15,7 @@ import { fmtUtc, localHint, relMin, since, bandText, distKm, bearing, compass, k
 import { renderTimeline, wireTimeline } from "/static/js/panels/timeline-view.js";
 import { imageryHtml, wireImagery } from "/static/js/imagery.js";
 
-const INTEL_SECTIONS = "assessment,timeline,imagery,sensors,assets,related,history,sources";
+const INTEL_SECTIONS = "assessment,timeline,imagery,sensors,assets,related,history,sources,storyline";
 const LEVEL = { known: ["KNOWN", "ok"], corroborated: ["CORROB", "cor"], unconfirmed: ["UNCONF", "unc"], caveat: ["CAVEAT", "cav"] };
 const SRC_KIND = { rss: "RSS", telegram: "TG", gdelt: "GDELT", nga: "NGA", news_alterlab: "WEB", alterlab: "WEB", acled: "ACLED", ucdp: "UCDP", reliefweb: "RW" };
 const ASSET = { base: "Base", airport: "Airfield", port: "Port", nuclear: "Nuclear", chokepoint: "Chokepoint" };
@@ -29,7 +29,7 @@ const jacc = (a, b) => { const A = tok(a), B = tok(b); if (!A.size || !B.size) r
 
 export class EventDossier {
   constructor(hooks) {
-    this.h = hooks; // {flyTo(lat,lon,alt), highlight(points|null), intel(), select(kind,id), openUrl(url)}
+    this.h = hooks; // {flyTo(lat,lon,alt), highlight(points|null), intel(), select(kind,id), openUrl(url), story(id, label)}
     this.cache = new Map(); // event id -> {intel, err, at}
     this.key = null; this.root = null; this.showOrig = false; this.origFor = null;
   }
@@ -124,7 +124,7 @@ export class EventDossier {
     const nuc = this.nearNuc ? '<div class="nucnear">Near nuclear facility: <b>' + esc(this.nearNuc.site.name) + "</b> (" + nf(this.nearNuc.km, 1) + " km)</div>" : "";
 
     const slot = (n) => '<div data-slot="' + n + '"><div class="dz-empty">' + (this.detail ? "Loading…" : "Loading record…") + "</div></div>";
-    return '<div class="dk-root ev">' + classBar + head + chips + loc + tools + sum + nuc +
+    return '<div class="dk-root ev">' + classBar + head + chips + '<div data-slot="storyline"></div>' + loc + tools + sum + nuc +
       sec("assess", "Assessment", slot("assessment"), { meta: '<span data-meta="assessment"></span>' }) +
       sec("imagery", "Satellite imagery", slot("imagery"), { meta: '<span data-meta="imagery"></span>' }) +
       sec("evidence", "Sensor evidence", this._evidence(), { meta: esc(this._evidenceMeta()) }) +
@@ -258,6 +258,11 @@ export class EventDossier {
       if (c.err) ["assessment", "imagery", "timeline", "context"].forEach((n) => put(n, '<div class="dz-empty">Unavailable: ' + esc(c.err) + "</div>"));
       return;
     }
+    // storyline membership ("Part of storyline: ..."), worker-derived
+    const SL = S.storyline;
+    put("storyline", SL && SL.member ? '<div class="dk-story" data-a="story" data-id="' + esc(SL.member.storyline_id) + '" title="Open the storyline: linked events, lanes timeline, globe playback">' +
+      "<span>PART OF STORYLINE</span><b>" + esc(SL.member.title) + "</b><small>" + esc(SL.member.role.replace("_", "-").toUpperCase() + " · " + SL.member.n_events + " events · " + SL.member.theatre_label +
+        " · " + fmtUtc(SL.member.t_first) + " → " + fmtUtc(SL.member.t_last)) + "</small></div>" : "");
     // assessment
     const A = S.assessment;
     put("assessment", A && A.items ? '<ul class="as">' + A.items.map((x) => '<li class="lv-' + (LEVEL[x.level] || ["", ""])[1] + '"><i>' + esc((LEVEL[x.level] || [x.level])[0]) + "</i><span>" + esc(x.text) +
@@ -341,6 +346,7 @@ export class EventDossier {
     if (a === "fly") return this.h.flyTo(it.lat, it.lon, it.precision === "country" ? 3e6 : it.precision === "admin1" ? 1.2e6 : 4e5);
     if (a === "zoom") { const t = this._target() || it; return this.h.flyTo(t.lat, t.lon, 1.2e4); }
     if (a === "intel") return this.h.intel();
+    if (a === "story") return this.h.story && this.h.story(btn.dataset.id, btn.querySelector("b") && btn.querySelector("b").textContent);
     if (a === "brief") { const ok = await copyText(this.brief()); return toast(btn.parentElement, ok ? "Brief copied (Markdown)" : "Copy failed", !ok); }
     if (a === "geojson" || a === "kml") {
       try {

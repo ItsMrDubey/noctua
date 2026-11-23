@@ -37,6 +37,7 @@ export class Inspector {
       select: (kind, id) => actions.select && actions.select(kind, id),
       intel: () => actions.intel && actions.intel(),
       cameras: (el) => actions.cameras && actions.cameras(el),
+      story: (id, label) => actions.story && actions.story(id, label),
       rerender: () => { if (this._ev) this.event(...this._ev); },
     });
   }

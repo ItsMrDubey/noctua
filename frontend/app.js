@@ -3,7 +3,7 @@ import { AircraftLayer, ShipLayer, FireLayer, QuakeLayer } from "/static/js/laye
 import { TrackList } from "/static/js/tracklist.js";
 import { Trails } from "/static/js/trails.js";
 import { DensityLayer } from "/static/js/density.js";
-import { Timeline } from "/static/js/timeline.js";
+import { Timeline, RANGES } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
 import { $, esc, evTitle } from "/static/js/ui.js";
@@ -34,6 +34,7 @@ import { Freshness } from "/static/js/freshness.js";
 import { InfraLayers, mountInfraTree, infraDetails } from "/static/js/infra.js";
 import { WatchOverlay, watchHtml } from "/static/js/watch.js";
 import { Signals, AREA_SIGNALS } from "/static/js/signals/index.js";
+import { StorylineList, StoryOverlay } from "/static/js/storylines.js";
 
 const errors = {};
 let lastStatus = null;
@@ -344,6 +345,7 @@ async function main() {
     select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); },
     intel: () => intel().catch((e) => console.warn("intel", e)),
     cameras: (el) => eventCameras(el),
+    story: (id, label) => openStory(id, label),
     pin: () => {
       if (!selected) return;
       if (pins.has(selected.id)) pins.delete(selected.id); else pins.add(selected.id);
@@ -370,7 +372,7 @@ async function main() {
   statusBar.onTransition = (n, from, to, s) => alerts.source(n, from, to, s);
 
   const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); }, {
-    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); if (p === "moves") { moves.ensurePanel(); renderMoves(); } },
+    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); if (p === "moves") { moves.ensurePanel(); renderMoves(); } if (p === "stories") storyList.refresh(); },
   });
   const evList = new EventList(events, (id) => { select("events", id); flyToItem("events", id); }, () => tracklist.pane === "events" && tracklist.open && !$("tracks").classList.contains("hidden"));
   tracklist.render(true);
@@ -746,8 +748,38 @@ async function main() {
     return "   LIVE " + d.n + " msg/s · " + d.kb.toFixed(0) + " KB/s · " + d.ms.toFixed(1) + " ms/s · max batch " + s.max.toFixed(1) + " ms";
   };
 
+  // ---- Storylines: threads of linked events (worker-derived), their globe layer + playback ----
+  const storyOverlay = new StoryOverlay(viewer);
+  // storyline playback can drive the app replay timeline (all layers as of that time)
+  function replayStory(t) {
+    if (t == null) { timeline.goLive(); return; }
+    const minAgo = (Date.now() - t) / 60000;
+    if (minAgo <= 0) { timeline.goLive(); return; }
+    const key = Object.keys(RANGES).find((k) => RANGES[k][0] >= minAgo + 60);
+    if (!key) return;
+    if (RANGES[key][0] > timeline.span) timeline.setRange(key);
+    timeline.jump(minAgo);
+  }
+  function openStory(id, label) { return dossier.open({ type: "story", id, label: label || id }); }
+  const viewBbox = () => {
+    const r = viewer.camera.computeViewRectangle(scene.globe.ellipsoid);
+    if (!r) return null;
+    const d = Cesium.Math.toDegrees;
+    return [d(r.west), d(r.south), d(r.east), d(r.north)].map((v) => v.toFixed(3)).join(",");
+  };
+  const storyList = new StorylineList({
+    el: $("stories-pane"), tools: document.querySelector('#tracks .tk-tools[data-pane="stories"]'),
+    onOpen: (s) => { if (s) openStory(s.id, s.title); },
+    onHover: (s) => highlight(s && s.lat != null ? [{ lat: s.lat, lon: s.lon, label: s.title.slice(0, 48) }] : null),
+    bbox: viewBbox, visible: () => tracklist.pane === "stories" && !$("tracks").classList.contains("hidden"),
+    onCount: (n) => { const c = $("stories-count"), t = n ? String(n) : ""; if (c.textContent !== t) c.textContent = t; },
+  });
+  setTimeout(() => storyList.refresh(), 9000); // tab badge
+  $("t-stories").addEventListener("change", (e) => { storyOverlay.src.show = e.target.checked; scene.requestRender(); });
+
   // ---- Dossier (in-app browser) ----
-  const dossier = new Dossier({ flyTo, highlight, select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); } });
+  const dossier = new Dossier({ flyTo, highlight, select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); },
+    story: { overlay: storyOverlay, replay: replayStory } });
   // build the best dossier for the current selection
   // Intel (I): an all-source intel pane around the selection (backend /api/intel); the
   // Wikidata / Wikipedia background is one card inside it, not the pane itself.
@@ -818,6 +850,7 @@ async function main() {
   air.onChange = () => { prevAir && prevAir(); clearTimeout(haloT); haloT = setTimeout(() => reticle.syncHalos(air), 300); };
   ctx.tracklist = tracklist;
   ctx.dossier = dossier;
+  ctx.storyList = storyList; ctx.storyOverlay = storyOverlay; ctx.openStory = openStory;
   ctx.live = live;
   // ---- Critical infrastructure layers + watchlist matches (self-mounting modules) ----
   ctx.infra = new InfraLayers(viewer);

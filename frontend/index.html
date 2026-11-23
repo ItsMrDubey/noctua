@@ -78,7 +78,7 @@
     <label class="row field" title="Hide events below this confidence">Min confidence <input type="range" id="ev-conf" min="0" max="1" step="0.05" value="0"><output id="ev-conf-v" class="num">0.00</output></label>
     <label class="row" title="UCDP Georeferenced Event Dataset: curated, historical armed-conflict events within the timeline range"><input type="checkbox" id="t-historical"><span class="sw" style="--c:#8f86c9"></span>Historical conflict (UCDP)<b id="c-historical" class="num"></b></label>
     <div id="hist-note" class="row-note"></div>
-    <label class="row" title="Cause → consequence arcs arrive with the event-chain milestone"><input type="checkbox" disabled><span class="sw ln" style="--c:#a99bff"></span>Event chains <small>soon</small></label>
+    <label class="row" title="Storylines: threads of linked events (right panel, Stories tab)"><input type="checkbox" id="t-stories" checked><span class="sw ln" style="--c:#f2ad3d"></span>Storyline overlay</label>
   </section>
   <section class="grp" data-g="moves">
     <header><h3>Movements</h3><b id="g-moves-n" class="num">–</b></header>
@@ -181,6 +181,7 @@
     <div class="tk-head" role="tablist">
       <button class="ptab on" data-p="tracks" role="tab">Tracks<sup id="tracks-count"></sup></button>
       <button class="ptab" data-p="events" role="tab">Events<sup id="events-count"></sup></button>
+      <button class="ptab" data-p="stories" role="tab" title="Storylines: linked events of one thread">Stories<sup id="stories-count"></sup></button>
       <button class="ptab" data-p="moves" role="tab">Moves<sup id="moves-count"></sup></button>
       <button class="ptab" data-p="alerts" role="tab">Alerts<sup id="alerts-count"></sup></button>
       <span class="grow"></span>
@@ -196,6 +197,8 @@
       <span id="ev-count" class="num"></span>
     </div>
     <div class="tk-body hidden" data-pane="events" aria-label="Event list (arrow keys to move, Enter to select)"></div>
+    <div class="tk-tools hidden sl-tools" data-pane="stories"></div>
+    <div class="tk-body hidden" data-pane="stories" id="stories-pane"></div>
     <div class="tk-body hidden" data-pane="alerts" id="alerts-pane"></div>
     <div class="tk-body hidden" data-pane="moves" id="moves-pane"></div>
   </aside>

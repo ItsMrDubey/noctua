@@ -50,6 +50,7 @@
 .ptab:hover { background: rgba(var(--acc-rgb), .05); color: var(--fg); }
 .ptab.on { color: var(--fg); border-bottom-color: var(--acc); background: linear-gradient(0deg, rgba(var(--acc-rgb), .1), transparent); box-shadow: none; }
 .ptab sup { font: 9.5px var(--f-mono); color: var(--acc); margin-left: 4px; letter-spacing: 0; }
+#tracks .ptab { padding: 0 8px; letter-spacing: .12em; } /* five tabs (Stories) still fit */
 .ptab sup.hot { color: var(--red); }
 .tk-head .grow { flex: 1; }
 .tk-head #tl-collapse { width: 26px; height: 26px; padding: 0; font: 14px/1 var(--f-mono); }
