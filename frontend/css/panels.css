@@ -105,6 +105,7 @@
 .pill { font: 600 9px/1 var(--f-head); letter-spacing: .12em; text-transform: uppercase; padding: 2px 5px; border: 1px solid var(--line-2); color: var(--fg-2); white-space: nowrap; }
 .pill.st-multi-source { color: var(--ion); border-color: rgba(94, 227, 234, .5); }
 .pill.st-sensor-corroborated { color: var(--green); border-color: rgba(79, 223, 140, .55); background: rgba(79, 223, 140, .08); }
+.pill.st-sensor-detected { color: var(--acc); border-color: var(--acc); }
 .pill.st-official { color: var(--amber); border-color: rgba(242, 173, 61, .55); background: rgba(242, 173, 61, .08); }
 .erow { position: absolute; left: 0; right: 0; height: 42px; display: grid; grid-template-columns: 26px 1fr; grid-template-rows: 1fr 1fr; align-items: center; cursor: pointer; border-bottom: 1px solid rgba(255, 255, 255, .03); padding-right: 8px; }
 .erow:hover { background: rgba(var(--acc-rgb), .07); }

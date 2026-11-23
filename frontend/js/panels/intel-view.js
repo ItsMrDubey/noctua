@@ -27,8 +27,9 @@ import { renderTimeline, wireTimeline } from "/static/js/panels/timeline-view.js
 import { imageryHtml, wireImagery } from "/static/js/imagery.js";
 import { storylineHtml } from "/static/js/storylines.js";
 import { FIRE_REASONS, reasonLabel } from "/static/js/firescore.js";
+import { detection } from "/static/js/panels/sensor-detection.js";
 
-const CORE = "assessment,timeline,sources,entities,imagery,storyline";
+const CORE = "assessment,timeline,sources,entities,imagery,storyline,detection";
 const AROUND = "related,history,sensors,traffic,assets";
 const CONTEXT = "track,fire,environment,overhead,signals,exposure,activity,country,attention";
 const KIND_LABEL = { event: "Event", fire: "Thermal anomaly", quake: "Seismic event", hazard: "Hazard", aircraft: "Aircraft", ship: "Vessel", place: "Place", facility: "Facility", point: "Point", actor: "Actor" };
@@ -162,7 +163,7 @@ function traffic(T, A) {
       h += p.items.length ? list(p.items.map((x) => trackRow(x, "passed"))) : empty("No recorded tracks in that window");
     }
   } else if (T && T.error) h += empty(T.error);
-  return h || empty("Loading…");
+  return h || empty("No traffic data for this subject");
 }
 
 function assets(A) {
@@ -260,18 +261,22 @@ function signals(G) {
   const g = G.gnss || {}, o = G.outage, r = G.radiation || {}, s = G.space || {};
   const cell = g.site, worst = g.worst_150km;
   let h = '<div class="ic-sig">';
-  h += '<div class="' + (cell && cell.level !== "low" ? "lv-" + cell.level : "") + '" title="' + esc(g.basis || "") + '"><span>GNSS AT SITE</span><b>' + (cell ? pct(cell.pct) + " degraded" : "no data") + "</b><small>" + (cell ? esc(cell.level) + " · " + cell.bad + "/" + cell.n + " aircraft · cell " + esc(kmText(cell.distance_km)) + " " + esc(cell.compass) : "no ADS-B integrity reports within 120 km in the last " + nf(g.window_min) + " min") + "</small></div>";
+  const gAt = g.updated ? fmtUtc(new Date(g.updated * 1000).toISOString(), { time: true }) : "–";
+  h += '<div class="' + (cell && cell.level !== "low" ? "lv-" + cell.level : "") + '" title="' + esc((g.basis || "") + " · live reading at " + gAt + ", last " + (g.window_min || 60) + " min") + '"><span>GNSS AT SITE · NOW ' + esc(gAt) + "</span><b>" + (cell ? pct(cell.pct) + " degraded" : "no data") + "</b><small>" + (cell ? esc(cell.level) + " · " + cell.bad + "/" + cell.n + " aircraft · cell " + esc(kmText(cell.distance_km)) + " " + esc(cell.compass) : "no ADS-B integrity reports within 120 km in the last " + nf(g.window_min) + " min") + "</small></div>";
   h += '<div class="' + (worst && worst.level !== "low" ? "lv-" + worst.level : "") + '"><span>WORST ≤150 KM</span><b>' + (worst ? pct(worst.pct) : "–") + "</b><small>" + (worst ? esc(worst.level) + " · " + esc(kmText(worst.distance_km)) + " " + esc(worst.compass) + " · " + worst.n + " aircraft" : "no cells") + "</small></div>";
   if (o) {
     const c = o.country;
-    h += '<div class="' + (c && c.ongoing ? "lv-" + (c.level || "medium") : "") + '" title="' + esc(o.basis) + '"><span>INTERNET · ' + esc(o.cc) + "</span><b>" + (c ? (c.ongoing ? "OUTAGE " : "recent ") + esc((c.level || "").toUpperCase()) : "no outage") + "</b><small>" + (c ? esc((c.datasources || []).join(", ")) + " · score " + nf(c.score) + " · since " + esc(fmtUtc(c.from)) : "IODA, last " + nf(o.window_h) + " h") + "</small></div>";
+    // IODA from / until are unix seconds (ISO in o.status); "OUTAGE" only when confirmed by a
+    // weighty datasource: a network-telescope-only signal is an unconfirmed anomaly
+    const st = o.status || {}, since0 = st.since || (c && c.from != null ? new Date(c.from * 1000).toISOString() : null);
+    h += '<div class="' + (c && c.ongoing && st.confirmed !== false ? "lv-" + (c.level || "medium") : "") + '" title="' + esc(o.basis) + '"><span>INTERNET · ' + esc(o.cc) + "</span><b>" + (c ? esc((st.label || ((c.ongoing ? "outage " : "recent ") + (c.level || ""))).toUpperCase()) : "no outage") + "</b><small>" + (c ? esc((c.datasources || []).join(", ")) + " · score " + nf(c.score) + " · since " + esc(fmtUtc(since0)) : "IODA, last " + nf(o.window_h) + " h") + "</small></div>";
   }
   const kp = s.kp_now ? s.kp_now[1] : null, sc = s.scales || {};
   h += '<div class="' + (kp >= 5 ? "lv-high" : kp >= 4 ? "lv-medium" : "") + '" title="NOAA SWPC; Kp ≥ 5 = geomagnetic storm (GNSS / HF degradation at high latitudes)"><span>SPACE WEATHER</span><b>Kp ' + nf(kp, 1) + "</b><small>G" + (sc.G ?? "–") + " S" + (sc.S ?? "–") + " R" + (sc.R ?? "–") + (s.solar_wind ? " · wind " + nf(s.solar_wind.speed_kms) + " km/s · Bz " + nf(s.solar_wind.bz_nt) + " nT" : "") + "</small></div>";
   h += "</div>";
-  h += '<div class="cx-h" title="' + esc(r.basis || "") + '">Radiation probes ≤250 km <small>' + nf(r.count_250km) + "</small></div>" + ((r.stations || []).length ? list(r.stations.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(x.status || "") + "</i><b>" + esc(x.name || x.id) + "</b><span>" + nf(x.value, 3) + " " + esc(x.unit || "") + (x.baseline != null ? " (median " + nf(x.baseline, 3) + ")" : "") + " · " + esc(kmText(x.distance_km)) + "</span></li>")) : empty("No public probes nearby (BfS covers Germany; Safecast is sparse)"));
+  h += '<div class="cx-h" title="' + esc(r.basis || "") + '">Radiation probes ≤250 km <small>' + nf(r.count_250km) + "</small></div>" + ((r.stations || []).length ? list(r.stations.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at" title="' + esc(x.provisional ? "provisional: fewer than 12 readings of history" : "vs the probe's own median") + '">' + esc((x.status || "") + (x.provisional ? "*" : "")) + "</i><b>" + esc(x.name || x.id) + "</b><span>" + nf(x.value, 3) + " " + esc(x.unit || "") + (x.baseline != null ? " (median " + nf(x.baseline, 3) + ")" : "") + " · " + esc(kmText(x.distance_km)) + "</span></li>")) : empty("No public probes nearby (BfS covers Germany; Safecast is sparse)"));
   const sq = (G.squawks || {}).items || [];
-  if (sq.length) h += '<div class="cx-h">Emergency squawks ≤300 km, 24 h <small>' + sq.length + "</small></div>" + list(sq.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(x.code) + "</i><b>" + esc((x.flight || x.reg || "") + " " + (x.type || "")) + "</b><span>" + esc(x.label) + " · " + esc(kmText(x.distance_km)) + "</span></li>"));
+  if (sq.length) h += '<div class="cx-h">Emergency squawks ≤300 km, 24 h <small>' + sq.length + "</small></div>" + list(sq.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"' + (x.hex ? pivot({ type: "intel", kind: "aircraft", id: "air:" + x.hex, label: x.flight || x.hex }) : "") + '><i class="at">' + esc(x.code) + "</i><b>" + esc((x.flight || x.reg || "") + " " + (x.type || "")) + "</b><span>" + esc(x.label) + (x.persistent === false ? " · transient (" + nf(x.reports) + " report), likely mis-set" : x.reports ? " · " + nf(x.reports) + " reports" : "") + " · " + esc(kmText(x.distance_km)) + "</span></li>"));
   if ((g.cells || []).length) h += '<div class="cx-h">GNSS cells ≤300 km <small>' + g.cells.length + "</small></div>" + list(g.cells.map((c) => '<li data-fly="' + c.lat + "," + c.lon + '" class="' + (c.level === "high" ? "mil" : "") + '"><i class="at">' + esc(c.level) + "</i><b>" + pct(c.pct) + " degraded · " + c.bad + "/" + c.n + " aircraft</b><span>" + esc(kmText(c.distance_km)) + " " + esc(c.compass) + "</span></li>"));
   return h;
 }
@@ -484,10 +489,17 @@ function metrics(spec, subj, D) {
   const m = (key, label, val, sub, title, tone = "") => { cells[key] = '<div class="ic-m ' + tone + '" data-m="' + key + '" title="' + esc(title) + '"><span>' + esc(label) + "</span><b>" + val + "</b><small>" + sub + "</small></div>"; };
   const wait = (x) => x === undefined;
   const nd = '<i class="ld">…</i>';
+  const sensorEv = subj.origin === "sensor", DX = D.detection;
+  if (sensorEv) {
+    const R = (DX && DX.readings) || {}, r = R.latest || R.peak || R.detection;
+    m("rep", "Source", "Sensor", esc(subj.sensor || "detector") + " · no news reports", "Sensor-derived event: detected by the platform's own sensor feed, not reported in the news");
+    m("first", "Detected", subj.t_start ? esc(since(subj.t_start)) : nd, "ago · " + esc(fmtUtc(subj.t_start, { time: true })), "Start of the first detection window");
+    m("sens", r && r === R.latest && R.latest.t !== (R.detection || {}).t ? "Reading now" : "At detection", wait(DX) ? nd : r && r.n ? pct(r.pct) : "–", r ? (r.n ? r.bad + "/" + r.n + " aircraft · " : "") + esc(fmtUtc(r.t, { time: true })) + (DX.lifecycle ? " · " + esc(DX.lifecycle) : "") : esc((DX && DX.lifecycle) || ""), "Detection reading with its time (60-min window)", DX && DX.lifecycle === "active" ? "warm" : "");
+  } else
   m("rep", "Reports", S ? nf(S.count) : nd, S ? nf(S.outlets) + " outlets · " + nf((S.languages || []).length) + " lang" : "", "Documents attached to the event (sources section)");
-  m("first", "First report", S && S.first_at ? esc(since(S.first_at)) : subj.t_start ? esc(since(subj.t_start)) : nd, "ago · " + esc(fmtUtc((S && S.first_at) || subj.t_start, { time: true })), "Earliest publication time among the reports");
+  if (!sensorEv) m("first", "First report", S && S.first_at ? esc(since(S.first_at)) : subj.t_start ? esc(since(subj.t_start)) : nd, "ago · " + esc(fmtUtc((S && S.first_at) || subj.t_start, { time: true })), "Earliest publication time among the reports");
   const f = (se && se.fires) || {}, q = (se && se.quakes) || {}, hz = (se && se.hazards) || {};
-  m("sens", "Sensor hits", wait(se) ? nd : se && !se.error ? nf((f.count || 0) + (q.count || 0) + (hz.count || 0)) : "–", se && !se.error ? "FIRMS " + nf(f.count) + " · quake " + nf(q.count) + " · hazard " + nf(hz.count) : "", "FIRMS / quake / hazard observations in the sensor window and radius", f.max_conflict_score >= 50 ? "hot" : f.count ? "warm" : "");
+  if (!sensorEv) m("sens", "Sensor hits", wait(se) ? nd : se && !se.error ? nf((f.count || 0) + (q.count || 0) + (hz.count || 0)) : "–", se && !se.error ? "FIRMS " + nf(f.count) + " · quake " + nf(q.count) + " · hazard " + nf(hz.count) : "", "FIRMS / quake / hazard observations in the sensor window and radius", f.max_conflict_score >= 50 ? "hot" : f.count ? "warm" : "");
   const fl = as && as.frontline;
   // the loaded line is DeepStateMap's (Ukraine): beyond 500 km it says nothing about the site
   m("front", "Front line", wait(as) ? nd : fl ? (fl.distance_km > 500 ? "> 500 km" : esc(kmText(fl.distance_km))) : "–", fl ? esc(kmText(fl.distance_km)) + " " + esc(fl.compass) + " · " + esc(fl.source) : as ? "no line loaded" : "", "Distance to the nearest point of the loaded front line", fl && fl.distance_km < 30 ? "hot" : fl && fl.distance_km < 100 ? "warm" : "");
@@ -497,9 +509,10 @@ function metrics(spec, subj, D) {
   m("traf", "Air / sea 24 h", wait(A) ? nd : A && !A.error ? nf(A.aircraft) + " / " + nf(A.ships) : "–", A && !A.error ? nf(A.military) + " military" : "", "Distinct tracks recorded within the radius in the last 24 h (platform collectors)");
   m("watch", "Watchlisted", wait(A) ? nd : A && !A.error ? nf(A.flagged + (A.watch_alerts || []).length) : "–", A && !A.error ? nf(A.flagged) + " tracks · " + nf((A.watch_alerts || []).length) + " alerts" : "", "Tracks matching OpenSanctions / user watchlists and watch alerts in the area, 24 h", A && (A.flagged || (A.watch_alerts || []).length) ? "hot" : "");
   const cell = G && G.gnss && G.gnss.site;
-  m("gnss", "GNSS degraded", wait(G) ? nd : cell ? pct(cell.pct) : "no data", cell ? esc(cell.level) + " · " + cell.n + " aircraft" : "no ADS-B reports", "Share of aircraft in the position's H3 cell reporting degraded navigation integrity (last hour)", cell && cell.level === "high" ? "hot" : cell && cell.level === "medium" ? "warm" : "");
+  m("gnss", "GNSS now", wait(G) ? nd : cell ? pct(cell.pct) : "no data", cell ? esc(cell.level) + " · " + cell.bad + "/" + cell.n + " aircraft" + (G.gnss.updated ? " · " + esc(fmtUtc(new Date(G.gnss.updated * 1000).toISOString(), { time: true })) : "") : "no ADS-B reports", "Share of aircraft in the position's H3 cell reporting degraded navigation integrity (last hour)", cell && cell.level === "high" ? "hot" : cell && cell.level === "medium" ? "warm" : "");
   const oc = G && G.outage;
-  m("net", "Internet", wait(G) ? nd : oc ? (oc.country ? (oc.country.ongoing ? "OUTAGE" : "recent") : "normal") : "–", oc ? esc(oc.cc) + (oc.country ? " · " + esc(oc.country.level) : " · IODA 24 h") : "", "IODA country outage status, last 24 h", oc && oc.country && oc.country.ongoing && oc.country.level !== "low" ? "hot" : "");
+  const ocs = (oc && oc.status) || {}, ocOk = ocs.confirmed !== false;
+  m("net", "Internet", wait(G) ? nd : oc ? (oc.country ? (!ocOk ? "anomaly" : oc.country.ongoing ? "OUTAGE" : "recent") : "normal") : "–", oc ? esc(oc.cc) + (oc.country ? " · " + esc(ocOk ? oc.country.level : "telescope only, unconfirmed") : " · IODA 24 h") : "", "IODA country outage status, last 24 h (an outage needs BGP / probing / traffic evidence; a network-telescope-only signal is unconfirmed)", oc && oc.country && ocOk && oc.country.ongoing && oc.country.level !== "low" ? "hot" : "");
   const op = O && O.by_kind && O.by_kind.optical && O.by_kind.optical.next, sar = O && O.by_kind && O.by_kind.sar && O.by_kind.sar.next;
   m("opt", "Next optical pass", wait(O) ? nd : op ? esc(relShort(op.t)) : "–", op ? esc(op.satellite) + " · cloud " + pct(op.cloud_pct) : O && O.error ? "unavailable" : "none in 4 d", "Next Sentinel-2 / Landsat pass whose swath covers the site in daylight (geometry; acquisition depends on the mission plan)");
   m("sar", "Next SAR pass", wait(O) ? nd : sar ? esc(relShort(sar.t)) : "–", sar ? esc(sar.satellite) + " · " + nf(sar.incidence_deg, 0) + "° inc." : "", "Next Sentinel-1 IW pass with the site in the right-looking swath");
@@ -563,7 +576,12 @@ function briefText(spec, subj, D) {
     for (const a of T.alerts || []) L.push("  [" + a.level.toUpperCase() + "] " + a.text + " (" + a.basis + ")");
   }
   if (F && !F.error && F.score != null) L.push("Fire conflict score " + F.score + "/100 (" + (F.war_likely ? "war-likely" : "below cut " + F.threshold) + "): " + (F.reasons || []).map(reasonLabel).join(", "));
-  if (S && !S.error) L.push("Reporting: " + S.count + " reports, " + S.outlets + " outlets, " + (S.groups || []).length + " independent texts, languages " + (S.languages || []).join("/") + "; first " + fmtUtc(S.first_at));
+  const DX = D.detection;
+  if (DX && !DX.error) {
+    const R = DX.readings || {}, rd = (r) => (r.unrecorded ? "not recorded" : r.n ? r.bad + "/" + r.n + " aircraft (" + r.pct + "%)" : "no aircraft") + " at " + fmtUtc(r.t);
+    L.push("Sensor-derived (" + DX.sensor + "), no news reports; lifecycle " + (DX.lifecycle || "–") + (DX.assessment ? "; " + DX.assessment.wording + ", confidence " + DX.assessment.confidence : ""));
+    if (R.detection) L.push("  At detection: " + rd(R.detection) + (R.latest && R.latest.t !== R.detection.t ? "; now: " + rd(R.latest) : ""));
+  } else if (S && !S.error) L.push("Reporting: " + S.count + " reports, " + S.outlets + " outlets, " + (S.groups || []).length + " independent texts, languages " + (S.languages || []).join("/") + "; first " + fmtUtc(S.first_at));
   if (se && !se.error) L.push("Sensors (" + fmtUtc(se.window.from) + " → " + fmtUtc(se.window.to) + "): " + se.fires.count + " FIRMS hotspots, " + se.quakes.count + " quakes, " + se.hazards.count + " hazard alerts within " + se.radius_km + " km");
   if (E && !E.error) {
     const l = E.light.event || E.light.now;
@@ -594,6 +612,7 @@ const TILE = {
   prof: ["Asset profile", [], true],
   trk: ["Track · last 24 h", ["track"], true],
   fire: ["Conflict score", ["fire"], false],
+  det: ["Detection · the signal", ["detection"], true],
   assess: ["Assessment", ["assessment"], false],
   loc: ["Locator", ["related", "assets", "exposure", "sensors", "environment", "signals"], false],
   time: ["Timeline", ["timeline"], true],
@@ -617,7 +636,7 @@ const TILE = {
 // what applies to each kind of subject, most relevant first; tiles with nothing notable
 // collapse to a one-line summary and notable findings float to the top (see notes())
 const MANIFEST = {
-  event: ["assess", "loc", "time", "over", "img", "env", "sens", "story", "rel", "src", "traf", "sig", "assets", "expo", "ctry", "attn", "ents", "hist", "bg"],
+  event: ["det", "assess", "loc", "time", "over", "img", "env", "sens", "story", "rel", "src", "traf", "sig", "assets", "expo", "ctry", "attn", "ents", "hist", "bg"],
   aircraft: ["prof", "trk", "sig", "loc", "assets", "rel", "traf", "ctry"],
   ship: ["prof", "trk", "loc", "expo", "traf", "assets", "rel", "sig", "ctry"],
   fire: ["fire", "loc", "rel", "sens", "over", "env", "assets", "expo", "sig", "hist", "ctry"],
@@ -646,13 +665,20 @@ function notes(id, D, PV) {
       const a = (T.alerts || []).find((x) => x.level === "alert") || (T.alerts || [])[0];
       return a ? { level: a.level === "alert" ? "alert" : "warn", text: a.text } : null;
     }
+    case "det": {
+      const X = D.detection;
+      if (!X || X.error) return null;
+      const a = X.assessment || {};
+      return X.lifecycle === "active" ? { level: a.wording === "likely" ? "alert" : "warn", text: (a.wording ? a.wording[0].toUpperCase() + a.wording.slice(1) + " " : "") + (X.detector === "gnss_jam" ? "GNSS interference" : X.detector) + " · active" } : null;
+    }
     case "fire": return F && F.war_likely ? { level: "alert", text: "War-likely fire (score " + F.score + ")" } : null;
     case "sig": {
       if (!G || G.error) return null;
       const c = G.gnss && G.gnss.site, oc = G.outage && G.outage.country, sq = (G.squawks || {}).items || [];
-      if (sq.length) return { level: "alert", text: "Emergency squawk " + sq[0].code + " nearby (" + (sq[0].flight || sq[0].reg || "") + ")" };
+      const sqp = sq.filter((x) => x.persistent !== false);
+      if (sqp.length) return { level: "alert", text: "Emergency squawk " + sqp[0].code + " nearby (" + (sqp[0].flight || sqp[0].reg || "") + ")" };
       if (c && c.level === "high") return { level: "alert", text: "GNSS jamming at the position: " + pct(c.pct) + " degraded" };
-      if (oc && oc.ongoing && oc.level !== "low") return { level: "alert", text: "Internet outage in " + oc.name + " (" + oc.level + ")" };
+      if (oc && oc.ongoing && oc.level !== "low" && (G.outage.status || {}).confirmed !== false) return { level: "alert", text: "Internet outage in " + oc.name + " (" + oc.level + ")" };
       if (c && c.level === "medium") return { level: "warn", text: "GNSS interference " + pct(c.pct) };
       if (!c && !oc && !sq.length) return { quiet: "no GNSS data · internet normal · Kp " + (G.space && G.space.kp_now ? nf(G.space.kp_now[1], 1) : "–") };
       return null;
@@ -722,12 +748,14 @@ export async function renderIntel(spec, body, hooks) {
   const root = body.firstElementChild;
   wireCopy(root);
   const D = {};            // section name -> payload (undefined = not loaded yet)
+  let settled = false;     // all section requests answered (or failed)
   let subj = null, PV, bgHtml = null;
   const tileEl = (id) => root.querySelector('[data-tile="' + id + '"]');
 
   // ---- tile rendering: lazy (when visible and unfolded), idempotent per data version ----
   const RENDER = {
     assess: () => assessment(D.assessment),
+    det: () => detection(D.detection),
     loc: () => locator(subj, D),
     time: () => (D.timeline ? renderTimeline(D.timeline) : D.timeline === null ? empty("No timeline") : null),
     over: () => overhead(D.overhead),
@@ -800,7 +828,8 @@ export async function renderIntel(spec, body, hooks) {
   const draw = (id) => {
     const el = tileEl(id);
     if (!el || el.classList.contains("fold") || !visible.has(id) || !dirty.has(id)) return;
-    const h = RENDER[id]();
+    let h = RENDER[id]();
+    if (h == null && settled && id !== "bg" && id !== "attn" && id !== "prof") h = empty("No data for this subject");
     if (h == null) return;
     dirty.delete(id);
     const b = el.querySelector(".ic-body");
@@ -861,7 +890,7 @@ export async function renderIntel(spec, body, hooks) {
     const on = hooks.consoleOn ? hooks.consoleOn() : false;
     root.querySelector('[data-slot="head"]').innerHTML = '<div class="dk-class st-' + esc(String(s.status || "").replace(/[^a-z-]/g, "")) + '"><span>INTEL // ' + esc(kl.toUpperCase()) + "</span><b>" + esc((EVENT_STATUS[s.status] || s.status || "ALL-SOURCE").toUpperCase()) + "</b><span>FUSION CONSOLE · " + tiles.length + ' TILES</span><span class="dk-r">BUILT ' + esc(fmtUtc(new Date().toISOString(), { time: true })) + "</span></div>" +
       '<header class="dk-head ic-head"><div class="dk-ht"><div class="dz-eyebrow">' + esc(s.category ? eventCat(s.category)[0] : kl) + '</div><h2 class="dz-title">' + esc(s.label || spec.label || "") + '</h2><div class="dz-sub">' +
-      esc([s.place_name, s.country || s.cc].filter(Boolean).join(", ") || (s.q ? "name match: " + s.q : "")) + (s.t_start ? " · first report " + esc(fmtUtc(s.t_start)) : "") + "</div></div>" +
+      esc([s.place_name, s.country || s.cc].filter(Boolean).join(", ") || (s.q ? "name match: " + s.q : "")) + (s.t_start ? (s.origin === "sensor" ? " · detected " : " · first report ") + esc(fmtUtc(s.t_start)) : "") + "</div></div>" +
       (s.lat != null ? '<div class="dk-loc ic-loc-b"><div><span>POS</span><b>' + esc(latLonText(s.lat, s.lon)) + "</b>" + copyBtn(s.lat.toFixed(5) + ", " + s.lon.toFixed(5)) + "</div>" + (m ? "<div><span>MGRS</span><b>" + esc(m) + "</b>" + copyBtn(m.replace(/ /g, "")) + "</div>" : "") +
         "<div><span>RADIUS</span><b>" + nf(s.radius_km) + " km</b></div></div>" : "") + conf + "</header>" +
       '<div class="dk-tools ic-tools">' + (isEv ? '<button type="button" data-sel="' + esc(spec.id) + '">Select on globe</button>' : "") + (s.lat != null ? '<button type="button" data-fly="' + s.lat + "," + s.lon + '">Fly to</button>' : "") +
@@ -918,20 +947,23 @@ export async function renderIntel(spec, body, hooks) {
     if (hooks.stale()) return;
     if (first) {
       first = false; subj = j.subject;
+      const off = new Set(subj.origin === "sensor" ? (subj.signal ? ["img", "sens", "over"] : []) : ["det"]);
+      for (const [id] of tiles) { const el = tileEl(id); if (el) { el.hidden = off.has(id); el.style.display = off.has(id) ? "none" : ""; } }
       head(subj);
       hooks.head({ title: subj.label || spec.label || kl, sub: "INTEL // " + kl.toUpperCase() + (subj.place_name ? " · " + subj.place_name : ""), icon: "intel", coord: subj.lat != null ? { lat: subj.lat, lon: subj.lon, alt: 6e4 } : null });
     }
     const S = j.sections || {};
     Object.assign(D, S);
     if ("entities" in S) {
-      background(spec, subj, hooks, S.entities).then((r) => {
+      const late = new Promise((_, no) => setTimeout(() => no(new Error("Wikidata did not answer within 20 s")), 20000));
+      Promise.race([background(spec, subj, hooks, S.entities), late]).then((r) => {
         if (hooks.stale()) return;
         bgHtml = r.html; touch(["__bg"]); dirty.add("bg"); draw("bg");
         if (!r.enwiki) { PV = null; dirty.add("attn"); draw("attn"); refreshHead(); return; }
         fetchJson("/api/intel/pageviews?" + new URLSearchParams({ title: r.enwiki }), 15000)
           .then((pv) => { PV = pv; }, (err) => { PV = { error: "Pageviews unavailable: " + (err.message || err) }; })
           .then(() => { if (!hooks.stale()) { dirty.add("attn"); draw("attn"); refreshHead(); } });
-      }, (err) => { bgHtml = empty("Background unavailable: " + (err.message || err)); PV = null; dirty.add("bg"); dirty.add("attn"); draw("bg"); draw("attn"); });
+      }, (err) => { bgHtml = empty("Background unavailable: " + (err.message || err)); PV = { error: "Pageviews unavailable: no Background article (" + (err.message || err) + ")" }; dirty.add("bg"); dirty.add("attn"); draw("bg"); draw("attn"); });
     }
     touch(Object.keys(S));
   };
@@ -940,9 +972,16 @@ export async function renderIntel(spec, body, hooks) {
     .map(([g, ms]) => [g.split(",").filter((x) => need.has(x)).join(","), ms]).filter(([g]) => g);
   const ps = reqs.map(([sec, ms]) => fetchJson(query(spec, sec), ms));
   refreshHead();
-  await Promise.all(ps.map((p, i) => p.then(got, (e) => {
-    if (hooks.stale()) return;
-    fail(reqs[i][0], e);
-    if (i === 0 && first) throw e;
-  })));
+  try {
+    await Promise.all(ps.map((p, i) => p.then(got, (e) => {
+      if (hooks.stale()) return;
+      fail(reqs[i][0], e);
+      if (i === 0 && first) throw e;
+    })));
+  } finally {
+    // every request settled: a section that never arrived is "no data", not "Loading…"
+    for (const [, , needs] of tiles) for (const n of needs) if (D[n] === undefined) D[n] = null;
+    settled = true;
+    if (!hooks.stale()) touch(tiles.flatMap((t) => t[2]));
+  }
 }

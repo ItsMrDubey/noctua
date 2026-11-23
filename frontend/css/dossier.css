@@ -18,6 +18,7 @@
   background: repeating-linear-gradient(135deg, rgba(var(--acc-rgb), .07) 0 6px, transparent 6px 12px), rgba(0, 0, 0, .35); border-bottom: 1px solid var(--line); }
 .dk-class b { color: var(--acc); padding: 1px 6px; border: 1px solid currentColor; letter-spacing: .16em; }
 .dk-class.st-sensor-corroborated b { color: var(--green); box-shadow: 0 0 8px rgba(79, 223, 140, .25); }
+.dk-class.st-sensor-detected b { color: var(--acc); }
 .dk-class.st-official b { color: var(--amber); }
 .dk-class.st-reported b { color: var(--fg-2); border-style: dashed; }
 .dk-class .dk-r { margin-left: auto; color: var(--dim); }
@@ -41,6 +42,7 @@
 .dk-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px 0; align-items: center; }
 .dk-chip { font: 600 9px/1 var(--f-head); letter-spacing: .13em; text-transform: uppercase; padding: 3px 6px; border: 1px solid var(--line-2); color: var(--fg-2); white-space: nowrap; }
 .dk-chip.st-sensor-corroborated { color: var(--green); border-color: rgba(79, 223, 140, .55); background: rgba(79, 223, 140, .08); }
+.dk-chip.st-sensor-detected { color: var(--acc); border-color: var(--acc); }
 .dk-chip.st-multi-source { color: var(--ion); border-color: rgba(94, 227, 234, .5); }
 .dk-chip.st-official { color: var(--amber); border-color: rgba(242, 173, 61, .55); }
 .dk-chip.st-reported { border-style: dashed; }
@@ -568,3 +570,8 @@
 .ic-reasons li.neg { border-left-color: var(--green); }
 .ic-reasons b { font: 500 11.5px var(--f-body); color: var(--fg); } .ic-reasons i { font: 600 10.5px var(--f-mono); font-style: normal; color: var(--fg-2); }
 .ic-reasons small { grid-column: 1 / -1; font: 9.5px var(--f-mono); color: var(--dim); }
+
+/* sensor-detection tile (panels/sensor-detection.js): H3 cell map */
+.ic-cells { width: 100%; max-height: 240px; display: block; margin: 4px 0; }
+.ic-cells polygon { cursor: pointer; }
+.ip-hist.hot { color: var(--amber); }
