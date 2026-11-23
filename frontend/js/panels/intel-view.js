@@ -123,8 +123,11 @@ function entities(E, spec) {
   }).join("") + "</div>";
 }
 
-async function background(el, spec, subj, hooks) {
-  const q = spec.kind === "event" ? subj.place_name : spec.kind === "actor" ? spec.q : spec.label;
+// observations / points have no name of their own: use the most frequent nearby place
+const OBS = new Set(["fire", "quake", "hazard", "point"]);
+async function background(el, spec, subj, hooks, ents) {
+  const place = ((ents && ents.items) || []).find((e) => e.type === "place");
+  const q = spec.kind === "event" ? subj.place_name : spec.kind === "actor" ? spec.q : OBS.has(spec.kind) ? place && place.name : spec.label;
   try {
     let qid = spec.wikidata && /^Q\d+$/.test(spec.wikidata) ? spec.wikidata : null;
     if (!qid && q) qid = (await hooks.wdResolve({ q, lat: subj.lat ?? null, lon: subj.lon ?? null, icao: spec.icao || null, maxKm: spec.kind === "actor" ? 30 : 60 })).qid;
@@ -188,9 +191,10 @@ export async function renderIntel(spec, body, hooks) {
       first = false; subj = j.subject;
       head(subj);
       hooks.head({ title: subj.label || spec.label || kl, sub: "INTEL // " + kl.toUpperCase() + (subj.place_name ? " · " + subj.place_name : ""), icon: "intel", coord: subj.lat != null ? { lat: subj.lat, lon: subj.lon, alt: 6e4 } : null });
-      background(root.querySelector('[data-slot="background"]'), spec, subj, hooks);
     }
-    fill(j.sections || {});
+    const S = j.sections || {};
+    if ("entities" in S) background(root.querySelector('[data-slot="background"]'), spec, subj, hooks, S.entities);
+    fill(S);
   };
   await Promise.all([
     core.then(got, (e) => { if (!hooks.stale()) { fail(CORE + ",head", e); if (first) throw e; } }),

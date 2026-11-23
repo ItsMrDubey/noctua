@@ -696,7 +696,7 @@ async function main() {
     if (selected.kind === "events") return open({ type: "intel", kind: "event", id: selected.id, label: evTitle(it) || it.title || selected.id });
     if (it.lat == null) return;
     return open({ type: "intel", kind: OBS_KIND[selected.kind] || "point", id: selected.id, lat: it.lat, lon: it.lon, t: typeof it.ts === "string" ? it.ts : null,
-      label: it.name || it.place || (selected.kind === "fires" ? "Fire " + selected.id : selected.id) });
+      label: it.name || it.place || (selected.kind === "fires" ? "FIRMS hotspot " + String(it.ts || "").slice(0, 16).replace("T", " ") + "Z" : selected.id) });
   }
   // a related event that is not in the loaded layer (filtered / older): fly there, open intel
   async function selectUnlisted(id) {
