@@ -38,6 +38,7 @@ import { WatchOverlay, watchHtml } from "/static/js/watch.js";
 import { Signals, AREA_SIGNALS } from "/static/js/signals/index.js";
 import { StorylineList, StoryOverlay } from "/static/js/storylines.js";
 import { installDeclutter } from "/static/js/declutter.js";
+import { installBasemap } from "/static/js/basemap.js";
 import { renderAssetProfile, assetProfileHtml, setAssetProfileHooks } from "/static/js/panels/asset-profile.js";
 
 const errors = {};
@@ -61,6 +62,12 @@ async function main() {
   setupImagery(viewer);
   const cfgP = loadConfig();
   cfgP.then((cfg) => applyConfig(viewer, cfg));
+  // basemap source (Esri / Bing / Google 3D via ion) + "dim for data"; Google 3D carries its own
+  // buildings, so OSM Buildings are switched off while it shows
+  installBasemap({ viewer, cfgP, onPhoto: (on) => {
+    const b = $("t-buildings");
+    if (on && b.checked) { b.checked = false; b.dispatchEvent(new Event("change")); }
+  } });
   const hud = setupHud(viewer);
   const fps = setupFps(viewer);
   const tree = new LayerTree();
