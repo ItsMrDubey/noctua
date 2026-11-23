@@ -1,0 +1,399 @@
+# Terror Watch groups knowledge base (osint.terror.groups).
+#
+# What is curated here: identity only -- canonical name, multilingual aliases, family
+# (parent/affiliate), ideological category and the actor names UCDP uses for the group.
+# What is NOT curated here: designation status (always read from the official lists:
+# US FTO / OFAC SDGT, UN 1267/1988, UK proscription, EU terrorist list -- see
+# /api/terror/designations), areas of operation and activity tempo (derived from incident
+# data). Groups on an official list that are not below get an automatic entry.
+#
+# aliases:      matched case/diacritic-insensitively as whole words in a perpetrator /
+#               claim quote (never by similarity).
+# weak_aliases: too ambiguous for free text ("IS", "AQ", "HM"); they only link when they
+#               are the entire perpetrator name the extraction returned.
+# category:     jihadist | shia_militant | palestinian_militant | ethno_separatist |
+#               left_wing | right_wing_dve | anarchist | nihilist_dve | other_political |
+#               criminal (cartels / gangs; designated by some states but their violence
+#               is not terrorism under the working definition unless criteria are met)
+# conflict_party: the group is a party to an ongoing armed conflict; its attacks inside that
+#               conflict are warfare / insurgency unless civilians are deliberately targeted.
+# ucdp_actors:  UCDP side_a names whose one-sided violence is attributed to this group
+#               (historical base rates).
+
+groups:
+  - id: isis
+    name: Islamic State (ISIS core)
+    category: jihadist
+    aliases: [Islamic State, ISIS, ISIL, Daesh, "Da'esh", Islamic State of Iraq and the Levant,
+              Islamic State of Iraq and Syria, Islamic State of Iraq and al-Sham, الدولة الإسلامية,
+              داعش, تنظيم الدولة, ИГИЛ, Исламское государство, Ісламська держава, État islamique,
+              Etat islamique, Estado Islámico, Islamischer Staat, IŞİD, DEAŞ, دولت اسلامی]
+    weak_aliases: [IS, EI]
+    ucdp_actors: [IS]
+  - id: iskp
+    name: Islamic State Khorasan Province (ISKP)
+    category: jihadist
+    parent: isis
+    aliases: [ISKP, ISIS-K, IS-K, ISIS-Khorasan, Islamic State Khorasan, Islamic State Khorasan Province,
+              Islamic State's Khorasan Province, Islamic State – Khorasan Province, Wilayat Khorasan,
+              ولاية خراسان, داعش خراسان, داعش-خراسان, ИГИЛ-Хорасан, Вилаят Хорасан]
+  - id: iswap
+    name: Islamic State West Africa Province (ISWAP)
+    category: jihadist
+    parent: isis
+    aliases: [ISWAP, ISIS-West Africa, ISIS West Africa, Islamic State West Africa, Islamic State West Africa Province,
+              Islamic State in West Africa, ولاية غرب أفريقيا]
+  - id: is_sahel
+    name: Islamic State Sahel Province (ISSP / ex-ISGS)
+    category: jihadist
+    parent: isis
+    aliases: [ISSP, ISGS, IS Sahel, Islamic State Sahel, Islamic State Sahel Province, ISIS in the Greater Sahara,
+              ISIS-GS, Islamic State in the Greater Sahara, EIGS, État islamique au Grand Sahara,
+              État islamique au Sahel, ولاية الساحل]
+  - id: is_somalia
+    name: Islamic State Somalia
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-Somalia, IS-Somalia, Islamic State Somalia, Islamic State in Somalia]
+    weak_aliases: [ISS]
+  - id: is_mozambique
+    name: Islamic State Mozambique (ISCAP-Mozambique)
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-Mozambique, IS-Mozambique, Islamic State Mozambique, Islamic State Mozambique Province,
+              Ansar al-Sunna, Ahlu Sunnah Wa-Jama, Al-Shabaab (Mozambique), ISCAP, Wilayat Mozambique]
+  - id: is_drc_adf
+    name: Islamic State DRC / Allied Democratic Forces (ADF)
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-DRC, IS-DRC, Islamic State Central Africa Province, ISCAP-DRC, Allied Democratic Forces,
+              Madina at Tauheed Wau Mujahedeen, Forces démocratiques alliées]
+    weak_aliases: [ADF]
+    ucdp_actors: [ADF]
+  - id: is_sinai
+    name: Islamic State Sinai Province
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-Sinai Province, ISIS-Sinai, Islamic State Sinai Province, Sinai Province, Wilayat Sinai,
+              Ansar Bayt al-Maqdis, ولاية سيناء, أنصار بيت المقدس]
+  - id: is_libya
+    name: Islamic State Libya
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-Libya, IS-Libya, Islamic State Libya, Islamic State in Libya]
+  - id: is_philippines
+    name: Islamic State East Asia / Philippines
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-Philippines, ISIS-East Asia, Islamic State East Asia, Dawlah Islamiyah, Maute group]
+  - id: is_bangladesh
+    name: Islamic State Bangladesh
+    category: jihadist
+    parent: isis
+    aliases: [ISIS-Bangladesh, Islamic State Bangladesh]
+  - id: alqaeda
+    name: Al-Qaeda (core)
+    category: jihadist
+    aliases: [al-Qaeda, al-Qaida, al-Qa'ida, Al Qaeda, al Qaida, Al-Qa’ida, القاعدة, تنظيم القاعدة,
+              Аль-Каида, Аль-Каїда, al-Qaïda, Al Qaïda, القاعده]
+    weak_aliases: [AQ]
+  - id: aqap
+    name: Al-Qaeda in the Arabian Peninsula (AQAP)
+    category: jihadist
+    parent: alqaeda
+    aliases: [AQAP, al-Qaeda in the Arabian Peninsula, al-Qa'ida in the Arabian Peninsula,
+              Al-Qaida in the Arabian Peninsula, Ansar al-Sharia (Yemen), القاعدة في جزيرة العرب]
+  - id: aqim
+    name: Al-Qaeda in the Islamic Maghreb (AQIM)
+    category: jihadist
+    parent: alqaeda
+    aliases: [AQIM, al-Qaeda in the Islamic Maghreb, al-Qa'ida in the Islamic Maghreb,
+              Al-Qaida in the Islamic Maghreb, AQMI, Al-Qaïda au Maghreb islamique,
+              القاعدة في بلاد المغرب الإسلامي, GSPC, Salafist Group for Call and Combat]
+  - id: aqis
+    name: Al-Qaeda in the Indian Subcontinent (AQIS)
+    category: jihadist
+    parent: alqaeda
+    aliases: [AQIS, al-Qaeda in the Indian Subcontinent, al-Qa'ida in the Indian Subcontinent]
+  - id: jnim
+    name: Jama'at Nusrat al-Islam wal-Muslimin (JNIM)
+    category: jihadist
+    parent: alqaeda
+    aliases: [JNIM, GSIM, Jama'at Nusrat al-Islam wal-Muslimin, Jamaat Nusrat al-Islam wal-Muslimin,
+              Jama’at Nusrat al-Islam wal-Muslimin, Group for the Support of Islam and Muslims,
+              Groupe de soutien à l'islam et aux musulmans, جماعة نصرة الإسلام والمسلمين]
+    ucdp_actors: [JNIM]
+  - id: alshabaab
+    name: Al-Shabaab
+    category: jihadist
+    parent: alqaeda
+    aliases: [al-Shabaab, al-Shabab, Al Shabaab, Al Shabab, Harakat al-Shabaab al-Mujahideen,
+              Harakat al-Shabab al-Mujahidin, حركة الشباب, الشباب المجاهدين, Аш-Шабааб, Shabaab]
+    ucdp_actors: [Al-Shabaab]
+  - id: hurras_al_din
+    name: Hurras al-Din
+    category: jihadist
+    parent: alqaeda
+    aliases: [Hurras al-Din, Hurras ad-Din, حراس الدين]
+  - id: hts
+    name: Hay'at Tahrir al-Sham (HTS) / al-Nusrah Front
+    category: jihadist
+    aliases: [Hay'at Tahrir al-Sham, Hayat Tahrir al-Sham, Hay’at Tahrir al-Sham, HTS, al-Nusrah Front,
+              al-Nusra Front, Jabhat al-Nusra, Jabhat Fatah al-Sham, هيئة تحرير الشام, جبهة النصرة]
+    ucdp_actors: [HTS, "Jabhat Fateh al-Sham"]
+  - id: boko_haram
+    name: Boko Haram (JAS)
+    category: jihadist
+    aliases: [Boko Haram, Jama'atu Ahlis Sunna Lidda'awati wal-Jihad, Jama'atu Ahl as-Sunnah lid-Da'wah wa'l-Jihad,
+              Jama’atu Ahli Sunna Lidda Awati Wal Jihad, بوكو حرام, Боко Харам]
+    weak_aliases: [JAS]
+    ucdp_actors: [JAS]
+  - id: ansaru
+    name: Ansaru
+    category: jihadist
+    aliases: [Ansaru, Jama'atu Ansarul Muslimina Fi Biladis-Sudan, Ansarul Muslimina Fi Biladis Sudan]
+  - id: ttp
+    name: Tehrik-i-Taliban Pakistan (TTP)
+    category: jihadist
+    aliases: [TTP, Tehrik-i-Taliban Pakistan, Tehrik-e-Taliban Pakistan, Tehreek-e-Taliban Pakistan,
+              Pakistani Taliban, تحریک طالبان پاکستان,
+              تحريك طالبان باكستان, طالبان پاکستان]
+    weak_aliases: [Fitna al-Khawarij, Fitna al Khawarij]
+    ucdp_actors: [TTP]
+  - id: taliban
+    name: Taliban (Afghanistan)
+    category: jihadist
+    conflict_party: true
+    note: De facto authority in Afghanistan since Aug 2021; acts by its forces are state violence
+      under the working definition. Individuals and entities are listed under UN 1988.
+    aliases: [Taliban, Taleban, Islamic Emirate of Afghanistan, طالبان, Талибан]
+  - id: haqqani
+    name: Haqqani Network
+    category: jihadist
+    aliases: [Haqqani Network, Haqqani network, شبکه حقانی, شبكة حقاني]
+  - id: let
+    name: Lashkar-e-Tayyiba (LeT)
+    category: jihadist
+    aliases: [Lashkar-e-Tayyiba, Lashkar-e-Taiba, Lashkar e Tayyaba, Lashkar-e-Toiba, LeT, Jamaat-ud-Dawa,
+              Jama'at-ud-Da'wah, لشکر طیبہ]
+  - id: trf
+    name: The Resistance Front (TRF)
+    category: jihadist
+    parent: let
+    aliases: [The Resistance Front]
+    weak_aliases: [TRF]
+  - id: jem
+    name: Jaish-e-Mohammed (JeM)
+    category: jihadist
+    aliases: [Jaish-e-Mohammed, Jaish-e-Muhammad, Jaish e Mohammed, Jaish-i-Mohammed, JeM, جيش محمد]
+  - id: hizbul_mujahideen
+    name: Hizbul Mujahideen
+    category: ethno_separatist
+    aliases: [Hizbul Mujahideen, Hizb-ul-Mujahideen, Hizbul Mujahidin]
+  - id: bla
+    name: Balochistan Liberation Army (BLA)
+    category: ethno_separatist
+    aliases: [Balochistan Liberation Army, Baluchistan Liberation Army, Baloch Liberation Army, BLA,
+              Majeed Brigade, بلوچستان لبریشن آرمی]
+    note: Pakistan's official umbrella term "Fitna al-Hindustan" covers several Baloch groups and is
+      deliberately NOT an alias here (it would attribute other groups' attacks to the BLA).
+  - id: hamas
+    name: Hamas (incl. Izz ad-Din al-Qassam Brigades)
+    category: palestinian_militant
+    conflict_party: true
+    aliases: [Hamas, HAMAS, Harakat al-Muqawamah al-Islamiyyah, Islamic Resistance Movement,
+              Izz ad-Din al-Qassam Brigades, Izz al-Din al-Qassam Brigades, al-Qassam Brigades,
+              Qassam Brigades, حماس, حركة حماس, كتائب القسام, كتائب عز الدين القسام, ХАМАС]
+    ucdp_actors: [Hamas]
+  - id: pij
+    name: Palestinian Islamic Jihad (PIJ)
+    category: palestinian_militant
+    conflict_party: true
+    aliases: [Palestinian Islamic Jihad, PIJ, Islamic Jihad, Al-Quds Brigades, Saraya al-Quds,
+              الجهاد الإسلامي, سرايا القدس, Исламский джихад]
+  - id: pflp
+    name: Popular Front for the Liberation of Palestine (PFLP)
+    category: palestinian_militant
+    aliases: [Popular Front for the Liberation of Palestine, PFLP, الجبهة الشعبية لتحرير فلسطين]
+  - id: hezbollah
+    name: Hezbollah
+    category: shia_militant
+    conflict_party: true
+    aliases: [Hezbollah, Hizballah, Hizbullah, Hizbollah, حزب الله, Хезболла, Хізбалла, Hisbollah]
+  - id: houthis
+    name: Houthis (Ansarallah)
+    category: shia_militant
+    conflict_party: true
+    note: De facto authority in much of north Yemen; its attacks in the Yemen / Red Sea / regional
+      wars are coded as warfare unless they deliberately target civilians outside combat.
+    aliases: [Houthis, Houthi, Ansarallah, Ansar Allah, Ansar Allah (Houthis), الحوثيون, الحوثي, أنصار الله,
+              хуситы, хусити, Houthistes, hutíes]
+  - id: kataib_hezbollah
+    name: Kata'ib Hizballah
+    category: shia_militant
+    conflict_party: true
+    aliases: [Kata'ib Hizballah, Kataib Hezbollah, Kata’ib Hizballah, كتائب حزب الله]
+  - id: aah
+    name: Asa'ib Ahl al-Haq
+    category: shia_militant
+    conflict_party: true
+    aliases: [Asa'ib Ahl al-Haq, Asaib Ahl al-Haq, Asa’ib Ahl al-Haq, عصائب أهل الحق]
+    weak_aliases: [AAH]
+  - id: nujaba
+    name: Harakat al-Nujaba
+    category: shia_militant
+    conflict_party: true
+    aliases: [Harakat al-Nujaba, Harakat Hizballah al-Nujaba, al-Nujaba, حركة النجباء]
+  - id: pkk
+    name: Kurdistan Workers' Party (PKK)
+    category: ethno_separatist
+    aliases: [PKK, Kurdistan Workers' Party, Kurdistan Workers’ Party, Partiya Karkerên Kurdistanê,
+              Partiya Karkeren Kurdistani, KADEK, Kongra-Gel, ПКК, حزب العمال الكردستاني, Parti des travailleurs du Kurdistan]
+  - id: tak
+    name: Kurdistan Freedom Falcons (TAK)
+    category: ethno_separatist
+    parent: pkk
+    aliases: [Kurdistan Freedom Falcons, Kurdistan Freedom Hawks, Teyrêbazên Azadiya Kurdistan]
+    weak_aliases: [TAK]
+  - id: dhkpc
+    name: Revolutionary People's Liberation Party/Front (DHKP/C)
+    category: left_wing
+    aliases: [DHKP/C, DHKP-C, Revolutionary People's Liberation Party/Front, Devrimci Halk Kurtuluş Partisi-Cephesi]
+  - id: eln
+    name: National Liberation Army (ELN, Colombia)
+    category: left_wing
+    aliases: [ELN, Ejército de Liberación Nacional, Ejercito de Liberacion Nacional, National Liberation Army (ELN)]
+    ucdp_actors: [ELN]
+  - id: farc_dissidents
+    name: FARC-EP dissidents (EMC) / Segunda Marquetalia
+    category: left_wing
+    aliases: [FARC-EP, FARC-EMC, Estado Mayor Central, Estado Mayor Central de las FARC, Segunda Marquetalia,
+              disidencias de las FARC, disidencias de Iván Mordisco, Revolutionary Armed Forces of Colombia – People’s Army,
+              Revolutionary Armed Forces of Colombia - People's Army]
+    ucdp_actors: [FARC-EMC, "FARC - Segunda Marquetalia", EMBF]
+  - id: shining_path
+    name: Shining Path (Sendero Luminoso)
+    category: left_wing
+    aliases: [Shining Path, Sendero Luminoso]
+    weak_aliases: [SL]
+  - id: npa
+    name: Communist Party of the Philippines / New People's Army
+    category: left_wing
+    aliases: [New People's Army, Communist Party of the Philippines, CPP-NPA, CPP/NPA]
+    weak_aliases: [NPA]
+    ucdp_actors: [CPP]
+  - id: cpi_maoist
+    name: Communist Party of India (Maoist)
+    category: left_wing
+    aliases: [CPI-Maoist, CPI (Maoist), Communist Party of India (Maoist), Maoists, Naxalites, Naxals]
+    ucdp_actors: [CPI-Maoist]
+  - id: ltte
+    name: Liberation Tigers of Tamil Eelam (LTTE)
+    category: ethno_separatist
+    aliases: [Liberation Tigers of Tamil Eelam, LTTE, Tamil Tigers]
+  - id: babbar_khalsa
+    name: Babbar Khalsa
+    category: ethno_separatist
+    aliases: [Babbar Khalsa, Babbar Khalsa International, BKI]
+  - id: new_ira
+    name: New IRA / dissident republicans
+    category: ethno_separatist
+    aliases: [New IRA, Real IRA, Continuity IRA, Óglaigh na hÉireann, dissident republicans]
+  - id: atomwaffen
+    name: Atomwaffen Division / National Socialist Order
+    category: right_wing_dve
+    aliases: [Atomwaffen Division, Atomwaffen, National Socialist Order]
+    weak_aliases: [AWD]
+  - id: the_base
+    name: The Base
+    category: right_wing_dve
+    aliases: [The Base]
+  - id: terrorgram
+    name: Terrorgram Collective
+    category: right_wing_dve
+    aliases: [Terrorgram Collective, Terrorgram]
+  - id: nrm
+    name: Nordic Resistance Movement
+    category: right_wing_dve
+    aliases: [Nordic Resistance Movement, Nordiska motståndsrörelsen]
+    weak_aliases: [NRM]
+  - id: rim
+    name: Russian Imperial Movement (RIM)
+    category: right_wing_dve
+    aliases: [Russian Imperial Movement, Русское имперское движение]
+    weak_aliases: [RIM]
+  - id: national_action
+    name: National Action
+    category: right_wing_dve
+    aliases: [National Action]
+  - id: feuerkrieg
+    name: Feuerkrieg Division
+    category: right_wing_dve
+    aliases: [Feuerkrieg Division]
+    weak_aliases: [FKD]
+  - id: mmc
+    name: Maniacs Murder Cult (MMC)
+    category: nihilist_dve
+    aliases: [Maniacs Murder Cult, "Maniacs: Cult of Killing"]
+    weak_aliases: [MMC]
+  - id: com_764
+    name: "764 network"
+    category: nihilist_dve
+    aliases: ["764 network", "764 group"]
+  - id: fai_fri
+    name: Informal Anarchist Federation / International Revolutionary Front (FAI/FRI)
+    category: anarchist
+    aliases: [Informal Anarchist Federation, FAI/FRI, Federazione Anarchica Informale, International Revolutionary Front]
+  - id: palestine_action
+    name: Palestine Action
+    category: other_political
+    aliases: [Palestine Action]
+  - id: muslim_brotherhood
+    name: Muslim Brotherhood (national chapters)
+    category: other_political
+    aliases: [Muslim Brotherhood, الإخوان المسلمون, جماعة الإخوان, Lebanese Muslim Brotherhood, Sudanese Muslim Brotherhood,
+              Egyptian Muslim Brotherhood, Jordanian Muslim Brotherhood]
+  - id: irgc
+    name: Islamic Revolutionary Guard Corps (IRGC)
+    category: other_political
+    note: A state organ. Acts by the IRGC are state violence under the working definition; listed
+      here only because the US designates it as an FTO.
+    aliases: [Islamic Revolutionary Guard Corps, IRGC, Revolutionary Guards, سپاه پاسداران, الحرس الثوري, КСИР]
+  - id: sinaloa
+    name: Sinaloa Cartel
+    category: criminal
+    aliases: [Sinaloa Cartel, Cartel de Sinaloa, Cártel de Sinaloa]
+    ucdp_actors: [Sinaloa Cartel]
+  - id: cjng
+    name: Cartel de Jalisco Nueva Generación (CJNG)
+    category: criminal
+    aliases: [CJNG, Cartel de Jalisco Nueva Generacion, Cártel Jalisco Nueva Generación, Jalisco New Generation Cartel,
+              Jalisco Cartel New Generation]
+    ucdp_actors: [Jalisco Cartel New Generation]
+  - id: tren_de_aragua
+    name: Tren de Aragua
+    category: criminal
+    aliases: [Tren de Aragua]
+    weak_aliases: [TdA]
+  - id: ms13
+    name: MS-13 (Mara Salvatrucha)
+    category: criminal
+    aliases: [MS-13, Mara Salvatrucha, Mara Salvatrucha (MS-13)]
+    ucdp_actors: [MS-13]
+  - id: viv_ansanm
+    name: Viv Ansanm (Haiti gang coalition)
+    category: criminal
+    aliases: [Viv Ansanm, Gran Grif]
+    ucdp_actors: [Viv Ansanm, Gran Grif]
+  - id: comando_vermelho
+    name: Comando Vermelho
+    category: criminal
+    aliases: [Comando Vermelho]
+    weak_aliases: [CV]
+    ucdp_actors: [Comando Vermelho]
+  - id: pcc
+    name: Primeiro Comando da Capital (PCC)
+    category: criminal
+    aliases: [Primeiro Comando da Capital]
+    weak_aliases: [PCC]
+    ucdp_actors: [PCC]

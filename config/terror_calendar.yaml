@@ -1,0 +1,21 @@
+# Significant dates (osint.terror). CONTEXT ONLY: an anniversary is not an indicator that an
+# attack will happen; it is shown so an analyst knows why coverage / security postures may
+# change. Fixed-date anniversaries of widely documented attacks and recurring public events.
+# month_day = recurring every year; date = a one-off date.
+dates:
+  - {month_day: "01-03", label: "Anniversary: Kerman bombings (Iran, 2024)", countries: [IR], kind: anniversary}
+  - {month_day: "03-11", label: "Anniversary: Madrid train bombings (2004)", countries: [ES], kind: anniversary}
+  - {month_day: "03-15", label: "Anniversary: Christchurch mosque attacks (2019)", countries: [NZ], kind: anniversary}
+  - {month_day: "03-22", label: "Anniversary: Brussels bombings (2016) and Crocus City Hall attack (Russia, 2024)", countries: [BE, RU], kind: anniversary}
+  - {month_day: "04-21", label: "Anniversary: Sri Lanka Easter bombings (2019)", countries: [LK], kind: anniversary}
+  - {month_day: "05-22", label: "Anniversary: Manchester Arena bombing (2017)", countries: [GB], kind: anniversary}
+  - {month_day: "07-07", label: "Anniversary: London bombings (2005)", countries: [GB], kind: anniversary}
+  - {month_day: "07-14", label: "Bastille Day; anniversary of the Nice truck attack (2016)", countries: [FR], kind: anniversary}
+  - {month_day: "08-26", label: "Anniversary: Kabul airport bombing (2021)", countries: [AF, US], kind: anniversary}
+  - {month_day: "09-11", label: "Anniversary: 11 September attacks (2001)", countries: [US], kind: anniversary}
+  - {month_day: "10-07", label: "Anniversary: 7 October attacks on Israel (2023)", countries: [IL, PS], kind: anniversary}
+  - {month_day: "11-13", label: "Anniversary: Paris attacks (2015)", countries: [FR], kind: anniversary}
+  - {month_day: "11-26", label: "Anniversary: Mumbai attacks (2008)", countries: [IN], kind: anniversary}
+  - {month_day: "12-19", label: "Anniversary: Berlin Christmas market attack (2016)", countries: [DE], kind: anniversary}
+  - {month_day: "12-24", label: "Christmas Eve / Christmas (crowded places, places of worship)", countries: [], kind: public_event}
+  - {month_day: "12-31", label: "New Year's Eve (crowded public celebrations)", countries: [], kind: public_event}

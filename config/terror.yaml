@@ -1,0 +1,30 @@
+# Terror Watch (osint.terror). Read by osint.terror.config.TerrorConfig.
+enabled: true
+interval_s: 900            # one pass: due sources -> LLM extraction -> incidents -> indicators
+initial_delay_s: 180       # after worker boot (lets clustering / extraction settle)
+window_days: 21            # news events (by event time) re-classified each pass; older incidents stay frozen
+
+llm:
+  enabled: true            # backend + model come from config/extraction.yaml (claude_cli / haiku)
+  max_calls_per_hour: 30   # failed calls count too; the CLI runs on the user's plan
+  max_calls_per_day: 300
+  max_per_run: 15
+  concurrency: 1           # also bounded by the process-wide CLI slot limit
+  retry_after_min: 120
+  max_attempts: 2
+
+sources:
+  enabled: true
+  timeout_s: 60
+  doj_pages_per_pass: 4    # 50 releases per page; stops at the last seen release
+  doj_backfill_pages: 30   # first run only
+
+dedupe:
+  max_hours: 48
+  max_km: 50
+  min_cosine: 0.60          # multilingual e5 cosine; only checked within 48 h, 50 km, same class and no contradicting type / toll
+
+indicators:
+  ucdp_recent_months: 3
+  ucdp_baseline_months: 12
+  news_window_days: 30
