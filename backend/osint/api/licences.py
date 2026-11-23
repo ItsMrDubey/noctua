@@ -62,7 +62,14 @@ def licences() -> dict:
     web = [{"id": f"webcam:{sid}", "name": src.name, "licence": src.licence, "url": src.url, "attribution": src.attribution,
             "commercial": "ok" if src.commercial_ok else "review", "notes": "Webcam snapshots (proxied, never stored)."}
            for sid, (src, _, _) in REGISTRY.items()]
-    return {"sources": SOURCES + web, "ucdp_citation": UCDP_CITE}
+    from osint.infra.datasets import DATASETS  # infrastructure layers + watchlists
+
+    have = {s["id"] for s in SOURCES}
+    infra = [{"id": d.id if d.id not in have else f"infra:{d.id}", "name": d.name, "licence": d.licence,
+              "url": d.url, "attribution": d.attribution, "commercial": d.commercial,
+              "notes": d.notes, **({"share_alike": True} if "ODbL" in d.licence else {})}
+             for d in DATASETS.values() if d.id != "wpi"]  # WPI is listed as nga_wpi
+    return {"sources": SOURCES + infra + web, "ucdp_citation": UCDP_CITE}
 
 
 def mount_licences(app: FastAPI) -> None:

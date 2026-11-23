@@ -12,6 +12,7 @@ from osint.api.browse import mount_browse
 from osint.api.events import mount_events
 from osint.api.extraction import mount_extraction
 from osint.api.imagery import mount_imagery
+from osint.api.infra import mount_infra
 from osint.api.movements import mount_movements
 from osint.api.nuclear import mount_nuclear
 from osint.api.reference import mount_reference
@@ -109,6 +110,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     live_ws.mount(app, runtime, cache.meta)
     mount_reference(app)
     mount_nuclear(app)
+    mount_infra(app, runtime)
     mount_movements(app, runtime)
     mount_events(app, runtime)
     mount_imagery(app, runtime)

@@ -1,5 +1,5 @@
 """Command line entry point: `osint run` (single process), `osint worker` + `osint api`
-(split; `osint supervise` runs both), `osint backfill <source>`."""
+(split; `osint supervise` runs both), `osint backfill <source>`, `osint infra-fetch`."""
 
 import argparse
 import faulthandler
@@ -239,6 +239,21 @@ def run_backfill(args: argparse.Namespace) -> int:
     return 1 if summary.state == "failed" else 0
 
 
+def run_infra_fetch(args: argparse.Namespace) -> int:
+    from osint.infra.datasets import DATASETS, refresh
+    from osint.reference.loader import default_dir
+
+    unknown = [d for d in args.datasets if d not in DATASETS]
+    if unknown:
+        raise SystemExit(f"unknown dataset(s) {unknown}; one of {sorted(DATASETS)}")
+    res = refresh(default_dir(), args.datasets or None, force=args.force)
+    for did, r in res.items():
+        state = "skip" if r.get("skipped") else "ok  " if r.get("ok") else "FAIL"
+        info = {k: v for k, v in r.items() if k not in ("ok", "skipped")}
+        print(f"{state} {did:14s} {info}")
+    return 0 if all(r.get("ok") for r in res.values()) else 1
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="osint")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -250,11 +265,19 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--single", action="store_true",
                     help="supervise the single-process `osint run` instead")
     add_backfill_parser(sub)
+    fp = sub.add_parser("infra-fetch", help="download / refresh infrastructure layers and "
+                        "sanctions watchlists into data/reference (only stale ones by default)")
+    fp.add_argument("datasets", nargs="*", help="dataset ids (default: all)")
+    fp.add_argument("--force", action="store_true", help="re-download even when fresh")
     args = parser.parse_args(argv)
 
     if args.cmd == "backfill":
         configure_logging()
         raise SystemExit(run_backfill(args))
+
+    if args.cmd == "infra-fetch":
+        configure_logging()
+        raise SystemExit(run_infra_fetch(args))
 
     if args.cmd == "supervise":
         settings = Settings()
