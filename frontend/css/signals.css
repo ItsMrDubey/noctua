@@ -1,0 +1,29 @@
+/* Signals & space: space weather widget, command-bar pill, chips, inspector bits. */
+.sig-wx { margin: 2px 0 6px 21px; padding: 7px 9px; border: 1px solid var(--line); background: rgba(0, 0, 0, .22); font: 10.5px/1.35 var(--f-mono); color: var(--fg-2); }
+.sig-wx:empty { display: none; }
+.sig-wx .kp { display: flex; align-items: baseline; gap: 8px; }
+.sig-wx .kp b { font: 600 20px/1 var(--f-mono); color: var(--c, var(--fg)); text-shadow: 0 0 8px var(--c, transparent); }
+.sig-wx .kp span { font: 600 9.5px var(--f-head); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.sig-wx .scales { display: flex; gap: 4px; margin: 6px 0 4px; }
+.sig-wx .scales i { font-style: normal; padding: 2px 5px; border: 1px solid var(--line-2); color: var(--fg-2); }
+.sig-wx .scales i.on { border-color: var(--c); color: var(--c); box-shadow: inset 0 0 6px var(--c); }
+.sig-wx .bars { display: flex; align-items: flex-end; gap: 1.5px; height: 22px; margin: 4px 0; }
+.sig-wx .bars i { flex: 1; min-width: 2px; background: var(--c); opacity: .75; }
+.sig-wx .ln { display: flex; justify-content: space-between; gap: 8px; }
+.sig-wx .ln b { font-weight: 500; color: var(--fg); }
+.sig-wx .al { margin-top: 4px; color: var(--amber); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sig-pill { gap: 9px; }
+.sig-pill .sc b { color: var(--fg); font-weight: 600; }
+.sig-pill .sc .hot { color: #ff8a8f; }
+.sig-pill .evs-pop { width: 290px; }
+#sat-chips .chip { cursor: pointer; }
+.sig-legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0; font: 10px var(--f-mono); color: var(--fg-2); }
+.sig-legend i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; background: var(--c); }
+.sig-msg { white-space: pre-wrap; font: 10.5px/1.4 var(--f-mono); color: var(--fg-2); border-left: 2px solid var(--line-2); padding-left: 8px; margin: 4px 0; }
+.sig-msg b { font-weight: 500; color: var(--fg); }
+.sig-wx { cursor: pointer; }
+.sig-gauge { height: 6px; background: rgba(255, 255, 255, .06); margin: 2px 0 6px; }
+.sig-gauge i { display: block; height: 100%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+.sig-list { list-style: none; margin: 0; padding: 0; font: 10.5px/1.45 var(--f-mono); color: var(--fg-2); }
+.sig-list li { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 2px 0; }
+.dz-mod .dz-acts { margin: 8px 0 4px; font: 11px var(--f-body); }

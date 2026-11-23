@@ -345,6 +345,16 @@ class SqliteStore:
                 out[d["track_id"]] = d
         return out
 
+    def recent_tracks(self, kind: str, since: datetime, *,
+                      high_priority: bool = False) -> list[dict]:
+        """Tracks of ``kind`` updated at or after ``since`` (optionally high-priority only)."""
+        sql = "SELECT * FROM tracks WHERE kind=? AND last_seen >= ?"
+        if high_priority:
+            sql += " AND high_priority = 1"
+        with self._lock:
+            rows = self._db.execute(sql, (kind, since.isoformat())).fetchall()
+        return [{**dict(r), "extra": json.loads(r["extra"])} for r in rows]
+
     def quarantine(self, source: str, record_type: str, reason: str, payload: dict) -> None:
         with self._lock, self._db:
             self._db.execute(
