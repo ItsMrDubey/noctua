@@ -67,6 +67,9 @@ def rt(tmp_path):
                                                           "satellite": "N21"}}],
                               summaries=[{"event_id": EID, "score": 0.9, "kinds": ["fire"],
                                           "evidence": 1, "corroborated": True}])
+    from osint.signals.cache import write_signal
+    from tests.intel.conftest import SAT_ROWS
+    write_signal(tmp_path, "satellites", {"updated": NOW.timestamp(), "objects": SAT_ROWS})
     ingestor = SimpleNamespace(live={}, _lock=threading.Lock())
     r = SimpleNamespace(store=store, lake=FakeLake(), ingestor=ingestor,
                         settings=SimpleNamespace(data_dir=tmp_path, config_dir=tmp_path,

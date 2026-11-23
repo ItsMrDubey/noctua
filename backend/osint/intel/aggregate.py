@@ -22,6 +22,9 @@ reads one store and returns plain dicts:
   storyline   the thread an event belongs to (osint.storylines: role, span, members), or
               for a point / actor the storylines around it / naming it
 
+Site-context sections (environment, overhead passes, signals, infrastructure / population
+exposure, 24 h traffic, country record and tempo, attention) live in osint.intel.context.
+
 Every section is independent (the API runs the requested ones concurrently) and returns
 ``{"error": ...}`` instead of raising, so one failing store never blanks the pane.
 """
@@ -33,13 +36,13 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from osint.core.geo import haversine_km
-from osint.intel import hooks
+from osint.intel import context, hooks
 from osint.timeline.build import bearing_deg, build_timeline, compass, parse_ts
 
 log = logging.getLogger(__name__)
 
 SECTIONS = ("assessment", "timeline", "related", "history", "sensors", "traffic", "assets",
-            "imagery", "sources", "entities", "storyline")
+            "imagery", "sources", "entities", "storyline", *context.SECTIONS)
 RADIUS_BY_PRECISION = {"point": 25.0, "city": 40.0, "admin1": 150.0, "country": 400.0}
 MAX_RADIUS_KM = 500.0
 DAY = timedelta(days=1)
@@ -486,10 +489,27 @@ def section_sources(runtime, subj: dict, now: datetime) -> dict | None:
     groups = repost_groups(docs)
     langs = sorted({(d.get("lang") or d.get("language") or "").split("-")[0] for d in docs} - {""})
     kinds: dict[str, int] = {}
+    by_lang: dict[str, int] = {}
     for d in docs:
         kinds[source_kind(d.get("source"))] = kinds.get(source_kind(d.get("source")), 0) + 1
+        lg = (d.get("lang") or d.get("language") or "").split("-")[0] or "?"
+        by_lang[lg] = by_lang.get(lg, 0) + 1
+    # reports per hour since the first one (at most 72 bins): how the story spread
+    ts = [t for t in (parse_ts(d.get("published_at")) for d in docs) if t]
+    hourly: list[int] = []
+    if ts:
+        t0 = min(ts).replace(minute=0, second=0, microsecond=0)
+        n = min(72, int((max(ts) - t0).total_seconds() // 3600) + 1)
+        hourly = [0] * n
+        for t in ts:
+            i = int((t - t0).total_seconds() // 3600)
+            if i < n:
+                hourly[i] += 1
     return {"count": len(docs), "outlets": len({d.get("source") for d in docs}),
-            "languages": langs, "by_kind": kinds, "groups": groups}
+            "languages": langs, "by_kind": kinds, "groups": groups,
+            "by_lang": dict(sorted(by_lang.items(), key=lambda kv: -kv[1])),
+            "first_at": _iso(min(ts)) if ts else None, "last_at": _iso(max(ts)) if ts else None,
+            "hourly": hourly}
 
 
 def section_entities(runtime, subj: dict, now: datetime) -> dict:
@@ -684,7 +704,7 @@ def section_timeline(runtime, subj: dict, now: datetime, ctx: dict) -> dict | No
 SIMPLE = {"related": section_related, "history": section_history,
           "sensors": section_sensors, "traffic": section_traffic, "assets": section_assets,
           "imagery": section_imagery, "sources": section_sources,
-          "entities": section_entities, "storyline": section_storyline}
+          "entities": section_entities, "storyline": section_storyline, **context.FUNCS}
 DEPENDENT = {"timeline": section_timeline, "assessment": section_assessment}
 
 

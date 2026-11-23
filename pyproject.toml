@@ -17,6 +17,7 @@ dependencies = [
   "onnxruntime>=1.20",
   "numpy>=2.0",
   "sentencepiece>=0.2",
+  "sgp4>=2.23",
 ]
 
 [project.scripts]
