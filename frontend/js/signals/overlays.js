@@ -2,6 +2,7 @@
 // radiation dose rate (points), OVATION aurora (one translucent imagery layer). Each one is a
 // small batched primitive set with its own refresh timer while switched on.
 import { fetchJson } from "/static/js/api.js";
+import { LOD } from "/static/js/lod.js";
 
 const C = Cesium;
 const FONT = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
@@ -107,6 +108,9 @@ export function radColor(v) {
   for (const s of RAD_STOPS) { if (v >= s[0]) lo = s; }
   return lo[1];
 }
+// stations reading normal only when zoomed in (lod.js); elevated / alert ones at every height
+const RAD_NORMAL_DDC = new C.DistanceDisplayCondition(0, LOD.radiation.normalBelow);
+const RAD_SCALE = new C.NearFarScalar(3e5, 1.4, 2e7, 0.6);
 export class RadiationLayer extends Timed {
   constructor(scene) {
     super(scene, 900000);
@@ -122,7 +126,7 @@ export class RadiationLayer extends Timed {
     this.items.forEach((s, i) => {
       const hot = s.status === "elevated" || s.status === "alert";
       this.pts.add({ position: C.Cartesian3.fromDegrees(s.lon, s.lat), pixelSize: hot ? 10 : s.source === "safecast" ? 5 : 4, color: C.Color.fromCssColorString(radColor(s.value)).withAlpha(0.9),
-        outlineColor: hot ? C.Color.fromCssColorString("#ff4b55") : C.Color.BLACK.withAlpha(0.5), outlineWidth: hot ? 3 : 1, scaleByDistance: new C.NearFarScalar(3e5, 1.4, 2e7, 0.6), id: { signal: "rad", i } });
+        outlineColor: hot ? C.Color.fromCssColorString("#ff4b55") : C.Color.BLACK.withAlpha(0.5), outlineWidth: hot ? 3 : 1, scaleByDistance: RAD_SCALE, distanceDisplayCondition: hot ? undefined : RAD_NORMAL_DDC, id: { signal: "rad", i } });
     });
     this._show();
     if (this.onData) this.onData(this);

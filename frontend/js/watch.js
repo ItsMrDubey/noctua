@@ -15,6 +15,7 @@ const ring = (c) => "data:image/svg+xml;utf8," + encodeURIComponent(
 const RING = Object.fromEntries(Object.entries(SEV_COLOR).map(([k, c]) => [k, ring(c)]));
 const KIND = { sea: "ships", air: "aircraft" };
 const LABEL_OFFSET = new C.Cartesian2(0, 30);
+const RING_SCALE = new C.NearFarScalar(1e6, 1.0, 2e7, 0.5); // smaller rings far out (same fade as the glyphs)
 const BLACK = C.Color.BLACK.withAlpha(0.85);
 const safe = (u) => (/^https:\/\//i.test(u || "") ? u : null);
 
@@ -82,7 +83,7 @@ export class WatchOverlay {
       const weak = r.hits.length && r.hits.every((h) => h.strength === "weak");
       const tag = weak ? "Name match?" : (r.hits[0] && r.hits[0].entry && ((r.hits[0].entry.risk || [])[0] || r.hits[0].entry.label)) || "WATCHLIST";
       if (!m) {
-        const b = this.bb.add({ image: RING[r.severity] || RING.warn, width: 44, height: 44, disableDepthTestDistance: Number.POSITIVE_INFINITY, position: C.Cartesian3.fromDegrees(r.lon, r.lat) });
+        const b = this.bb.add({ image: RING[r.severity] || RING.warn, width: 44, height: 44, scaleByDistance: RING_SCALE, disableDepthTestDistance: Number.POSITIVE_INFINITY, position: C.Cartesian3.fromDegrees(r.lon, r.lat) });
         const l = this.labels.add({ font: FONT, fillColor: C.Color.fromCssColorString(SEV_COLOR[r.severity] || SEV_COLOR.warn), outlineColor: BLACK, outlineWidth: 3,
           style: C.LabelStyle.FILL_AND_OUTLINE, pixelOffset: LABEL_OFFSET, horizontalOrigin: C.HorizontalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY,
           distanceDisplayCondition: new C.DistanceDisplayCondition(0, 8e6), position: b.position });

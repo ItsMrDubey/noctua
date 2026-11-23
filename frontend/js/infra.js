@@ -6,6 +6,7 @@
 // (LOD by camera height); labels come from a small recycled pool for the current view only.
 import { fetchJson } from "/static/js/api.js";
 import { esc, nf, kv } from "/static/js/ui.js";
+import { powerMaxDist, INFRA_POINT_LOD } from "/static/js/lod.js";
 
 const C = Cesium;
 const FONT = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
@@ -43,10 +44,10 @@ const SCALE = new C.NearFarScalar(3e5, 1.0, 2e7, 0.45);
 const BB_SCALE = new C.NearFarScalar(5e5, 1.0, 2.5e7, 0.5);
 const BLACK = col("#000", 0.85);
 const LABEL_OFFSET = new C.Cartesian2(10, 0);
-const DDC = { all: new C.DistanceDisplayCondition(0, Number.MAX_VALUE), far: new C.DistanceDisplayCondition(0, 9e6),
-  mid: new C.DistanceDisplayCondition(0, 4e6), near: new C.DistanceDisplayCondition(0, 1.5e6), close: new C.DistanceDisplayCondition(0, 5e5) };
-// power LOD: capacity -> max camera distance
-const powerDdc = (mw) => (mw >= 1500 ? DDC.all : mw >= 500 ? DDC.far : mw >= 100 ? DDC.mid : mw >= 20 ? DDC.near : DDC.close);
+// LOD (lod.js tables): max camera distance per capacity / layer; one shared condition per distance
+const DDC = new Map();
+const ddcFor = (d) => DDC.get(d) || DDC.set(d, new C.DistanceDisplayCondition(0, d === Infinity ? Number.MAX_VALUE : d)).get(d);
+const powerDdc = (mw) => ddcFor(powerMaxDist(mw));
 const powerPx = (mw) => Math.max(3.5, Math.min(13, 2.2 * Math.log10(Math.max(1, mw || 1)) + 1.5));
 const LABEL_MAX_H = 1.5e6, LABEL_CAP = 260, AIRF_MAX_H = 7e5;
 
@@ -125,7 +126,7 @@ export class InfraLayers {
       }
       const lc = col("#bff3ff", 0.95), out = BLACK;
       this.items.landings = (d.landings || []).map((l) => {
-        const p = this.landings.add({ position: pos(l.lon, l.lat), pixelSize: 4.5, color: lc, outlineColor: out, outlineWidth: 1, scaleByDistance: SCALE, distanceDisplayCondition: DDC.far });
+        const p = this.landings.add({ position: pos(l.lon, l.lat), pixelSize: 4.5, color: lc, outlineColor: out, outlineWidth: 1, scaleByDistance: SCALE, distanceDisplayCondition: ddcFor(INFRA_POINT_LOD.landings) });
         p.id = { ref: true, kind: "infra", sub: "landing", item: l };
         l._p = p;
         return l;
@@ -173,7 +174,7 @@ export class InfraLayers {
   ensurePoints(layer) {
     return this._once(layer, async () => {
       const d = await fetchJson("/api/infra/points/" + layer, 30000);
-      const ddc = layer === "dams" ? DDC.far : DDC.all;
+      const ddc = ddcFor(INFRA_POINT_LOD[layer] || Infinity);
       this.items[layer] = d.items || [];
       for (const it of this.items[layer]) {
         const b = this.bb.add({ position: pos(it.lon, it.lat), image: this.imgs[layer], width: 17, height: 17, scaleByDistance: BB_SCALE, distanceDisplayCondition: ddc, show: false });
@@ -251,7 +252,7 @@ export class InfraLayers {
         if (!l) l = pool.add({ font: FONT, scale: 0.82, outlineColor: BLACK, outlineWidth: 3, style: C.LabelStyle.FILL_AND_OUTLINE, horizontalOrigin: C.HorizontalOrigin.LEFT, pixelOffset: LABEL_OFFSET });
         if (l._k !== it) {
           const prim = it._b || it._p;
-          l._k = it; l.text = String(text || "").toUpperCase().slice(0, 48); l.position = prim.position; l.id = prim.id;
+          l._k = it; l.text = String(text || "").toUpperCase().slice(0, 48); l.position = prim.position; l.id = prim.id; l.distanceDisplayCondition = prim.distanceDisplayCondition;
           l.fillColor = col(color || FUEL[it.group][1], 0.9);
         }
         l.show = true;

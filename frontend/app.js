@@ -37,6 +37,7 @@ import { InfraLayers, mountInfraTree, infraDetails } from "/static/js/infra.js";
 import { WatchOverlay, watchHtml } from "/static/js/watch.js";
 import { Signals, AREA_SIGNALS } from "/static/js/signals/index.js";
 import { StorylineList, StoryOverlay } from "/static/js/storylines.js";
+import { installDeclutter } from "/static/js/declutter.js";
 
 const errors = {};
 let lastStatus = null;
@@ -76,7 +77,7 @@ async function main() {
   const models = new Models3D(viewer, {
     layers: trackLayers,
     hideBillboard: (kind, id) => { const p = byKind[kind].map.get(id); if (p) p.show = false; },
-    showBillboard: (kind, id) => { const l = byKind[kind], p = l.map.get(id); if (p) p.show = l.filter(l.items.get(id)); },
+    showBillboard: (kind, id) => { const l = byKind[kind], p = l.map.get(id); if (p) p.show = l.shown(l.items.get(id)); },
   });
   const leaders = new VectorLeaders(viewer, { kinematics: models.kinematics, layers: trackLayers });
   // after every full aircraft / ship sync (REST, websocket snapshot, replay), filter change or
@@ -356,7 +357,7 @@ async function main() {
     },
   });
   trails.onPoints = (key, pts) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrail(pts); };
-  installFireScore({ viewer, fires, inspector }); // fire conflict score: style, filter, dossier, front line
+  const fireScore = installFireScore({ viewer, fires, inspector }); // fire conflict score: style, filter, dossier, front line
 
   // ---- Alerts ----
   const alerts = new AlertCenter((t) => {
@@ -394,6 +395,19 @@ async function main() {
     for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.histCell) { histLayer.zoomCell(picked.id.histCell); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.watch && byKind[picked.id.kind] && byKind[picked.id.kind].items.has(picked.id.id)) { select(picked.id.kind, picked.id.id); return; }
+    // declutter (js/declutter.js): event title labels select, a click right on a cluster badge
+    // zooms / fans out; aggregate cells only when no glyph is under the cursor (and they are
+    // above any reference line / point that was hit)
+    let lodHit = null, lodAt = -1;
+    hits.forEach((picked, i) => {
+      const lid = picked && picked.id && picked.id.lod;
+      if (lid && !lodHit && ctx.declutter) { lodHit = picked; lodAt = i; }
+    });
+    if (lodHit) {
+      const id = lodHit.id;
+      if (id.lod === "label" && byKind[id.kind] && byKind[id.kind].items.has(id.id)) { select(id.kind, id.id); return; }
+      if (id.lod === "cluster" && ctx.declutter.nearBadge(lodHit, click.position)) { ctx.declutter.pick(id); return; }
+    }
     // signals & space: satellites / squawks / radiation stations here, area overlays (GNSS cells,
     // outage countries) only when nothing else was hit
     let areaSig = null;
@@ -419,6 +433,10 @@ async function main() {
       }
     }
     if (best) { select(best.kind, best.id); return; }
+    if (lodHit && lodHit.id.lod !== "label") {
+      const refAt = hits.findIndex((h) => h && h.id && h.id.ref);
+      if (!refHit || lodAt < refAt) { ctx.declutter.pick(lodHit.id); return; }
+    }
     if (refHit) { showRef(refHit); return; }
     if (areaSig && mods.sig && mods.sig.pick(areaSig)) return;
     if (densityHit) {
@@ -866,6 +884,9 @@ async function main() {
   // "Watchlist matches" toggle (Infrastructure & watchlists group)
   $("w-watch").addEventListener("change", (e) => ctx.watch.setOn(e.target.checked));
   ctx.watch.onChange = (w) => { const el = $("c-watch"); const t = w.active.size ? w.active.size.toLocaleString() : ""; if (el.textContent !== t) el.textContent = t; };
+  // ---- Declutter: LOD / aggregation / clustering / marker budget across the live layers ----
+  ctx.fireScore = fireScore;
+  ctx.declutter = installDeclutter(ctx);
   ctx.palette = new Palette(ctx);
   window.__osint = ctx;
   tree.refresh(); // header "on" counts + preset state now that every module has mounted its rows

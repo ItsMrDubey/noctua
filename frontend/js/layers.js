@@ -7,12 +7,14 @@ const AIR_CIV = C.Color.fromCssColorString(COLORS.airCiv);
 const AIR_RED = C.Color.fromCssColorString(COLORS.hp);
 const SHIP_BLUE = C.Color.fromCssColorString(COLORS.ship);
 const SHIP_RED = C.Color.fromCssColorString(COLORS.shipMil);
+// shared per-layer constants: never allocate these per item. Glyph layers (tracks, events) share
+// one distance scale / fade so a marker of a given importance reads the same size everywhere.
+export const GLYPH_SCALE = new C.NearFarScalar(5e5, 1.15, 2.5e7, 0.7);
+export const GLYPH_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.85);
 const SHIP_SCALE = new C.NearFarScalar(2e5, 1.1, 2e7, 0.55);
-const SHIP_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.85);
-
-// shared per-layer constants: never allocate these per item
-const AIR_SCALE = new C.NearFarScalar(5e5, 1.2, 2.5e7, 0.75);
-const AIR_FADE = new C.NearFarScalar(1e6, 1.0, 3e7, 0.9);
+const SHIP_FADE = GLYPH_FADE;
+const AIR_SCALE = GLYPH_SCALE;
+const AIR_FADE = GLYPH_FADE;
 const PT_SCALE = new C.NearFarScalar(1e6, 1.2, 2e7, 1.0);
 const PT_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.9);
 const Q_SCALE = new C.NearFarScalar(1e6, 1.3, 2e7, 1.0);
@@ -23,14 +25,20 @@ const FIRE_RAMP = Array.from({ length: 11 }, (_, i) => C.Color.fromHsl(0.09 * (1
 function pos(lat, lon, altM) { return C.Cartesian3.fromDegrees(lon, lat, altM || 0); }
 
 // Generic incremental sync keyed by id. Subclasses implement make() and apply().
+// Visibility = filter (the user's layer filters) AND gate (level of detail, set by declutter.js:
+// aggregated / clustered items are gated out while zoomed out). visibleItems() and the lists
+// only honour filter, so nothing disappears from the panels because of the zoom level.
 export class Layer {
   constructor(scene, collection) {
     this.col = scene.primitives.add(collection);
     this.map = new Map();
     this.items = new Map();
     this.filter = () => true;
+    this.gate = null;
+    this.onDirty = null; // (declutter.js) items or the filter changed
   }
-  set show(v) { this.col.show = v; if (this.onChange) this.onChange(); }
+  shown(it) { return !!it && this.filter(it) && (!this.gate || this.gate(it)); }
+  set show(v) { this.col.show = v; if (this.onChange) this.onChange(); if (this.onDirty) this.onDirty("show"); }
   get show() { return this.col.show; }
   upsert(list) {
     const seen = new Set();
@@ -44,10 +52,11 @@ export class Layer {
       // only touch the primitive when something visible changed
       const k = this.key(it);
       if (p._k !== k) { p._k = k; this.apply(p, it); changed++; }
-      const show = this.filter(it);
+      const show = this.shown(it);
       if (p.show !== show) { p.show = show; changed++; }
     }
     if (changed && this.onChange) this.onChange();
+    if (seen.size && this.onDirty) this.onDirty("data");
     return seen;
   }
   key(it) { return it.lat + "|" + it.lon + "|" + it.alt_ft + "|" + it.heading_deg + "|" + (it.high_priority ? 1 : 0) + (it.is_mil ? 1 : 0); }
@@ -57,12 +66,24 @@ export class Layer {
       if (p) { this.col.remove(p); this.map.delete(id); this.items.delete(id); }
     }
     if (ids.length && this.onChange) this.onChange();
+    if (ids.length && this.onDirty) this.onDirty("data");
   }
   sync(list) {
     const seen = this.upsert(list);
     this.removeIds([...this.map.keys()].filter((id) => !seen.has(id)));
   }
-  refilter() { for (const [id, p] of this.map) p.show = this.filter(this.items.get(id)); if (this.onChange) this.onChange(); }
+  refilter() {
+    for (const [id, p] of this.map) p.show = this.shown(this.items.get(id));
+    if (this.onChange) this.onChange();
+    if (this.onDirty) this.onDirty("filter");
+  }
+  // re-evaluate visibility after the LOD gate changed (no onDirty: declutter.js calls this)
+  regate() {
+    let n = 0;
+    for (const [id, p] of this.map) { const s = this.shown(this.items.get(id)); if (p.show !== s) { p.show = s; n++; } }
+    if (n && this.onChange) this.onChange();
+    return n;
+  }
   // re-apply every primitive (after a styling hook changed), same as a data change
   restyle() { for (const p of this.map.values()) p._k = null; this.upsert([...this.items.values()]); }
   visibleItems() { return this.col.show ? [...this.items.values()].filter(this.filter) : []; }
