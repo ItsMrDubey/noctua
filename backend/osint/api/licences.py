@@ -45,6 +45,9 @@ SOURCES: list[dict] = [
     {"id": "opensky", "name": "OpenSky Network (anonymous REST API)", "licence": "OpenSky Network terms of use (non-commercial research)", "url": "https://opensky-network.org/about/terms-of-use",
      "attribution": "Aircraft positions: The OpenSky Network, https://opensky-network.org", "commercial": "no",
      "notes": "ADS-B fallback only (when adsb.lol and adsb.fi both fail), <= 1 call per 15 min within the 400 anonymous daily credits. Commercial use needs a licence."},
+    {"id": "plane_alert_db", "name": "plane-alert-db (military / government aircraft by ICAO hex)", "licence": "ODbL 1.0; contents DbCL 1.0",
+     "url": "https://github.com/sdr-enthusiasts/plane-alert-db", "attribution": "Aircraft data: plane-alert-db, SDR-Enthusiasts and contributors (ODbL)",
+     "commercial": "review", "share_alike": True, "notes": "reference/plane-alert-mil.csv: operator, type, role tags, category and link shown in asset profiles."},
     {"id": "aisstream", "name": "AISStream", "licence": "AISStream terms of service", "url": "https://aisstream.io/",
      "attribution": "Vessel positions: AISStream", "commercial": "review", "notes": "Beta service; review terms and SLA for commercial use."},
     {"id": "firms", "name": "NASA FIRMS", "licence": "NASA open data", "url": "https://firms.modaps.eosdis.nasa.gov/",
@@ -125,7 +128,12 @@ def licences() -> dict:
               "url": d.url, "attribution": d.attribution, "commercial": d.commercial,
               "notes": d.notes, **({"share_alike": True} if "ODbL" in d.licence else {})}
              for d in DATASETS.values() if d.id != "wpi"]  # WPI is listed as nga_wpi
-    return {"sources": SOURCES + infra + web, "ucdp_citation": UCDP_CITE}
+    from osint.profiles.lookups import SPECS as PROFILE_LOOKUPS  # asset profile lookups
+
+    prof = [{"id": f"profile:{s.id}", "name": s.name, "licence": s.licence, "url": s.url,
+             "attribution": s.attribution, "commercial": s.commercial, "notes": s.notes}
+            for s in PROFILE_LOOKUPS.values()]
+    return {"sources": SOURCES + infra + web + prof, "ucdp_citation": UCDP_CITE}
 
 
 def mount_licences(app: FastAPI) -> None:
