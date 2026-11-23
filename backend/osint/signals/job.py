@@ -116,6 +116,7 @@ def _hm(t: datetime | float | str) -> str:
 # ---------------------------------------------------------------------- GNSS lifecycle
 
 DETECTOR_VERSION = 2  # 2: sensor-detected status, GNSS lifecycle details
+MIGRATE_LOCK_WAIT_S = 15.0  # an event builder pass holds the rebuild lock for seconds
 
 
 def _gnss_hot(x: dict, c: dict) -> bool:
@@ -313,6 +314,7 @@ class SignalsJob:
     def __init__(self, store, lake, data_dir: Path, cfg: dict | None = None,
                  metrics=None, clock=time.time) -> None:
         self.store, self.lake = store, lake
+        self._migrated = False
         self.data_dir = Path(data_dir)
         self.cfg = cfg or load_config(Path("/nonexistent"))
         self.metrics = metrics
@@ -640,7 +642,7 @@ class SignalsJob:
         """One-off, idempotent upgrade of stored sensor events (see module doc): status
         sensor-corroborated -> sensor-detected (not hazards), one-report squawk events
         removed, GNSS events re-assessed from their stored statistics. Runs under the event
-        rebuild lock; None when a rebuild holds it (retried on the next start)."""
+        rebuild lock; None when it stays held (``run`` retries on later passes)."""
         from osint.pipeline.events import rebuild_lock_path
         from osint.store.lake import FileLock
 
@@ -650,7 +652,7 @@ class SignalsJob:
             if lock is not None:
                 lock.acquire()
         except TimeoutError:
-            log.info("signals: sensor-event migration skipped (event rebuild running)")
+            log.info("signals: sensor-event migration deferred (rebuild lock held)")
             return None
         try:
             return migrate_events(self.store, self.cfg, _dt(self.clock()))
@@ -767,19 +769,30 @@ class SignalsJob:
         self.last = out
         return out
 
-    async def run(self) -> None:
-        self._stop.clear()
+    async def _try_migrate(self) -> None:
+        """Run the migration once per process; the event builder takes the rebuild lock on
+        every pass, so wait briefly for it and retry on later passes until it succeeds."""
+        if self._migrated:
+            return
         try:
-            res = await asyncio.to_thread(self.migrate)
-            if res and any(res.values()):
-                log.info("signals: sensor-event migration %s", res)
+            res = await asyncio.to_thread(self.migrate, MIGRATE_LOCK_WAIT_S)
         except Exception:
             log.exception("signals: sensor-event migration failed")
+            return
+        if res is not None:
+            self._migrated = True
+            if any(res.values()):
+                log.info("signals: sensor-event migration %s", res)
+
+    async def run(self) -> None:
+        self._stop.clear()
+        await self._try_migrate()
         try:
             await asyncio.wait_for(self._stop.wait(), timeout=float(self.cfg["initial_delay_s"]))
         except TimeoutError:
             pass
         while not self._stop.is_set():
+            await self._try_migrate()
             try:
                 await asyncio.to_thread(self.run_once)
                 self.last_error = None

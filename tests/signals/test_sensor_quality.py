@@ -307,3 +307,18 @@ def test_legacy_details_keep_what_is_known():
     assert d["detection"]["unrecorded"] and d["peak"]["n"] == 11
     assert d["cells"] == sorted({CELL, "8343a1fffffffff"})
     assert d["assessment"]["windows"] == 2
+
+
+async def test_deferred_migration_is_retried_until_it_runs(env, monkeypatch):
+    # the event builder holds the rebuild lock on every pass: a migration deferred at
+    # start-up must run on a later pass, and only once
+    job = SignalsJob(env.store, env.lake, env.dir, CFG, clock=lambda: time.time())
+    outcomes = iter([None, {"status": 2, "squawk_removed": 1, "gnss_reassessed": 0}])
+    calls = []
+    monkeypatch.setattr(job, "migrate", lambda *a: calls.append(a) or next(outcomes))
+    await job._try_migrate()
+    assert not job._migrated
+    await job._try_migrate()
+    assert job._migrated
+    await job._try_migrate()
+    assert len(calls) == 2
