@@ -66,7 +66,7 @@ def storyline_timeline(runtime, story: dict) -> dict:
         timelines[m["event_id"]] = build_timeline(
             ev, corroborations=ev.get("corroborations") or [],
             imagery=images.get_assets(ev["id"]),
-            status_history=runtime.store.status_history(ev["id"]))
+            status_history=runtime.store.status_history(ev["id"]), sensor=ev.get("sensor"))
     return story_timeline.merge(story, timelines)
 
 

@@ -49,6 +49,8 @@ import numpy as np
 
 from osint.core.geo import haversine_km
 from osint.intel import astro, passes
+from osint.signals.aviation import persistent as sq_persistent
+from osint.signals.aviation import reports as sq_reports
 from osint.timeline.build import bearing_deg, compass, parse_ts
 
 log = logging.getLogger(__name__)
@@ -322,8 +324,11 @@ def section_signals(runtime, subj: dict, now: datetime) -> dict:
     if cc:
         row = next((c for c in o.get("countries") or [] if c.get("cc") == cc), None)
         evs = [e for e in o.get("events") or [] if e.get("cc") == cc]
+        from osint.signals.outages import country_label
+        # IODA from / until are unix seconds: ISO here; "outage" only when confirmed by a
+        # weighty datasource (a telescope-only signal is an unconfirmed anomaly)
         out["outage"] = {"cc": cc, "updated": o.get("updated"), "window_h": o.get("window_h"),
-                         "country": row, "events": len(evs),
+                         "country": row, "status": country_label(row), "events": len(evs),
                          "datasources": sorted({e.get("datasource") for e in evs} - {None}),
                          "basis": "IODA outage events (BGP / active probing / telescope)"}
     rad = radiation_items(r.get("radiation"), r.get("radiation_baseline"))
@@ -332,7 +337,8 @@ def section_signals(runtime, subj: dict, now: datetime) -> dict:
         d = haversine_km(lat, lon, s["lat"], s["lon"])
         if d <= 250:
             st.append({**{k: s.get(k) for k in ("id", "name", "source", "value", "unit", "ts",
-                                                "baseline", "status", "lat", "lon")},
+                                                "baseline", "baseline_n", "status",
+                                                "provisional", "lat", "lon")},
                        **_geo(lat, lon, s["lat"], s["lon"])})
     st.sort(key=lambda s: s["distance_km"])
     out["radiation"] = {"updated": (r.get("radiation") or {}).get("updated"), "stations": st[:6],
@@ -349,7 +355,9 @@ def section_signals(runtime, subj: dict, now: datetime) -> dict:
         d = haversine_km(lat, lon, e["lat"], e["lon"])
         if d <= 300:
             near_sq.append({k: e.get(k) for k in ("id", "code", "label", "flight", "reg", "type",
-                                                  "first_seen", "last_seen", "lat", "lon")}
+                                                  "first_seen", "last_seen", "lat", "lon",
+                                                  "hex", "squawk", "active")}
+                           | {"reports": sq_reports(e), "persistent": sq_persistent(e)}
                            | _geo(lat, lon, e["lat"], e["lon"]))
     out["squawks"] = {"updated": sq.get("updated"), "items": near_sq[:10]}
     return out

@@ -21,6 +21,14 @@ reads one store and returns plain dicts:
   entities    actors and places to pivot on
   storyline   the thread an event belongs to (osint.storylines: role, span, members), or
               for a point / actor the storylines around it / naming it
+  detection   sensor-derived events: the signal itself (GNSS: event + neighbouring H3 cells
+              with outlines, live readings, degraded aircraft with NIC/NACp, hourly series,
+              historical frequency at the location; outage: IODA events per datasource with
+              their weighting; squawk: the episode; radiation: the probe vs its median)
+
+Sensor-derived events are labelled as such everywhere: the detecting sensor's own readings
+are detection evidence, never corroboration; their location caveat names the H3 cell /
+country / probe instead of a geocoder precision.
 
 Site-context sections (environment, overhead passes, signals, infrastructure / population
 exposure, 24 h traffic, country record and tempo, attention) live in osint.intel.context.
@@ -35,14 +43,17 @@ import math
 import re
 from datetime import UTC, datetime, timedelta
 
+import h3
+
 from osint.core.geo import haversine_km
+from osint.core.sensor_status import detection_kinds
 from osint.intel import context, hooks
 from osint.timeline.build import bearing_deg, build_timeline, compass, parse_ts
 
 log = logging.getLogger(__name__)
 
 SECTIONS = ("assessment", "timeline", "related", "history", "sensors", "traffic", "assets",
-            "imagery", "sources", "entities", "storyline", *context.SECTIONS)
+            "imagery", "sources", "entities", "storyline", "detection", *context.SECTIONS)
 RADIUS_BY_PRECISION = {"point": 25.0, "city": 40.0, "admin1": 150.0, "country": 400.0}
 MAX_RADIUS_KM = 500.0
 DAY = timedelta(days=1)
@@ -458,6 +469,8 @@ def section_assets(runtime, subj: dict, now: datetime) -> dict:
 def section_imagery(runtime, subj: dict, now: datetime) -> dict | None:
     if subj["kind"] != "event":
         return None
+    if ((subj.get("event") or {}).get("sensor") or {}).get("signal"):
+        return None  # GNSS / outage / squawk / radiation: nothing to see from orbit
     from osint.api.imagery import imagery_payload
     from osint.imagery.config import ImageryConfig
     from osint.imagery.job import get_store
@@ -585,7 +598,9 @@ def section_storyline(runtime, subj: dict, now: datetime) -> dict:
     if subj["kind"] == "actor":
         items = st.list(q=subj.get("q"), since=since, limit=10)
     else:
-        items = st.list(bbox=bbox_around(subj["lat"], subj["lon"], subj["radius_km"] * 2),
+        # near (representative point / share of members), not bbox overlap: one stray
+        # member stretches a thread's box across a continent
+        items = st.list(near=(subj["lat"], subj["lon"], subj["radius_km"] * 2),
                         since=since, limit=10)
     keep = ("id", "title", "theatre_label", "t_first", "t_first_basis", "t_last", "n_events",
             "lat", "lon")
@@ -602,6 +617,11 @@ def section_assessment(runtime, subj: dict, now: datetime, ctx: dict) -> dict | 
     def say(level: str, text: str, basis: str) -> None:
         out.append({"level": level, "text": text, "basis": basis})
 
+    if ev.get("sensor"):
+        out = sensor_assessment(ev, ctx)
+        order = {"known": 0, "corroborated": 1, "unconfirmed": 2, "caveat": 3}
+        out.sort(key=lambda x: order.get(x["level"], 9))
+        return {"items": out}
     docs = ev.get("documents") or []
     outlets = len({d.get("source") for d in docs})
     say("known", f"Status {ev.get('status')} · confidence {float(ev.get('confidence') or 0):.2f}",
@@ -699,13 +719,244 @@ def section_timeline(runtime, subj: dict, now: datetime, ctx: dict) -> dict | No
     from osint.imagery.job import get_store
     return build_timeline(ev, corroborations=ev.get("corroborations") or [],
                           imagery=get_store(runtime).get_assets(ev["id"]),
-                          status_history=runtime.store.status_history(ev["id"]))
+                          status_history=runtime.store.status_history(ev["id"]),
+                          sensor=ev.get("sensor"))
+
+
+# ------------------------------------------------------------------ sensor-derived events
+
+def _hm(raw: str | None) -> str:
+    t = parse_ts(raw)
+    return t.strftime("%d %b %H:%MZ") if t else "–"
+
+
+def _reading(r: dict | None) -> str:
+    if not r:
+        return "no reading"
+    if r.get("unrecorded"):
+        return "reading not recorded (stored before readings were kept)"
+    if not r.get("n"):
+        return "no aircraft reporting in the cell(s)"
+    return f"{r['bad']} of {r['n']} aircraft degraded ({float(r.get('pct') or 0):.0f}%)"
+
+
+def cell_size_text(res: int = 3) -> str:
+    edge = h3.average_hexagon_edge_length(res, unit="km")
+    return f"H3 res-{res} cell (~{edge:.0f} km edge, ~{2 * edge:.0f} km across)"
+
+
+def sensor_assessment(ev: dict, ctx: dict) -> list[dict]:
+    """Known / unconfirmed / caveat statements of a sensor-derived event: what the sensor
+    measured (with time windows), the detection quality, independent corroboration only
+    from other kinds of evidence, and the honest location basis."""
+    sb = ev["sensor"]
+    det, d = sb["detector"], sb.get("details") or {}
+    out: list[dict] = []
+
+    def say(level: str, text: str, basis: str) -> None:
+        out.append({"level": level, "text": text, "basis": basis})
+
+    say("known", f"Status {ev.get('status')} · confidence {float(ev.get('confidence') or 0):.2f}"
+        " (from the detection's own statistics)", "event record")
+    docs = ev.get("documents") or []
+    say("known", f"Sensor-derived ({sb['sensor']}); "
+        + (f"{len(docs)} news report(s) attached" if docs else "no news reports"), "origin")
+    if det == "gnss_jam" and d.get("detection"):
+        r, a = d["detection"], d.get("assessment") or {}
+        ci = lambda x: "" if x.get("unrecorded") else (
+            f", 95% interval {x.get('wilson_lo', 0):.0f}-{x.get('wilson_hi', 100):.0f}%")
+        say("known", f"At detection {_hm(r['t'])} ({r.get('window_min') or 60}-min window): "
+            f"{_reading(r)}{ci(r)}", "GNSS detection")
+        pk, la = d.get("peak"), d.get("latest")
+        if pk and pk.get("t") != r.get("t"):
+            say("known", f"{'Last hot reading' if pk.get('legacy') else 'Peak'} "
+                f"{_hm(pk['t'])}: {_reading(pk)}{ci(pk)}", "GNSS detection")
+        if la and la.get("t") != r.get("t"):
+            say("known", f"Now {_hm(la['t'])}: {_reading(la)} - {d.get('lifecycle')}",
+                "live GNSS cells")
+        if a.get("wording") == "likely":
+            say("known", f"Likely jamming: {a['n']} aircraft, 95% lower bound "
+                f"{a['wilson_lo']:.0f}%, {a['windows']} windows", "detection quality")
+        else:
+            say("unconfirmed", "Possible interference, not 'likely': "
+                + "; ".join(a.get("limits") or ["weak statistics"]), "detection quality")
+        say("caveat", "ADS-B integrity drops show jamming or spoofing nearby, not the "
+            "emitter's position; spoofing with good integrity is invisible", "method")
+    elif det == "squawk":
+        say("known", f"Squawk {d.get('code')} in {d.get('reports') or '?'} reports from "
+            f"{_hm(d.get('first_seen'))} to {_hm(d.get('last_seen'))} "
+            f"({d.get('lifecycle') or 'unknown'})", "ADS-B")
+        if d.get("squawk_now") and d.get("squawk_now") != d.get("code"):
+            say("caveat", f"Transponder code now {d['squawk_now']} (emergency flag "
+                f"{d.get('emergency') or 'none'})", "ADS-B")
+        if d.get("code") == "7500":
+            say("caveat", "7500 is most often a mis-set transponder; check the track and "
+                "ATC / news before acting", "method")
+    elif det == "outage":
+        say("known", f"IODA {d.get('datasource_label') or d.get('datasource')}: score "
+            f"{float(d.get('score') or 0):,.0f} since {_hm(d.get('from'))} "
+            f"({d.get('lifecycle') or ''})", "IODA")
+    elif det == "radiation":
+        b = d.get("baseline") or [None, 0]
+        say("known", f"{d.get('value')} µSv/h at {_hm(d.get('ts'))}"
+            + (f" vs {b[0]} median over {b[1]} readings" if b and b[0] else ""), "probe")
+        say("caveat", "Rain washout of radon progeny can raise readings for hours; compare "
+            "neighbouring probes", "method")
+    own = detection_kinds(det)
+    indep = [c for c in ev.get("corroborations") or [] if c.get("kind") not in own]
+    kinds = sorted({c["kind"] for c in indep})
+    if indep or docs:
+        say("corroborated", "Independent evidence: " + ", ".join(
+            [f"{len([c for c in indep if c['kind'] == k])} {k}" for k in kinds]
+            + ([f"{len(docs)} news report(s)"] if docs else [])), "independent sources")
+    else:
+        say("unconfirmed", "No independent corroboration (news or another sensor type); "
+            f"the {len(ev.get('corroborations') or [])} evidence row(s) are the detection "
+            "itself", "corroboration")
+    if det == "gnss_jam":
+        cells = d.get("cells") or [ev.get("h3_3")]
+        say("caveat", f"Location: {cell_size_text(3)}"
+            + (f" x{len(cells)}" if len(cells) > 1 else "") + "; the point is the cell centre, "
+            "not an emitter position", "H3 grid")
+    elif det == "outage" or ev.get("precision") == "country":
+        say("caveat", "Location: country-level signal; the point is the country label point",
+            "IODA")
+    elif det == "squawk":
+        say("caveat", "Location: the aircraft's last reported position", "ADS-B")
+    elif det == "radiation":
+        say("caveat", "Location: the probe's registered position", "probe metadata")
+    else:
+        say("caveat", f"Location: centroid of the detected pattern ({ev.get('precision')})",
+            "detector")
+    occ = (ctx.get("timeline") or {}).get("occurred") or {}
+    if occ.get("basis") == "sensor":
+        wins = occ.get("windows") or []
+        say("known", f"Occurred (sensor clock): {_hm(occ.get('lo'))} → {_hm(occ.get('hi'))}"
+            + (f" in {len(wins)} window(s)" if len(wins) > 1 else ""), "timeline")
+    return out
+
+
+def _gnss_history(runtime, cells: list[str], now: datetime, days: int = 30) -> dict:
+    """Closed hourly GNSS buckets of ``cells`` from the lake: per-hour series (last 72 h)
+    and how often the area was degraded over ``days`` days."""
+    lo = now - timedelta(days=days)
+    marks = ",".join("?" * len(cells))
+    rows = runtime.lake.query(
+        "SELECT epoch_us(ts), id, arg_max(attrs, version) FROM observations "
+        f"WHERE type = 'gnss' AND ts >= ? AND split_part(id, ':', 2) IN ({marks}) "
+        "GROUP BY 1, 2 ORDER BY 1", [lo, *cells], start=lo, end=now)
+    hours: dict[int, list[int]] = {}
+    for us, _id, attrs in rows:
+        a = _attrs(attrs)
+        h = hours.setdefault(int(us // 1_000_000), [0, 0])
+        h[0] += int(a.get("n") or 0)
+        h[1] += int(a.get("bad") or 0)
+    hot = [t for t, (n, b) in hours.items() if n >= 3 and b >= 2 and 100.0 * b / n > 10]
+    series_from = now - timedelta(hours=72)
+    series = [{"t": _iso(datetime.fromtimestamp(t, UTC)), "n": n, "bad": b,
+               "pct": round(100.0 * b / n, 1) if n else None}
+              for t, (n, b) in sorted(hours.items()) if t >= series_from.timestamp()]
+    return {"days": days, "hours_observed": len(hours), "hours_degraded": len(hot),
+            "share_degraded": round(len(hot) / len(hours), 3) if hours else None,
+            "first_hour": _iso(datetime.fromtimestamp(min(hours), UTC)) if hours else None,
+            "series": series,
+            "basis": "closed hourly H3 buckets (lake 'gnss'); degraded = >10% of >=3 aircraft "
+                     "with >=2 degraded"}
+
+
+def _gnss_detection(runtime, ev: dict, d: dict, now: datetime) -> dict:
+    cells = d.get("cells") or [ev.get("h3_3")]
+    ring = sorted({nb for c in cells for nb in h3.grid_disk(c, 1)} - set(cells))
+    snap = context._signal_reader(runtime).get("gnss") or {}
+    live = {x["h3"]: x for x in snap.get("cells") or []}
+    lat, lon = ev["lat"], ev["lon"]
+
+    def cell_row(c: str, role: str) -> dict:
+        clat, clon = h3.cell_to_latlng(c)
+        x = live.get(c) or {}
+        return {"h3": c, "role": role, "lat": round(clat, 4), "lon": round(clon, 4),
+                "boundary": [[round(b, 4), round(a, 4)] for a, b in h3.cell_to_boundary(c)],
+                "n": x.get("n"), "bad": x.get("bad"), "pct": x.get("pct"),
+                "level": x.get("level") if x else None, "ac": x.get("ac") or [],
+                **geo(lat, lon, clat, clon)}
+
+    prior = runtime.store.sensor_events_near(
+        "gnss_jam", sorted({nb for c in cells for nb in h3.grid_disk(c, 2)}),
+        now - timedelta(days=30), exclude=ev["id"])
+    try:
+        hist = _gnss_history(runtime, cells, now)
+    except Exception as exc:  # noqa: BLE001 — no gnss partitions yet
+        hist = {"error": f"{type(exc).__name__}: {exc}"[:200]}
+    share = hist.get("share_degraded")
+    chronic = len(prior) >= 3 or (share is not None and hist.get("hours_observed", 0) >= 48
+                                   and share >= 0.2)
+    return {"cells": [cell_row(c, "event") for c in cells]
+            + [cell_row(c, "neighbour") for c in ring],
+            "live_updated": snap.get("updated"), "live_window_min": snap.get("window_min"),
+            "thresholds": snap.get("thresholds"), "cell_size": cell_size_text(3),
+            "aircraft": d.get("ac") or [], "aircraft_at": d.get("ac_t"),
+            "history": hist,
+            "prior_events": [{"event_id": r["event_id"], "t_start": r["t_start"],
+                              "t_end": r["t_end"]} for r in prior][-20:],
+            "chronic": chronic,
+            "series": [{"t": s[0], "n": s[1], "bad": s[2], "hot": s[3],
+                        "pct": round(100.0 * s[2] / s[1], 1) if s[1] else None}
+                       for s in d.get("series") or []]}
+
+
+def section_detection(runtime, subj: dict, now: datetime) -> dict | None:
+    """The signal behind a sensor-derived event (None for news events)."""
+    ev = subj.get("event") or {}
+    sb = ev.get("sensor")
+    if not sb:
+        return None
+    det, d = sb["detector"], sb.get("details") or {}
+    out = {"detector": det, "sensor": sb["sensor"], "signal": sb["signal"],
+           "lifecycle": d.get("lifecycle"), "assessment": d.get("assessment"),
+           "readings": {k: d.get(k) for k in ("detection", "peak", "latest") if d.get(k)},
+           "details": {k: v for k, v in d.items() if k not in (
+               "series", "ac", "hot", "detection", "peak", "latest", "assessment")}}
+    r = context._signal_reader(runtime)
+    if det == "gnss_jam":
+        out["gnss"] = _gnss_detection(runtime, ev, d, now)
+    elif det == "outage":
+        from osint.signals.outages import DEFAULT_WEIGHTS, country_label, datasource_label
+        o = r.get("outages") or {}
+        cc = d.get("cc") or ev.get("country")
+        row = next((c for c in o.get("countries") or [] if c.get("cc") == cc), None)
+        out["outage"] = {
+            "cc": cc, "country": country_label(row),
+            "events": [{"datasource": e["datasource"],
+                        "label": datasource_label(e["datasource"]),
+                        "weight": e.get("weight", DEFAULT_WEIGHTS.get(e["datasource"])),
+                        "score": e.get("score"), "severity": e.get("severity"),
+                        "from": _iso(datetime.fromtimestamp(e["from"], UTC)),
+                        "until": _iso(datetime.fromtimestamp(e["until"], UTC)),
+                        "ongoing": e.get("ongoing")}
+                       for e in o.get("events") or [] if e.get("cc") == cc],
+            "basis": "IODA outage events; datasource weights bgp / ping-slash24 1.0, gtr 0.75, "
+                     "merit-nt (telescope) 0.3"}
+    elif det == "squawk":
+        ep = next((e for e in (r.get("squawks") or {}).get("items") or []
+                   if e.get("id") == d.get("episode")), None)
+        out["squawk"] = {"episode": ep, "track_id": f"air:{d.get('hex')}"}
+    elif det == "radiation":
+        from osint.api.signals import radiation_items
+        st = [s for s in radiation_items(r.get("radiation"), r.get("radiation_baseline"))
+              if haversine_km(ev["lat"], ev["lon"], s["lat"], s["lon"]) <= 100]
+        out["radiation"] = {"stations": sorted(
+            ({**{k: s.get(k) for k in ("id", "name", "value", "unit", "ts", "baseline",
+                                        "baseline_n", "status", "provisional")},
+              **geo(ev["lat"], ev["lon"], s["lat"], s["lon"])} for s in st),
+            key=lambda s: s["distance_km"])[:12]}
+    return out
 
 
 SIMPLE = {"related": section_related, "history": section_history,
           "sensors": section_sensors, "traffic": section_traffic, "assets": section_assets,
           "imagery": section_imagery, "sources": section_sources,
-          "entities": section_entities, "storyline": section_storyline, **context.FUNCS}
+          "entities": section_entities, "storyline": section_storyline,
+          "detection": section_detection, **context.FUNCS}
 DEPENDENT = {"timeline": section_timeline, "assessment": section_assessment}
 
 

@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import Response
 
 from osint.api import kml
+from osint.core.sensor_status import SIGNAL_DETECTORS, detection_kinds, sensor_label
 from osint.translate import english
 from osint.translate import job as translate_job
 
@@ -95,6 +96,17 @@ def add_corroboration(store, items: list[dict]) -> None:
         it["source"] = "sensor" if s.get("detector") else "news"
         if s.get("detector"):
             it["detector"] = s["detector"]
+
+
+def sensor_block(row: dict | None) -> dict | None:
+    """Detector, sensor label and stored detection details (lifecycle, readings) of a
+    sensor-derived event; evidence from its own detector is detection, not corroboration."""
+    if row is None:
+        return None
+    det = row["detector"]
+    return {"detector": det, "sensor": sensor_label(det), "signal": det in SIGNAL_DETECTORS,
+            "detection_kinds": sorted(detection_kinds(det)), "cell": row.get("cell"),
+            "details": row.get("details") or {}}
 
 
 def add_impacts(store, items: list[dict]) -> None:
@@ -204,6 +216,8 @@ def mount_events(app: FastAPI, runtime) -> None:
         event_id = ev["id"]  # a merged-away id resolves to its survivor (redirected_from)
         await asyncio.to_thread(add_corroboration, store, [ev])
         ev["corroborations"] = await asyncio.to_thread(store.list_corroborations, event_id)
+        if ev.get("origin") == "sensor":
+            ev["sensor"] = sensor_block(await asyncio.to_thread(store.get_sensor_event, event_id))
         await asyncio.to_thread(add_english, [ev], summaries=True)
         await asyncio.to_thread(english.annotate_documents, translate_job.get_store(runtime),
                                 ev.get("documents") or [])

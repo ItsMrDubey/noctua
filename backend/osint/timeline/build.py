@@ -11,6 +11,11 @@ Three kinds of time are kept apart and labelled:
 plus ``milestone`` rows: first report, first sensor detection, first post-event imagery,
 recorded status changes and when the system first ingested the event.
 
+Sensor-derived events (``sensor`` = the event's sensor block: detector + details) have no
+claims or reports: ``occurred`` is the detection window(s) with exact times (basis
+``sensor``), every evidence row carries its reading time, the anchor is the first
+detection, and signal events (GNSS / outage / squawk / radiation) get no imagery rows.
+
 The builder is pure (dicts in, dict out) so a storyline view can merge several event
 timelines. Entries are sorted by their best-known time (``t`` or band start); claims with
 no usable time are returned under ``unplaced``. Claims from different documents whose
@@ -19,14 +24,17 @@ side, never silently resolved.
 """
 
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from osint.core.geo import haversine_km
 from osint.timeline.when import local_offset_h, parse_when
 
 OBSERVED_LABEL = {"fire": "FIRMS thermal hotspot", "quake": "Seismic event",
                   "hazard": "Hazard alert", "aircraft": "Military aircraft nearby",
-                  "ship": "Vessel nearby", "ais_gap": "AIS gap", "imagery": "Imagery"}
+                  "ship": "Vessel nearby", "ais_gap": "AIS gap", "imagery": "Imagery",
+                  "gnss_cell": "GNSS-degraded cell (ADS-B NIC/NACp)",
+                  "outage": "IODA outage signal", "radiation": "Radiation probe reading"}
+SIGNALS = {"gnss_jam", "outage", "squawk", "radiation"}
 
 
 def parse_ts(raw: str | None) -> datetime | None:
@@ -133,7 +141,8 @@ def _fire_groups(event: dict, rows: list[dict]) -> list[dict]:
     return out
 
 
-def _observed(event: dict, corroborations: list[dict]) -> list[dict]:
+def _observed(event: dict, corroborations: list[dict], detector: str | None = None
+              ) -> list[dict]:
     fires = [c for c in corroborations if c.get("kind") == "fire"]
     out = _fire_groups(event, fires)
     for c in corroborations:
@@ -142,18 +151,41 @@ def _observed(event: dict, corroborations: list[dict]) -> list[dict]:
         d = c.get("details") or {}
         kind = c.get("kind")
         bits = []
+        t = d.get("ts")
+        precision = "origin" if kind == "quake" else "exact"
+        if detector == "squawk" and kind == "aircraft":
+            bits = [f"squawk {d.get('code')}", d.get("flight") or d.get("reg"), d.get("type"),
+                    f"{d['reports']} reports" if d.get("reports") else None]
+        elif kind == "gnss_cell":
+            bits = [(f"{d.get('degraded')} of {d.get('aircraft')} aircraft degraded "
+                    f"({float(d.get('pct') or 0):.0f}%)"),
+                    f"{d.get('window_min') or 60}-min window to this time" if t else None,
+                    f"cell {c.get('ref_id')}"]
+        elif kind == "outage":
+            bits = [d.get("datasource"), f"score {float(d.get('score') or 0):,.0f}",
+                    "ongoing" if d.get("ongoing") else "ended"]
+        elif kind == "radiation":
+            b = d.get("baseline")
+            bits = [f"{d.get('value')} \u00b5Sv/h",
+                    f"median {b[0]}" if isinstance(b, list) and b else None]
+        if t is None and detector:
+            # stored before readings carried their time: when the row was linked
+            t, precision = c.get("created_at"), "recorded"
         if kind == "quake":
             bits = [f"M{d['magnitude']:.1f}" if d.get("magnitude") is not None else None,
                     d.get("event_type"), d.get("place")]
         elif kind == "hazard":
             bits = [d.get("source"), d.get("hazard"), d.get("alert_level"), d.get("name")]
-        elif kind in ("aircraft", "ship"):
+        elif kind in ("aircraft", "ship") and detector != "squawk":
             bits = [d.get("name") or d.get("callsign") or c.get("ref_id"), d.get("type_code")]
-        if c.get("distance_km") is not None:
-            bits.append(f"{c['distance_km']:.1f} km")
-        out.append({"kind": "observed", "sensor": kind, "t": d.get("ts"),
-                    "precision": "origin" if kind == "quake" else "exact",
-                    "label": OBSERVED_LABEL.get(kind, kind), "url": d.get("url"),
+        if c.get("distance_km") is not None and kind != "outage" and detector != "squawk":
+            bits.append(f"{c['distance_km']:.1f} km" + (" from the event point" if detector
+                                                        else ""))
+        label = OBSERVED_LABEL.get(kind, kind)
+        if detector == "squawk" and kind == "aircraft":
+            label = "Emergency squawk (ADS-B)"
+        out.append({"kind": "observed", "sensor": kind, "t": t, "precision": precision,
+                    "label": label, "url": d.get("url"),
                     "detail": " · ".join(str(b) for b in bits if b), "count": 1,
                     "ref_ids": [c.get("ref_id")], "lat": d.get("lat"), "lon": d.get("lon"),
                     "flags": [], "linked_at": c.get("created_at")})
@@ -199,10 +231,65 @@ def sort_key(e: dict) -> tuple:
     return (t or datetime.max.replace(tzinfo=UTC), rank)
 
 
+def _windows(times: list[str], minutes: float) -> list[list[str]]:
+    """Merged [start, end] intervals of the ``minutes``-long windows ending at ``times``."""
+    out: list[list[datetime]] = []
+    for t in sorted(x for x in (parse_ts(y) for y in times) if x):
+        lo = t - timedelta(minutes=minutes)
+        if out and lo <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], t)
+        else:
+            out.append([lo, t])
+    return [[iso(a), iso(b)] for a, b in out]
+
+
+def _sensor_occurred(event: dict, sensor: dict) -> dict:
+    """Occurred band of a sensor-derived event: the detection window(s), exact times."""
+    det, d = sensor.get("detector"), sensor.get("details") or {}
+    if det == "gnss_jam" and d.get("detection"):
+        w = float(d["detection"].get("window_min") or 60)
+        wins = _windows(d.get("hot") or [d["detection"]["t"]], w)
+        return {"lo": wins[0][0], "hi": wins[-1][1], "precision": "window", "basis": "sensor",
+                "windows": wins, "conflicts": [], "lifecycle": d.get("lifecycle"),
+                "sensor": sensor.get("sensor"),
+                "note": f"degraded ADS-B navigation integrity in {len(wins)} window(s) "
+                        f"of {int(w)} min; {d.get('lifecycle') or 'active'}"}
+    lo, hi = iso(parse_ts(event.get("t_start"))), iso(parse_ts(event.get("t_end")))
+    return {"lo": lo, "hi": hi, "precision": "detection", "basis": "sensor",
+            "windows": [[lo, hi]], "conflicts": [], "lifecycle": d.get("lifecycle"),
+            "sensor": sensor.get("sensor"), "note": "first to last detection by the sensor"}
+
+
+def _gnss_readings(sensor: dict) -> list[dict]:
+    """Detection / peak / latest readings of a GNSS event as observed rows."""
+    d = sensor.get("details") or {}
+    rows, seen = [], set()
+    for key, label in (("detection", "GNSS interference detected"), ("peak", "Peak reading"),
+                       ("latest", "Latest reading")):
+        r = d.get(key)
+        if not r or r.get("t") in seen:
+            continue
+        seen.add(r["t"])
+        txt = ("reading not recorded (stored before readings were kept)"
+               if r.get("unrecorded") else
+               f"{r['bad']} of {r['n']} aircraft degraded ({float(r['pct'] or 0):.0f}%)"
+               if r.get("n") else "no aircraft reporting in the cell(s)")
+        if key == "peak" and r.get("legacy"):
+            label = "Last hot reading"
+        rows.append({"kind": "observed", "sensor": "gnss_cell", "t": r["t"],
+                     "precision": "window", "label": label,
+                     "detail": txt + f" \u00b7 {int(r.get('window_min') or 60)}-min window"
+                     + (" \u00b7 " + str(d.get("lifecycle") or "") if key == "latest" else ""),
+                     "count": 1, "ref_ids": r.get("cells") or [], "lat": None, "lon": None,
+                     "flags": [], "reading": key})
+    return rows
+
+
 def build_timeline(event: dict, *, corroborations: list[dict] | None = None,
-                   imagery: list[dict] | None = None, status_history: list[dict] | None = None
-                   ) -> dict:
-    """Timeline dict for one event (``event`` = full record with documents and fields)."""
+                   imagery: list[dict] | None = None, status_history: list[dict] | None = None,
+                   sensor: dict | None = None) -> dict:
+    """Timeline dict for one event (``event`` = full record with documents and fields;
+    ``sensor`` = the sensor block of a sensor-derived event)."""
     docs_list = sorted(event.get("documents") or [], key=lambda d: d.get("published_at") or "")
     docs = {d.get("doc_id"): d for d in docs_list}
     entries: list[dict] = []
@@ -216,9 +303,16 @@ def build_timeline(event: dict, *, corroborations: list[dict] | None = None,
                         "flags": []})
     claims, unplaced = _occurred(event, docs)
     entries += claims
-    observed = _observed(event, corroborations or [])
+    detector = (sensor or {}).get("detector")
+    corr = corroborations or []
+    if detector == "gnss_jam" and ((sensor or {}).get("details") or {}).get("detection"):
+        # the stored readings (detection / peak / latest), plus per-cell rows with a time
+        observed = _gnss_readings(sensor) + [o for o in _observed(event, corr, detector)
+                                             if o["precision"] != "recorded"]
+    else:
+        observed = _observed(event, corr, detector)
     entries += observed
-    imagery_rows = _imagery(imagery or [])
+    imagery_rows = [] if detector in SIGNALS else _imagery(imagery or [])
     entries += imagery_rows
     entries += _status(status_history or [])
     if event.get("first_seen"):
@@ -264,8 +358,13 @@ def build_timeline(event: dict, *, corroborations: list[dict] | None = None,
     if occurred["basis"] == "none" and first_report:
         occurred.update(hi=first_report["t"], basis="before_first_report",
                         precision="upper_bound")
+    first_detection = None
+    if sensor is not None and not claims:
+        occurred = _sensor_occurred(event, sensor)
+        first_detection = occurred["windows"][0][1] if detector == "gnss_jam" \
+            else occurred["lo"]
 
-    t0 = parse_ts(first_report["t"]) if first_report else None
+    t0 = parse_ts(first_report["t"]) if first_report else parse_ts(first_detection)
     for e in entries:
         t = parse_ts(e.get("t") or e.get("lo"))
         e["t_rel_min"] = None if (t is None or t0 is None) else round(
@@ -274,7 +373,8 @@ def build_timeline(event: dict, *, corroborations: list[dict] | None = None,
     return {
         "event_id": event.get("id"),
         "title": event.get("title_en") or event.get("title"),
-        "anchor": {"first_report": first_report["t"] if first_report else None},
+        "anchor": {"first_report": first_report["t"] if first_report else None,
+                   "first_detection": first_detection},
         "local_offset_h": local_offset_h(event.get("lon")),
         "occurred": occurred,
         "entries": entries,
