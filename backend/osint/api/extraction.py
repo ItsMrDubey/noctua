@@ -5,6 +5,7 @@ import re
 
 from fastapi import FastAPI, HTTPException
 
+from osint.api.imagery import resolve_event_id
 from osint.pipeline.extract.job import get_store
 
 EVENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -27,6 +28,9 @@ def mount_extraction(app: FastAPI, runtime) -> None:
         if not EVENT_ID_RE.match(event_id):
             raise HTTPException(404, "unknown event")
         rec = await asyncio.to_thread(store.get, event_id)
+        if rec is None:  # a merged-away event id: look at the surviving event
+            rec = await asyncio.to_thread(
+                store.get, await asyncio.to_thread(resolve_event_id, runtime, event_id))
         if rec is None:
             raise HTTPException(404, "not extracted")
         return rec

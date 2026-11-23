@@ -192,12 +192,12 @@ def test_prune_drops_old_events_from_index():
 
 def test_embedder_hook_joins_semantic_match():
     class Fixed:
-        def embed(self, texts):
+        def embed(self, texts, keys=None):
             return [[1.0, 0.0] for _ in texts]
 
     c = make(cfg(min_shared_tokens={"default": 9}), embedder=Fixed())
-    res = c.process([art(1, "Alpha bravo Kharkiv", cat="political"),
-                     art(2, "Charlie delta", cat="political", minutes=5)], NOW)
+    res = c.process([art(1, "Alpha bravo foxtrot Kharkiv", cat="political"),
+                     art(2, "Charlie delta echo golf", cat="political", minutes=5)], NOW)
     assert len(res.created) == 1  # joined via cosine, not tokens
 
 
