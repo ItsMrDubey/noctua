@@ -90,6 +90,62 @@ rss:
     - {url: "https://www.dailysabah.com/rss/world", name: daily-sabah-world, language: en, country: TR}
     - {url: "https://www3.nhk.or.jp/rss/news/cat6.xml", name: nhk-international, language: ja, country: JP}
     - {url: "https://www.yna.co.kr/rss/news.xml", name: yonhap-ko, language: ko, country: KR}
+    # --- Regional desks where coverage was thin. Verified with curl on 2026-11-23 (HTTP 200 +
+    # RSS/RDF/Atom root that parses, items dated within the last week). Only languages the
+    # triage lexicons cover (en/fr/es/zh); Hausa/Somali/Amharic/Burmese/Urdu/Hindi feeds exist
+    # but would never pass triage without lexicons for those languages.
+    # Africa: Sahel / Nigeria
+    - {url: "https://www.rfi.fr/fr/afrique/rss", name: rfi-afrique, language: fr, country: FR}
+    - {url: "https://www.rfi.fr/en/africa/rss", name: rfi-africa-en, language: en, country: FR}
+    - {url: "https://www.jeuneafrique.com/feed/", name: jeune-afrique, language: fr, country: FR}
+    - {url: "https://lefaso.net/spip.php?page=backend", name: lefaso, language: fr, country: BF}
+    - {url: "https://www.studiotamani.org/feed", name: studio-tamani, language: fr, country: ML}
+    - {url: "https://www.premiumtimesng.com/feed", name: premium-times-ng, language: en, country: NG}
+    # Africa: Sudan / South Sudan
+    - {url: "https://www.dabangasudan.org/en/feed", name: dabanga-sudan, language: en, country: SD}
+    - {url: "https://sudanwarmonitor.com/feed", name: sudan-war-monitor, language: en, country: SD}
+    - {url: "https://www.sudanspost.com/feed/", name: sudans-post, language: en, country: SS}
+    - {url: "https://www.radiotamazuj.org/en/feed", name: radio-tamazuj, language: en, country: SS}
+    # Africa: DRC / Somalia / continent-wide
+    - {url: "https://actualite.cd/rss.xml", name: actualite-cd, language: fr, country: CD}
+    - {url: "https://www.somaliguardian.com/feed/", name: somali-guardian, language: en, country: SO}
+    - {url: "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf", name: allafrica, language: en, country: ZA}
+    - {url: "https://www.theafricareport.com/feed/", name: the-africa-report, language: en, country: FR}
+    - {url: "https://feeds.bbci.co.uk/afrique/rss.xml", name: bbc-afrique, language: fr, country: GB}
+    - {url: "https://rss.dw.com/rdf/rss-en-africa", name: dw-africa, language: en, country: DE}
+    - {url: "https://www.france24.com/en/africa/rss", name: france24-africa, language: en, country: FR}
+    - {url: "https://www.france24.com/fr/afrique/rss", name: france24-afrique, language: fr, country: FR}
+    - {url: "https://www.aa.com.tr/en/rss/default?cat=africa", name: anadolu-africa, language: en, country: TR}
+    # South Asia: India / Pakistan / Kashmir
+    - {url: "https://www.dawn.com/feeds/home", name: dawn, language: en, country: PK}
+    - {url: "https://www.geo.tv/rss/1/1", name: geo-news, language: en, country: PK}
+    - {url: "https://www.thehindu.com/news/national/feeder/default.rss", name: the-hindu-national, language: en, country: IN}
+    - {url: "https://indianexpress.com/section/india/feed/", name: indian-express-india, language: en, country: IN}
+    - {url: "https://kashmirobserver.net/feed/", name: kashmir-observer, language: en, country: IN}
+    # Southeast Asia: Myanmar / Philippines / Thailand
+    - {url: "https://www.irrawaddy.com/feed", name: irrawaddy, language: en, country: MM}
+    - {url: "https://myanmar-now.org/en/feed/", name: myanmar-now, language: en, country: MM}
+    - {url: "https://www.rappler.com/feed/", name: rappler, language: en, country: PH}
+    - {url: "https://www.bangkokpost.com/rss/data/topstories.xml", name: bangkok-post, language: en, country: TH}
+    # Latin America
+    - {url: "https://insightcrime.org/feed/", name: insight-crime, language: en, country: US}
+    - {url: "https://en.mercopress.com/rss/", name: mercopress, language: en, country: UY}
+    - {url: "https://www.eltiempo.com/rss/colombia.xml", name: eltiempo-colombia, language: es, country: CO}
+    - {url: "https://www.lanacion.com.ar/arc/outboundfeeds/rss/?outputType=xml", name: lanacion-ar, language: es, country: AR}
+    - {url: "https://www.jornada.com.mx/rss/politica.xml", name: la-jornada-politica, language: es, country: MX}
+    - {url: "https://elpitazo.net/feed/", name: el-pitazo, language: es, country: VE}
+    # Caucasus
+    - {url: "https://oc-media.org/feed/", name: oc-media, language: en, country: GE}
+    - {url: "https://civil.ge/feed", name: civil-ge, language: en, country: GE}
+    - {url: "https://jam-news.net/feed/", name: jam-news, language: en, country: GE}
+    # Korean peninsula / Taiwan Strait
+    - {url: "https://www.nknews.org/feed/", name: nk-news, language: en, country: KR}
+    - {url: "https://en.yna.co.kr/RSS/nk.xml", name: yonhap-nk-en, language: en, country: KR}
+    - {url: "https://www.dailynk.com/english/feed/", name: daily-nk, language: en, country: KR}
+    - {url: "https://www.koreaherald.com/rss/newsAll", name: korea-herald, language: en, country: KR}
+    - {url: "https://www.taipeitimes.com/xml/index.rss", name: taipei-times, language: en, country: TW}
+    - {url: "https://news.ltn.com.tw/rss/politics.xml", name: ltn-politics, language: zh, country: TW}
+    - {url: "https://thediplomat.com/feed/", name: the-diplomat, language: en, country: JP}
 nga_msi:
   enabled: true
   interval_s: 1800
