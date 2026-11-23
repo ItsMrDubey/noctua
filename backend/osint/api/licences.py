@@ -85,6 +85,24 @@ SOURCES: list[dict] = [
      "notes": "Annual flare site list; used to demote flares in the fire score."},
     {"id": "copernicus", "name": "Copernicus Sentinel", "licence": "Copernicus open licence (free, full and open)", "url": "https://sentinels.copernicus.eu/web/sentinel/terms-and-conditions",
      "attribution": "Contains modified Copernicus Sentinel data [year]", "commercial": "ok", "notes": "Use the acquisition year; state if modified."},
+    # signals & space layers (osint.signals)
+    {"id": "adsb_fi_signals", "name": "adsb.fi open data (GNSS interference, emergency squawks)", "licence": "Non-commercial use only", "url": "https://adsb.fi/",
+     "attribution": "GNSS interference and squawks derived from adsb.fi data", "commercial": "no",
+     "notes": "All-traffic point / squawk queries, 1 request/s. Method after gpsjam.org (NIC / NACp share per H3 cell)."},
+    {"id": "celestrak", "name": "CelesTrak GP element sets", "licence": "CelesTrak terms (free; credit requested)", "url": "https://celestrak.org/NORAD/documentation/gp-data-formats.php",
+     "attribution": "Orbital data: CelesTrak", "commercial": "review",
+     "notes": "Derived from US Space Force (18 SDS) data; fetched at most every 2 h per group. Check redistribution terms before a commercial launch."},
+    {"id": "satellite_js", "name": "satellite.js 6.0.1 (SGP4)", "licence": "MIT", "url": "https://github.com/shashwatak/satellite-js",
+     "attribution": "satellite.js (MIT)", "commercial": "ok", "notes": "Client-side propagation; vendored by scripts/fetch_satellitejs.sh or loaded from jsDelivr."},
+    {"id": "ioda", "name": "IODA (Georgia Tech Internet Outage Detection and Analysis)", "licence": "IODA terms of use (research use, attribution)", "url": "https://ioda.inetintel.cc.gatech.edu/",
+     "attribution": "Internet outage data: IODA, Georgia Institute of Technology", "commercial": "review",
+     "notes": "Free API, no key. Commercial use needs agreement with the IODA team. Cloudflare Radar was not used (its API requires a token)."},
+    {"id": "swpc", "name": "NOAA Space Weather Prediction Center", "licence": "US Government work (public domain)", "url": "https://www.swpc.noaa.gov/",
+     "attribution": "Space weather: NOAA SWPC (OVATION aurora nowcast)", "commercial": "ok", "notes": "Credit NOAA SWPC."},
+    {"id": "bfs_odl", "name": "BfS ODL (German ambient gamma dose rate network)", "licence": "Datenlizenz Deutschland - Namensnennung 2.0 (dl-de/by-2-0)", "url": "https://odlinfo.bfs.de/",
+     "attribution": "Dose rate: Bundesamt für Strahlenschutz (BfS), dl-de/by-2-0", "commercial": "ok", "notes": "Attribution required."},
+    {"id": "safecast", "name": "Safecast realtime devices", "licence": "CC0 1.0", "url": "https://safecast.org/data/",
+     "attribution": "Dose rate: Safecast (CC0)", "commercial": "ok", "notes": "Citizen-science sensors; CPM converted to µSv/h with the tube factor."},
 ]
 
 

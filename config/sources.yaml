@@ -245,3 +245,72 @@ reliefweb:
   user_agent: "noctua/0.1 (ReliefWeb API client; humanitarian situational awareness)"
   reports: true
   report_limit: 100
+# ---------------------------------------------------------------- signals & space (osint.signals)
+# Endpoints verified with curl on 2026-11-23 (HTTP 200, no key or login).
+adsb_signals:
+  # GNSS interference map + emergency squawks from ALL aircraft (not only military) in watch
+  # regions. adsb.fi open data: 1 request/s, non-commercial; 429 ends a cycle early.
+  enabled: true
+  interval_s: 120
+  base: https://opendata.adsb.fi/api/v2
+  point_path: /lat/{lat}/lon/{lon}/dist/{dist}   # adsb.lol style: /point/{lat}/{lon}/{dist}
+  sqk_path: /sqk/{code}
+  spacing_s: 1.2
+  squawks: ["7500", "7600", "7700"]
+  squawk: {gap_s: 1800, keep_h: 24, ignore_status: [lifeguard]}
+  gnss:
+    res: 3              # H3 resolution of map cells
+    window_min: 60      # live map window
+    nic_min: 7          # NIC below this = degraded
+    nacp_min: 8         # NACp below this = degraded
+    min_aircraft: 3     # hide cells with fewer aircraft
+    medium_pct: 2.0     # gpsjam.org colour bands: <2 % green, 2-10 % yellow, >10 % red
+    high_pct: 10.0
+    carried_min: 30     # degraded continuously this long over carried_km = degradation carried
+    carried_km: 300     # from elsewhere (GPS deselected after jamming/spoofing): not counted
+  regions:              # radius in NM (max 250)
+    - {name: Baltic / Kaliningrad, lat: 55.5, lon: 20.0, dist: 250}
+    - {name: Gulf of Finland, lat: 60.0, lon: 27.0, dist: 200}
+    - {name: Poland / Belarus, lat: 52.5, lon: 24.5, dist: 200}
+    - {name: Black Sea, lat: 44.0, lon: 33.5, dist: 250}
+    - {name: Eastern Mediterranean, lat: 34.0, lon: 33.5, dist: 250}
+    - {name: Levant, lat: 32.0, lon: 36.0, dist: 200}
+    - {name: Iraq, lat: 33.0, lon: 44.0, dist: 250}
+    - {name: Persian Gulf, lat: 26.5, lon: 52.0, dist: 250}
+    - {name: Caucasus, lat: 41.5, lon: 45.0, dist: 200}
+    - {name: Red Sea, lat: 20.0, lon: 39.0, dist: 250}
+    - {name: Libya, lat: 32.0, lon: 15.0, dist: 250}
+    - {name: Korea, lat: 37.5, lon: 127.0, dist: 200}
+    - {name: India / Pakistan, lat: 30.5, lon: 73.5, dist: 250}
+    - {name: Central Europe (control), lat: 50.0, lon: 9.0, dist: 200}
+    - {name: US Midwest (control), lat: 40.0, lon: -90.0, dist: 200}
+celestrak:
+  # GP element sets (OMM JSON) for the satellite layer. CelesTrak updates ~every 2 h and blocks
+  # clients that re-download unchanged data: never more often than min_refresh_s per group.
+  enabled: true
+  interval_s: 21600
+  min_refresh_s: 7200
+  groups: [active, stations, visual, military, weather, gnss, geo, last-30-days]
+  derived: {starlink: STARLINK, oneweb: ONEWEB, kuiper: KUIPER}   # name prefixes cut from active
+ioda:
+  # IODA (Georgia Tech) country outage events over the last window_h. Datasource weights:
+  # merit-nt (network telescope) is noisy, so it alone never creates an event.
+  enabled: true
+  interval_s: 600
+  window_h: 24
+  min_score: 100
+  event_min_weight: 0.7
+  event_min_score: 1000
+  weights: {bgp: 1.0, ping-slash24: 1.0, gtr: 0.75, merit-nt: 0.3}
+swpc:
+  # NOAA SWPC: Kp, G/S/R scales, alerts, solar wind, flares, F10.7; OVATION aurora every 30 min
+  enabled: true
+  interval_s: 300
+  aurora_interval_s: 1800
+radiation:
+  # Ambient gamma dose rate. BfS ODL (Germany, ~1,700 probes, hourly) and Safecast realtime
+  # devices (citizen network, CC0). `networks: {bfs: <url>, safecast: <url>}` overrides the
+  # URLs ("" disables one). EURDEP needs a JRC data-exchange registration: not used.
+  enabled: true
+  interval_s: 900
+  max_age_h: 6

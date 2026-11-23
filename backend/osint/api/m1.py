@@ -124,6 +124,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_fires(app, runtime)
     __import__("osint.api.naval", fromlist=["mount_naval"]).mount_naval(app, runtime)
     __import__("osint.api.benchmark", fromlist=["mount_benchmark"]).mount_benchmark(app, runtime)
+    __import__("osint.api.signals", fromlist=["mount_signals"]).mount_signals(app, runtime)
 
     @app.get("/")
     def index():

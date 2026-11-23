@@ -96,8 +96,8 @@ def test_api_json_gzipped(client):
 
 
 def test_stale_build_is_rebuilt_or_falls_back(tmp_path, monkeypatch):
-    from tests.frontend.test_build import BASIC, _fe
     from osint.frontend_build import build
+    from tests.frontend.test_build import BASIC, _fe
 
     fe = _fe(tmp_path, BASIC)
     build(fe)

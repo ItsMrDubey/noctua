@@ -1,0 +1,31 @@
+# Signals job (osint.signals.job): notable signals -> sensor-derived events + the alert feed.
+# Every key is optional (defaults in osint/signals/job.py).
+interval_s: 120
+initial_delay_s: 45
+squawk:
+  enabled: true
+  max_age_h: 24          # episodes last seen longer ago than this are not (re)emitted
+gnss_jam:
+  enabled: true
+  min_aircraft: 5        # a cell needs this many aircraft ...
+  min_pct: 25.0          # ... and this share degraded (and level "high") to become an event
+  min_bad: 3             # ... and the cluster this many degraded aircraft
+  merge_gap_h: 6         # interference continuing nearby within this extends the event
+outage:
+  enabled: true          # thresholds: sources.yaml -> ioda (event_min_weight / event_min_score)
+radiation:
+  enabled: true
+  baseline_days: 7       # per-station median over this window (lake), refreshed hourly
+  baseline_refresh_min: 60
+  ratio: 2.2             # elevated: >= ratio x median, >= median + min_delta, >= floor (µSv/h)
+  min_delta: 0.1
+  floor: 0.25
+  alert: 1.0             # an elevated reading at or above this is an alert
+  min_samples: 12
+  category: disaster
+alerts:
+  keep_h: 48
+  max: 300
+  hp_flights: true       # alert once per high-priority military flight (ADS-B tracks)
+  hp_gap_h: 3            # a flight seen again after this gap alerts again
+  hp_max_age_min: 10

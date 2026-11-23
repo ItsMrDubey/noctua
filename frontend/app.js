@@ -34,6 +34,7 @@ import { installFireScore } from "/static/js/firescore.js";
 import { Freshness } from "/static/js/freshness.js";
 import { InfraLayers, mountInfraTree, infraDetails } from "/static/js/infra.js";
 import { WatchOverlay, watchHtml } from "/static/js/watch.js";
+import { Signals, AREA_SIGNALS } from "/static/js/signals/index.js";
 
 const errors = {};
 let lastStatus = null;
@@ -275,7 +276,7 @@ async function main() {
   }
   // module-rendered selections (webcam, carrier hypothesis) own timers / labels: release them
   const mods = { wc: null, naval: null };
-  const releaseModules = () => { if (mods.wc) { mods.wc.closeInspector(); mods.wc.clearSelection(); } };
+  const releaseModules = () => { if (mods.wc) { mods.wc.closeInspector(); mods.wc.clearSelection(); } if (mods.sig) mods.sig.clearSelection(); };
   let nearFor = null; // event id whose "cameras nearby" strip is showing
   const clearNear = () => { nearFor = null; $("dz-extra").innerHTML = ""; };
   function select(kind, id) {
@@ -323,7 +324,7 @@ async function main() {
   const inspector = new Inspector({
     close: clearSelection,
     fly: () => {
-      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : refSel.kind === "webcam" ? 2.5e4 : refSel.kind === "carrier" ? 2.5e6 : refSel.kind === "corridor" ? 4e6 : refSel.kind === "surge" ? 2.5e6 : 4e5);
+      if (refSel) flyTo(refSel.item.lat, refSel.item.lon, /airport|runway/.test(refSel.kind) ? 8e4 : refSel.kind === "webcam" ? 2.5e4 : refSel.kind === "carrier" ? 2.5e6 : refSel.kind === "corridor" ? 4e6 : refSel.kind === "surge" ? 2.5e6 : refSel.kind === "signal" ? refSel.item.flyAlt || 2e6 : 4e5);
       else if (selected) flyToItem(selected.kind, selected.id);
     },
     follow: () => setFollow(!following),
@@ -371,6 +372,15 @@ async function main() {
     for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.histCell) { histLayer.zoomCell(picked.id.histCell); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.watch && byKind[picked.id.kind] && byKind[picked.id.kind].items.has(picked.id.id)) { select(picked.id.kind, picked.id.id); return; }
+    // signals & space: satellites / squawks / radiation stations here, area overlays (GNSS cells,
+    // outage countries) only when nothing else was hit
+    let areaSig = null;
+    for (const picked of hits) {
+      const sid = picked && picked.id && picked.id.signal;
+      if (!sid) continue;
+      if (AREA_SIGNALS.has(sid)) { areaSig = areaSig || picked.id; continue; }
+      if (mods.sig && mods.sig.pick(picked.id)) return;
+    }
     for (const picked of hits) {
       if (!picked || !picked.primitive) continue;
       if (picked.id && picked.id.ref) { refHit = refHit || picked.id; continue; }
@@ -388,6 +398,7 @@ async function main() {
     }
     if (best) { select(best.kind, best.id); return; }
     if (refHit) { showRef(refHit); return; }
+    if (areaSig && mods.sig && mods.sig.pick(areaSig)) return;
     if (densityHit) {
       const tip = $("pick-tip");
       tip.textContent = densityHit.density + " density: " + densityHit.count.toLocaleString() + " (H3 " + densityHit.h3 + ")";
@@ -510,6 +521,9 @@ async function main() {
   });
   loadWcSources().catch(() => {});
   viewer.camera.moveEnd.addEventListener(() => { if (wc.visible) wc.refreshForView().catch(() => {}); });
+
+  // ---- Signals & space (GNSS interference, squawks, outages, satellites, space weather, radiation) ----
+  mods.sig = new Signals(viewer, { alerts, flyTo, show: (item, eyebrow, tint, render) => showModule("signal", item, eyebrow, tint, render) });
 
   // ---- Carrier strike group activity (hypotheses, never positions) ----
   const naval = mods.naval = new CarrierLayer(viewer, {

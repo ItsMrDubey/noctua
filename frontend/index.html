@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/static/css/naval.css">
 <link rel="stylesheet" href="/static/css/browser.css">
 <link rel="stylesheet" href="/static/css/infra.css">
+<link rel="stylesheet" href="/static/css/signals.css">
 <script>window.CESIUM_BASE_URL = "/static/vendor/cesium/";</script>
 <script src="/static/vendor/cesium/Cesium.js"></script>
 </head>
@@ -33,6 +34,7 @@
   </label>
   <div id="sources" class="sources" aria-label="Source health"></div>
   <div id="ev-score" class="src evs hidden" tabindex="0" aria-label="GDELT scorecard"></div>
+  <div id="sig-pill" class="src evs sig-pill hidden" tabindex="0" aria-label="Signals &amp; space status"></div>
   <div id="mode-pill" class="mode-pill" role="status"><i></i><span id="mode-text">LIVE</span></div>
   <div class="clocks"><div id="clock" class="num">--:--:--<small>UTC</small></div><div id="clock-local" class="num">--:--<small>LCL</small></div></div>
 </header>
@@ -46,6 +48,7 @@
   <button class="rail-btn" data-g="ref" title="Reference geography"><svg viewBox="0 0 20 20"><path d="M10 2.5l7 7.5-7 7.5-7-7.5z" /><path d="M3 10h14M10 2.5v15" /></svg></button>
   <button class="rail-btn" data-g="density" title="Density"><svg viewBox="0 0 20 20"><path d="M6 3.5l4 2.3v4.6L6 12.7 2 10.4V5.8zM14 7.3l4 2.3v4.6l-4 2.3-4-2.3V9.6z" /></svg></button>
   <button class="rail-btn" data-g="imagery" title="Imagery"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c-3 3.5-3 11.5 0 15M10 2.5c3 3.5 3 11.5 0 15" /></svg></button>
+  <button class="rail-btn" data-g="signals" title="Signals &amp; space"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="1.6" /><path d="M6.2 6.2a5.4 5.4 0 0 0 0 7.6M13.8 6.2a5.4 5.4 0 0 1 0 7.6M3.6 3.6a9 9 0 0 0 0 12.8M16.4 3.6a9 9 0 0 1 0 12.8" /></svg><i class="rail-dot" id="sig-rail-dot"></i></button>
   <button class="rail-btn" data-g="weather" title="Weather &amp; lighting"><svg viewBox="0 0 20 20"><path d="M5.5 14.5h9a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 5.5 14.5z" /></svg></button>
   <span class="rail-fill"></span>
   <button class="rail-btn" id="rail-dossier" title="Dossier browser (B)"><svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" /><path d="M2.5 7h15M9 7v9.5" /></svg></button>
@@ -143,6 +146,20 @@
     <label class="row" title="Sun lighting with soft shadows on models / buildings / terrain, and bloom. GPU heavy: turn off if the globe stutters."><input type="checkbox" id="t-cinematic"><span class="sw half" style="--c:#ffd27a"></span>Cinematic lighting <small>GPU</small></label>
     <label class="row field" title="Sun position used for lighting and shadows">Sun <select id="t-sun"><option value="">Real time</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="golden">Golden hour</option><option value="dusk">Dusk</option></select></label>
   </section>
+  <section class="grp" data-g="signals">
+    <header><h3>Signals &amp; space</h3><b id="g-signals-n" class="num">–</b></header>
+    <div id="sig-wx" class="sig-wx" aria-label="Space weather"></div>
+    <label class="row" title="Share of aircraft reporting degraded GPS navigation accuracy (ADS-B NIC / NACp, the gpsjam.org method) per H3 cell, from all traffic in the watch regions (adsb.fi). Green &lt; 2 %, yellow 2-10 %, red &gt; 10 %."><input type="checkbox" id="s-gnss"><span class="sw hexo" style="--c:#ff4b55"></span>GNSS interference<b id="c-gnss" class="num"></b></label>
+    <label class="row field sub">Window <select id="s-gnss-h" class="mini"><option value="1" selected>1 h live</option><option value="6">6 h</option><option value="24">24 h</option><option value="168">7 d</option></select></label>
+    <label class="row sub" title="Dashed circles: areas the GNSS map is computed for"><input type="checkbox" id="s-gnss-regions" checked><span class="sw ring" style="--c:#66798c"></span>Coverage areas</label>
+    <label class="row" title="Aircraft squawking 7500 (unlawful interference), 7600 (radio failure), 7700 (emergency), worldwide, one entry per flight; last 24 h"><input type="checkbox" id="s-squawks" checked><span class="sw dm" style="--c:#ff3b3b"></span>Emergency squawks<b id="c-squawks" class="num"></b></label>
+    <label class="row" title="Country-level internet outages detected by IODA (Georgia Tech): BGP, active probing, Google traffic, network telescope; last 24 h"><input type="checkbox" id="s-outages"><span class="sw sq" style="--c:#e86bff"></span>Internet outages<b id="c-outages" class="num"></b></label>
+    <label class="row" title="Satellites from CelesTrak GP element sets, propagated in the browser (SGP4). Click one for its orbit, ground track and coverage footprint."><input type="checkbox" id="s-sats"><span class="sw" style="--c:#b8f7ff"></span>Satellites<b id="c-sats" class="num"></b></label>
+    <div id="sat-chips" class="chips"></div>
+    <label class="row" title="NOAA SWPC OVATION aurora nowcast (probability of visible aurora), refreshed every 30 min"><input type="checkbox" id="s-aurora"><span class="sw" style="--c:#4fdf8c"></span>Aurora oval</label>
+    <label class="row" title="Ambient gamma dose rate: BfS ODL network (Germany) and Safecast realtime devices. Ringed red = elevated against the station's own 7-day median."><input type="checkbox" id="s-radiation"><span class="sw ring" style="--c:#ffd24a"></span>Radiation dose rate<b id="c-radiation" class="num"></b></label>
+    <div class="row-note">No lightning layer: no free live source permits reuse (Blitzortung forbids it).</div>
+  </section>
 </aside>
 
 <div id="rightcol">
@@ -214,7 +231,7 @@
 
 <div id="pick-tip" class="glass hidden"></div>
 
-<footer id="attrib">Imagery Esri / NASA GIBS · Data ADS-B aggregators, AISStream, NASA FIRMS, USGS · Reference OurAirports, NGA WPI, Natural Earth, Wikidata (CC0) · Sentinel: Contains modified Copernicus Sentinel data · <a href="#" id="lic-open">Attributions &amp; licences</a></footer>
+<footer id="attrib">Imagery Esri / NASA GIBS · Data ADS-B aggregators, AISStream, NASA FIRMS, USGS · Reference OurAirports, NGA WPI, Natural Earth, Wikidata (CC0) · Sentinel: Contains modified Copernicus Sentinel data · Signals: adsb.fi, CelesTrak, IODA (Georgia Tech), NOAA SWPC, BfS (dl-de/by-2-0), Safecast · <a href="#" id="lic-open">Attributions &amp; licences</a></footer>
 <aside id="lic-panel" class="glass hidden" role="dialog" aria-label="Attributions and licences"></aside>
 
 <script type="module" src="/static/app.js"></script>

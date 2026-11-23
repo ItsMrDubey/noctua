@@ -2,8 +2,8 @@ import gzip
 
 import pytest
 
-from osint.frontend_build import BuildError, build, bundle_js
 from osint.config import ROOT
+from osint.frontend_build import BuildError, build, bundle_js
 
 
 def _fe(tmp_path, files: dict[str, str], html: str | None = None):

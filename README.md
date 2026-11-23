@@ -90,3 +90,23 @@ etc. categories are ignored (all thresholds in `config/infra.yaml`). Alerts and 
 `GET /api/history/counts?layer=fires|quakes|events|historical|aircraft|ships&bin=hour|day&start=&end=`
 returns sparse `[[bin_start_ms, n], ...]` aggregates computed server-side (closed bins cached in memory,
 warmed after start-up); the timeline histogram issues one request per layer.
+
+## Signals & space layers
+
+Layer group "Signals & space" (rail icon with radio waves) plus a status pill in the command bar.
+Collectors run in the worker and write live snapshots to `data/signals/*.json` (served by
+`/api/signals/*`); notable signals become sensor events (`osint.signals.job`, `config/signals.yaml`).
+
+| Layer | Source (free, no key) | Refresh |
+|---|---|---|
+| GNSS interference (gpsjam-style H3 map) | adsb.fi all-traffic queries in watch regions (`sources.yaml` -> `adsb_signals.regions`): share of aircraft with ADS-B NIC < 7 / NACp < 8 / GPS lost | 2 min |
+| Emergency squawks 7500/7600/7700 | adsb.fi `sqk` queries (worldwide), one entry per flight | 2 min |
+| Satellites (orbit, ground track, footprint) | CelesTrak GP (OMM) groups, SGP4 in a browser worker | 6 h (CelesTrak blocks re-downloads within 2 h) |
+| Internet outages (country shading) | IODA (Georgia Tech) outage events | 10 min |
+| Space weather widget, aurora oval | NOAA SWPC (Kp, G/S/R scales, alerts, solar wind, OVATION) | 5 / 30 min |
+| Radiation dose rate | BfS ODL (Germany) + Safecast realtime devices; anomalies vs each station's 7-day median | 15 min |
+
+`scripts/fetch_satellitejs.sh` vendors satellite.js 6.0.1 into `frontend/vendor/satellite`
+(otherwise the worker loads the same pinned build from jsDelivr / cdnjs). Not included: Cloudflare
+Radar (API token required), EURDEP (registration required), lightning (Blitzortung forbids reuse;
+no other free live feed).
