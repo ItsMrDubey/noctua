@@ -494,7 +494,10 @@ function metrics(spec, subj, D) {
     const R = (DX && DX.readings) || {}, r = R.latest || R.peak || R.detection;
     m("rep", "Source", "Sensor", esc(subj.sensor || "detector") + " · no news reports", "Sensor-derived event: detected by the platform's own sensor feed, not reported in the news");
     m("first", "Detected", subj.t_start ? esc(since(subj.t_start)) : nd, "ago · " + esc(fmtUtc(subj.t_start, { time: true })), "Start of the first detection window");
-    m("sens", r && r === R.latest && R.latest.t !== (R.detection || {}).t ? "Reading now" : "At detection", wait(DX) ? nd : r && r.n ? pct(r.pct) : "–", r ? (r.n ? r.bad + "/" + r.n + " aircraft · " : "") + esc(fmtUtc(r.t, { time: true })) + (DX.lifecycle ? " · " + esc(DX.lifecycle) : "") : esc((DX && DX.lifecycle) || ""), "Detection reading with its time (60-min window)", DX && DX.lifecycle === "active" ? "warm" : "");
+    const dd = (DX && DX.details) || {};
+    // GNSS: the reading (share degraded) with its time; other signals: their own measure
+    const other = !r && DX ? (dd.code ? [dd.code, nf(dd.reports) + " reports · " + esc(fmtUtc(dd.first_seen, { time: true }))] : dd.datasource ? [nf(dd.score), "IODA " + esc(dd.datasource_label || dd.datasource) + " score"] : dd.value != null ? [nf(dd.value, 3), "µSv/h · " + esc(fmtUtc(dd.ts, { time: true }))] : null) : null;
+    m("sens", r && r === R.latest && R.latest.t !== (R.detection || {}).t ? "Reading now" : "At detection", wait(DX) ? nd : r && r.n ? pct(r.pct) : other ? other[0] : "–", r ? (r.n ? r.bad + "/" + r.n + " aircraft · " : "") + esc(fmtUtc(r.t, { time: true })) + (DX.lifecycle ? " · " + esc(DX.lifecycle) : "") : other ? other[1] + (DX.lifecycle ? " · " + esc(DX.lifecycle) : "") : esc((DX && DX.lifecycle) || ""), "Detection reading with its time", DX && DX.lifecycle === "active" ? "warm" : "");
   } else
   m("rep", "Reports", S ? nf(S.count) : nd, S ? nf(S.outlets) + " outlets · " + nf((S.languages || []).length) + " lang" : "", "Documents attached to the event (sources section)");
   if (!sensorEv) m("first", "First report", S && S.first_at ? esc(since(S.first_at)) : subj.t_start ? esc(since(subj.t_start)) : nd, "ago · " + esc(fmtUtc((S && S.first_at) || subj.t_start, { time: true })), "Earliest publication time among the reports");
