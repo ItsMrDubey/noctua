@@ -93,8 +93,9 @@ def test_firms_plan_uses_sp_then_nrt():
                   ("MODIS_SP", 16, 4), ("VIIRS_SNPP_SP", 16, 4)]
     assert nrt == [("MODIS_NRT", 20), ("VIIRS_SNPP_NRT", 20), ("MODIS_NRT", 25),
                    ("VIIRS_SNPP_NRT", 25)]
+    too_long = firms.plan(w, nrt_days=6, chunk_days=10)[0][1]
     with pytest.raises(ValueError, match="at most 5 days"):
-        firms.plan(w, nrt_days=6, chunk_days=10)
+        firms.area_url("K", "MODIS_SP", too_long)
     assert firms.area_url("K", "MODIS_SP", reqs[0][1]) == \
         "https://firms.modaps.eosdis.nasa.gov/api/area/csv/K/MODIS_SP/world/5/2026-01-01"
 
