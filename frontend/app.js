@@ -41,6 +41,7 @@ import { installDeclutter } from "/static/js/declutter.js";
 import { installBasemap } from "/static/js/basemap.js";
 import { installImageryViewer, openImageryViewer } from "/static/js/panels/imagery-viewer.js";
 import { renderAssetProfile, assetProfileHtml, setAssetProfileHooks } from "/static/js/panels/asset-profile.js";
+import { installTerror } from "/static/js/terror.js";
 
 const errors = {};
 let lastStatus = null;
@@ -397,7 +398,7 @@ async function main() {
   statusBar.onTransition = (n, from, to, s) => alerts.source(n, from, to, s);
 
   const tracklist = new TrackList(byKind, (kind, id) => { select(kind, id); flyToItem(kind, id); }, {
-    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); if (p === "moves") { moves.ensurePanel(); renderMoves(); } if (p === "stories") storyList.refresh(); },
+    pins, onPane: (p) => { if (p === "alerts") { alerts.unread = 0; renderAlerts(); } if (p === "events") evList.render(true); if (p === "moves") { moves.ensurePanel(); renderMoves(); } if (p === "stories") storyList.refresh(); { const tw = window.__osint && window.__osint.terror; if (p === "terror" && tw) tw.refresh().catch(() => {}); } },
   });
   const evList = new EventList(events, (id) => { select("events", id); flyToItem("events", id); }, () => tracklist.pane === "events" && tracklist.open && !$("tracks").classList.contains("hidden"));
   tracklist.render(true);
@@ -413,6 +414,7 @@ async function main() {
     for (const picked of hits) if (picked && picked.id && (picked.id.navalHyp || picked.id.navalIndicator || picked.id.navalFit || picked.id.navalLeg) && mods.naval.pick(picked)) return;
     for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.histCell) { histLayer.zoomCell(picked.id.histCell); return; }
+    for (const picked of hits) if (picked && picked.id && picked.id.terror && window.__osint && window.__osint.terror && window.__osint.terror.pick(picked.id)) return;
     for (const picked of hits) if (picked && picked.id && picked.id.watch && byKind[picked.id.kind] && byKind[picked.id.kind].items.has(picked.id.id)) { select(picked.id.kind, picked.id.id); return; }
     // declutter (js/declutter.js): event title labels select, a click right on a cluster badge
     // zooms / fans out; aggregate cells only when no glyph is under the cursor (and they are
@@ -740,6 +742,7 @@ async function main() {
     models.setReplay(!!at);
     events.setReplay(at); tick_ev_count();
     histLayer.setReplay(at, replayWindowH() * 3600e3);
+    if (window.__osint && window.__osint.terror) window.__osint.terror.setReplay(at);
     if (at) renderReplay(at);
     else { replayPending = null; $("tl-note").textContent = ""; ticks.forEach((t) => t(true).catch(() => {})); }
   }, (playing) => viewer.setContinuous("replay", playing), () => {
@@ -924,6 +927,7 @@ async function main() {
   // ---- Declutter: LOD / aggregation / clustering / marker budget across the live layers ----
   ctx.fireScore = fireScore;
   ctx.declutter = installDeclutter(ctx);
+  ctx.terror = installTerror(ctx); // Terror Watch: layer, Terror tab, dossier panes, intel tiles
   ctx.palette = new Palette(ctx);
   // ---- Satellite imagery viewer: globe right-click "Imagery here", drapes onto the globe ----
   installImageryViewer({ viewer });

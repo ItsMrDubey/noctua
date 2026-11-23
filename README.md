@@ -110,3 +110,34 @@ Collectors run in the worker and write live snapshots to `data/signals/*.json` (
 (otherwise the worker loads the same pinned build from jsDelivr / cdnjs). Not included: Cloudflare
 Radar (API token required), EURDEP (registration required), lightning (Blitzortung forbids reuse;
 no other free live feed).
+
+## Terror Watch
+
+Rail icon with a warning triangle, right-panel tab "Terror", dossier panes (global board, country
+boards, US posture, group pages, definition & sources) and Intel-console tiles for incidents.
+Defensive, public-source situational awareness: incidents, groups, designations, official threat
+levels and indicators & warnings (I&W) -- indicators with stated baselines, never predictions.
+
+* **Definition**: GTD-aligned (intentional violence by a sub-national actor + at least 2 of: political/
+  religious/social goal, wider audience, outside legitimate warfare) with documented operational
+  rules (warfare, insurgency vs security forces = "possible", crime, CT operations, plots/arrests as
+  separate classes, denials never incidents). Served at `GET /api/terror/definition`.
+* **Incidents** (`osint.terror`, worker job, `data/terror.sqlite`): news events whose headlines use
+  terrorism vocabulary (multilingual) get one LLM extraction (verbatim-checked quotes; same backend and
+  caps as event extraction, `config/terror.yaml`), then deterministic rules decide class, status
+  (confirmed = >= 2 independent outlets, reposts and same-organisation feeds collapsed, Telegram = one
+  outlet; reported = single origin), attribution level (claimed / authorities / suspected / unknown,
+  each with its quote), location (from the incident description, capital metonyms rejected, precision
+  stated), casualties (every source kept, ranges), event time (follow-up coverage flagged).
+* **Sources** (all free; licence register at `/api/sources/licences`, health at `/api/terror/sources`):
+  MI5/JTAC RSS, Vigipirate (SGDSN), NCTV, ASIO, DHS NTAS (feed; AlterLab fallback when dhs.gov blocks
+  the client), State Dept travel advisories API, US FTO list, OFAC SDN (SDGT), UN consolidated list
+  (1267/1988), UK proscribed groups (GOV.UK content API), EU FSF (TERR + EU ISIL/AQ), DOJ press API
+  (terrorism topics / NSD), Europol newsroom, GNET research, UCDP GED + Candidate (one-sided violence
+  by non-state actors, base rates). GTD is cited, not ingested (licence).
+* **Groups**: `config/terror_groups.yaml` (identity and multilingual aliases only); designation status
+  comes from the lists (exact-name matches), areas of operation and tempo from data. Name-only matches
+  are shown as leads.
+* `uv run osint terror-pass [--only ids] [--no-llm]` runs one pass; `uv run osint terror-eval` scores
+  the classifier on the hand-labelled sample (`tests/terror/fixtures/eval_labels.json`) and writes
+  `data/terror_eval.json` (shown in the Definition pane).

@@ -120,6 +120,7 @@ class Runtime:
             __import__("osint.infra.job", fromlist=["start"]).start(self)  # .watch_job
             __import__("osint.signals.job", fromlist=["start"]).start(self)  # .signals_job
             __import__("osint.storylines.job", fromlist=["start"]).start(self)  # .storyline_job
+            __import__("osint.terror.job", fromlist=["start"]).start(self)  # .terror_job
             log.info("runtime boot complete")
         except Exception as exc:  # surfaced via /health instead of crashing the app
             self.boot_error = f"{type(exc).__name__}: {exc}"

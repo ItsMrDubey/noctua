@@ -269,7 +269,16 @@ def main(argv: list[str] | None = None) -> None:
                         "sanctions watchlists into data/reference (only stale ones by default)")
     fp.add_argument("datasets", nargs="*", help="dataset ids (default: all)")
     fp.add_argument("--force", action="store_true", help="re-download even when fresh")
+    from osint.terror.cli import add_parsers as add_terror_parsers
+
+    add_terror_parsers(sub)
     args = parser.parse_args(argv)
+
+    if args.cmd in ("terror-pass", "terror-eval"):
+        configure_logging()
+        from osint.terror.cli import run as run_terror
+
+        raise SystemExit(run_terror(args))
 
     if args.cmd == "backfill":
         configure_logging()

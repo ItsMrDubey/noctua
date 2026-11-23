@@ -53,7 +53,7 @@ from osint.timeline.build import bearing_deg, build_timeline, compass, parse_ts
 log = logging.getLogger(__name__)
 
 SECTIONS = ("assessment", "timeline", "related", "history", "sensors", "traffic", "assets",
-            "imagery", "sources", "entities", "storyline", "detection", *context.SECTIONS)
+            "imagery", "sources", "entities", "storyline", "detection", *context.SECTIONS, "terror")
 RADIUS_BY_PRECISION = {"point": 25.0, "city": 40.0, "admin1": 150.0, "country": 400.0}
 MAX_RADIUS_KM = 500.0
 DAY = timedelta(days=1)
@@ -956,7 +956,10 @@ SIMPLE = {"related": section_related, "history": section_history,
           "sensors": section_sensors, "traffic": section_traffic, "assets": section_assets,
           "imagery": section_imagery, "sources": section_sources,
           "entities": section_entities, "storyline": section_storyline,
-          "detection": section_detection, **context.FUNCS}
+          "detection": section_detection, **context.FUNCS,
+          "terror": lambda runtime, subj, now: __import__(
+              "osint.terror.intel", fromlist=["section_terror"]).section_terror(runtime, subj,
+                                                                                now)}
 DEPENDENT = {"timeline": section_timeline, "assessment": section_assessment}
 
 

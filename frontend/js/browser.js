@@ -533,7 +533,7 @@ export class Dossier {
   _head(pane, { title, sub, icon, ext, coord, modes }) {
     pane.title = title; pane.sub = sub; pane.coord = coord || null;
     const el = pane.el;
-    el.querySelector(".ds-ico").innerHTML = ICON[icon] || ICON.url;
+    el.querySelector(".ds-ico").innerHTML = ICON[icon] || ((window.__noctuaPanes || {})[icon] || {}).icon || ICON.url;
     el.querySelector(".ds-pt b").textContent = title;
     el.querySelector(".ds-pt small").textContent = sub || "";
     el.querySelector(".ds-pt").title = title + (sub ? "\n" + sub : "");
@@ -564,6 +564,8 @@ export class Dossier {
         await renderStoryline(spec, body, { head: (h) => this._head(pane, h), stale, highlight: this.highlight, flyTo: this.flyTo,
           overlay: st.overlay || { show: noop, fit: noop, setTime: noop, clear: noop }, replay: st.replay,
           intelEvent: (id, label) => this.open({ type: "intel", kind: "event", id, label: label || id }) });
+      } else if ((window.__noctuaPanes || {})[spec.type]) { // panes registered by feature modules (e.g. terror.js)
+        await window.__noctuaPanes[spec.type].render(spec, body, { head: (h) => this._head(pane, h), stale, flyTo: this.flyTo, highlight: this.highlight });
       }
     } catch (err) {
       if (stale()) return;
@@ -708,6 +710,8 @@ function specKey(s) {
   if (s.type === "search") return "s:" + s.q;
   if (s.type === "intel") return intelKey(s);
   if (s.type === "story") return storyKey(s);
+  const ext = (window.__noctuaPanes || {})[s.type];
+  if (ext && ext.key) return ext.key(s);
   return "r:" + [s.q, s.icao, s.lat, s.lon].join("|");
 }
 const tab = (id, label, disabled) => '<button data-tab="' + id + '"' + (disabled ? " disabled" : "") + ">" + label + "</button>";

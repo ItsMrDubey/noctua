@@ -1,0 +1,5520 @@
+{
+ "version": 1,
+ "labelled_on": "2026-11-23",
+ "labeller": "manual review of each item (headline, all document titles, outlets)",
+ "items": [
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92VJZTGS55Z2GMPJRD",
+   "title": "آیا رژیم ایران توان ساخت و استفاده از \"بمب کثیف\" را دارد؟",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92JR7YKBXN1ZRXKZ3D",
+   "title": "Taiwan and Japan Intercept Russian Tu-95 Bombers Flying Back from Vietnam",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE926C6VS8317RXW3JZ0",
+   "title": "3 Kyiv bridges struck in massive Russian aerial assault on Ukraine, at least 9 dead",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92EPBA3VC3SN0ZBSA7",
+   "title": "Deadly Russian Strikes Pound Ukraine Day After Putin, Trump, And Xi Met In China",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92ZC2P3497CQ83EE60",
+   "title": "DRC's Ebola crisis deepens as WHO maintains international emergency",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92536KEWP5NQN03PGD",
+   "title": "Russian projectiles hit Poland as NATO tensions rise",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92VVBARJ7WCJKBFDT3",
+   "title": "Дрони атакували великого виробника компонентів для вибухівки в Росії",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE9253X59CE08QTSSA4W",
+   "title": "At Least 9 Killed In Russian Attacks On Ukraine, Kyiv Bridges Damaged",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE921AFS8EY336M2C2JR",
+   "title": "من المسؤول؟ منفذ هجوم برلين تقاضى إعانات حكومية رغم احتجازه في لبنان",
+   "label": [
+    "no",
+    "attack"
+   ],
+   "cc": "DE",
+   "place": "Berlin",
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": true,
+   "note": "article about the attacker of the July 2026 Berlin CSD attack (welfare payments): no new incident; excluding it or flagging it as follow-up are both correct"
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE923XF2G9YP79NMCAM4",
+   "title": "Saudi-led coalition hits seven Houthi military targets in Yemen",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE928QJP4VK12F39GCAZ",
+   "title": "روسيا تنتقم لقصف جسر القرم.. أكبر هجوم على أوكرانيا منذ بدء الحرب",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92KQDNX5SBX50VF0Z3",
+   "title": "Yemen's Houthis target Riyadh after Saudi coalition's 'special operation'",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92B4RA44CN5X3XPKAR",
+   "title": "German attack drones pass live-fire tests, with first deliveries planned this year",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92P48ZBK451MFRMEB1",
+   "title": "Houthis say they attacked power plant, port in Saudi Arabia",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92ZH2FRJ022F3P4QZ3",
+   "title": "Houthis Order Ships to Leave Saudi Red Sea Ports After Hodeidah Airstrikes",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92T11X6E4KTW8G2MMY",
+   "title": "🦛 USA: Fiona, Cincinnati Zoo’s famous hippo, has died",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92DKFWXMBCKXT4YW5B",
+   "title": "Another Tanker Hit in Strait of Hormuz as Maritime Attacks Surge Worldwide",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92AX93VE8E59BC18A9",
+   "title": "Ukrainian attacks kills two civilians, injure five others in LPR in past day",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92NDQYD5TH84HTMK1E",
+   "title": "Denmark expels Russian diplomat over plot to kill Ukraine rapper",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92J4438CRSVHFC5C84",
+   "title": "Houthis Threaten the Port City of Aden",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92NBPEXHMFQ9D2JHS9",
+   "title": "۲ متهم پرونده طرح حمله به پایگاه هوایی فرفورد احتمالا اتهامات را رد خواهند کرد",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92E70P0N5M8TKX4Y1M",
+   "title": "Skiff Shoots at Bulker as Pirates Renewed Efforts in Gulf of Aden",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92FKT05DH67XJ02XFC",
+   "title": "Россия нанесла удар по Кривому Рогу. Ранены больше 50 человек, погибли семилетний ребенок и фельдшер скорой помощи",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE9274WERQ9DH42T5K2T",
+   "title": "'Licence to kill': France adopts law presuming 'legitimate' self-defence in police shootings",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92QHKW1W7X0YJPTCK0",
+   "title": "Russian attacks kill at least 2, injure 83 across Ukraine, as strikes devastate Kryvyi Rih",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92D2VQFBR0P2XPPBXQ",
+   "title": "More Than 110 Trade Groups Urge Deal as LA-Long Beach Port Strike Deadline Nears",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE921033X3WAAK4ABM2H",
+   "title": "13-year-old shot dead at close range on his way to school in East Jerusalem’s Shuafat",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE9223K6JGTD26KMAKH8",
+   "title": "Man convicted of starting Palisades fire in Los Angeles",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92RV50Q81R3RAA3MGK",
+   "title": "Woman killed in Tira by apparent car bomb that also wounded her young kids",
+   "label": [
+    "no"
+   ],
+   "cc": "IL",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "car bomb in Tira; no motive stated (crime?)"
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92PBW2PY83NR537K6X",
+   "title": "Gaza aid mission turns deadly as Israeli strike kills 3 Palestinians",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92KT6F9QENH56M72XN",
+   "title": "Ceuta’s Jews wary as migrant crisis strains – but doesn’t break – long history of coexistence",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE925JM0TT98TZSQH58Y",
+   "title": "Tres soldados salvadoreños mueren en un incidente con explosivos en Haití",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92F7H97A0SXPS9F9ZE",
+   "title": "Kindergarten hit in Russian attack on Zaporizhzhia, man injured",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE928ZFPYH3X088MQH33",
+   "title": "Decision to arrest ex-Ukrainian Defense Minister Reznikov in absentia comes into effect",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE924XFW66DAZJAFS7R9",
+   "title": "More than 50 settlements without electricity in Sarny district following Russian attack",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92NX5SZEV05Z1TV624",
+   "title": "التقى صدام حسين وصلى خلف نعيم قاسم: الملاكم محمد علي وسيطاً في ملفات خطف رهائن",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7YC9MT0B64B0FGJP2T3FX2F",
+   "title": "Trump threatens to penalise tech companies that build data centres outside the US",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92C5X54TAW9JN5EPAA",
+   "title": "Injury toll after Russian attacks in Kharkiv region rises to 11, including two children",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92WFVAW6VKKVKETED0",
+   "title": "Kyiv reports damage in three districts after morning Russian attack, two people injured",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE920QK4MK09NVVNM70K",
+   "title": "Russian forces attack Dnipropetrovsk region nearly 10 times since evening: Two killed, 55 injured",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92SNYRGN36RS3P39WX",
+   "title": "US Agriculture Department and FBI hit by cyberattacks, media report",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83DQ7MGBTD4NJ6VYVV2T7SE",
+   "title": "Air defenses down 161 of 186 Russian drones launched against Ukraine since evening",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92ETJ36JA4FCKV92BA",
+   "title": "Aux États-Unis, le ministère de l'Agriculture et le FBI victimes d'une cyber-attaque",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE9229GJ02C6A2K9DXA8",
+   "title": "Russian attacks in Sumy region leaves three injured over past day",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7YJKPM8DV524JFWQM5JM2QJ",
+   "title": "Neighbors mourn the dead and collect belongings from the ruins of their homes. Explosion in Tbilisi",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92FK2MBX8PH824W2Q4",
+   "title": "Russian attack in Vinnytsia region leaves one injured, business facility damaged",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE921W2N3EXJ9GMEJR8R",
+   "title": "Crimean bridge, which Putin uses to transport weapons, to not remain standing, Zelensky says",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7YNAYM0XCJVCXZNKZHJNDCP",
+   "title": "« Passer à l’offensive » : au Bénin, comment Romuald Wadagni muscle sa stratégie antiterroriste",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7YNPNM0CDDW930Y5RT9H90P",
+   "title": "🇸🇳 Senegal budget defeat puts $2.2bn IMF programme at risk",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92TRRHQ0NTVYN1HPGD",
+   "title": "اف‌بی‌آی و وزارت کشاورزی آمریکا هدف حمله سایبری قرار گرفتند",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92Q05CTQR53J5BA02R",
+   "title": "'Unacceptable': EU chief condemns alleged Russian plot to kill US-Ukrainian citizen",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92886AZMG7ZJ86K4KT",
+   "title": "Cargo ship attacked in Gulf of Finland international waters — governor",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92WX40XQ48ED1MRWKZ",
+   "title": "من مجازر غزة إلى مذكرتي الاعتقال.. كيف وصلت جرائم الحرب إلى محكمة لاهاي؟",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE923GRF585WP8QZBZVJ",
+   "title": "Deadly fire engulfs power station in southern Iraq",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE920SB8PKSJCCWSAXMA",
+   "title": "Von der Leyen condemns assassination attempt against U.S.-Ukrainian citizen in Denmark, pledges new EU security strategy",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92MJ8F9QMAHPMD6A51",
+   "title": "US-Berichte: Wieder Hackerangriff auf FBI",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE92X37S3HK6SH6M03DV",
+   "title": "Mexico captures FBI-wanted cartel boss in military raid",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7YZVQZ01FWX5KVETRDZWT4E",
+   "title": "16 killed, 10 injured in W. Kordofan shelter drone strike",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z0GG105FQMMQE2G9XA9WSC",
+   "title": "20 years after his murder in Britain, Alexander Litvinenko's wife writes memoir to remind of Russian threat",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE9283D8WJNXP7T5MG10",
+   "title": "Russia says Kaliningrad-bound ship struck by drones in Gulf of Finland",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7Z9WE923XADAHQ2HF97B5E6",
+   "title": "Une \"attaque de drone\" contre un cargo russe détectée dans le golfe de Finlande",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZBQKWCJYRHGK2MVS3T32ZD",
+   "title": "Al-Qaeda affiliates calling to ’emulate’ attempted flydubai hijacking, US said to warn",
+   "label": [
+    "no",
+    "threat"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "US warning about AQ propaganda; no incident"
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZCDSF984BR2F0DN0T7MWP9",
+   "title": "Two killed by gas explosion in apartment building in Russia’s North Caucasus",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZCQDCAEDPR0HYMP5Z38AGE",
+   "title": "Russian forces attack Odesa region, civilian infrastructure damaged",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZEG8YFFFRYY64SBP9BTS9P",
+   "title": "El ejército israelí mata a tres personas al bombardear un vehículo que distribuía ayuda humanitaria en Gaza",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZFZRN8ZEPZB6VQNK5NAEHG",
+   "title": "IDF: Falsely presented as aid workers: The IDF struck three Islamic Jihad terrorists in the northern Gaza Strip",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "IDF strike on PIJ members: state"
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZHAKR861S1D0KZBX3R75MG",
+   "title": "Ворог майже 30 разів атакував Дніпропетровщину, є п’ятеро поранених",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZJJM10J12YRGZR94EQVG03",
+   "title": "Фінляндія заявила про ймовірне порушення повітряного простору російським гелікоптером",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZKC4E0PW35YZ7RKYVSM0T2",
+   "title": "Roberto Saviano, auteur de « Gomorra » : « Le suicide de l’ancien chef de la police italienne Gianni De Gennaro est un choc immense »",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZMGW704FKD7J5GKBK9CVYQ",
+   "title": "Trump warns of US bankruptcy threat over US debt ceiling",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZN4K2GZ0YC66CHGCYE2KBB",
+   "title": "Russian Military RoRo Attacked by Drones in the Baltic Near Finland",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZNG938X506B7JS3WH0PM9E",
+   "title": "Russia-bound ship attacked in Gulf of Finland",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZQS178WKG1PDHXSVK74PWB",
+   "title": "Explosions reported near Russian Baltic Fleet base in Kaliningrad Oblast amid drone alerts",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZSPG0RR2JEQ7V6TEWTCTN6",
+   "title": "NOTE: Contrary to reports, there are no missile launches identified from Khuzestan / Ahvaz at this time.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "DENIAL: no missile launches"
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZSWS684AWQR7AYWX0GQQGP",
+   "title": "Powerful explosion heard from sea near Sirik in southern Iran — agency",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZV3FF8RSMQ7CMMH85JQHXB",
+   "title": "Finnish military sees likely Ukrainian involvement in attack on Russian ship in Baltic Sea",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZZ7TTGMVSWRYNYEMQYV9RW",
+   "title": "IRGC attacked two US Patriot radars in Bahrain",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M7ZWGNRGEWV864Q6EPS8SNC5",
+   "title": "— 🇮🇷/🇾🇪/🇰🇵 NEW: North Korean military advisors, alongside IRGC and Hezbollah commanders, are assisting the Houthis – The Atlantic",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M801JGF815SD600FN13MWNS5",
+   "title": "Guasave despierta hecha una zona de guerra: “El hospital del IMSS estuvo secuestrado por sicarios y luego llegaron los militares”",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M808YN3RFX5AFVMY7KJ3DA0M",
+   "title": "\"Diré que no es bueno\": Trump se refiere al supuesto ciberataque a una base de datos del FBI",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80GHX9G5DCGFJA0WTGSQJ7X",
+   "title": "‘Horrific’ ICE arrests at Seattle airport jet bridge rattle passengers, fuel outrage",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80J77B86Q5T21SPTZJKY9D2",
+   "title": "Man found dead on Flinders Island believed to have been shot by officer, police say",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80M650R3DK378AR2RGCBH91",
+   "title": "Ukrainian drones reportedly strike Russian National Guard facility in Krasnodar",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80PYSY0X0MNVGZ53TF5YZK3",
+   "title": "Mali: des jihadistes du JNIM attaquent l’armée et ses supplétifs dans la région de Ségou",
+   "label": [
+    "possible"
+   ],
+   "cc": "ML",
+   "place": "Ségou",
+   "attr": [
+    "claimed"
+   ],
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "JNIM attack on army positions: insurgency (doubt terrorism proper)"
+  },
+  {
+   "pool": "platform",
+   "id": "01M80QE54R56Q923GPCAPHCC13",
+   "title": "Au Portugal, des manifestations contre les faibles salaires et l’explosion du prix des logements",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80SCDARWF622AQCJ4EJ751E",
+   "title": "'We live in fear' — Russian attack near Kyiv kills 2, leaves families waiting as rescuers search rubble",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80SJHM0ZG6NRGA7KXMKM5JM",
+   "title": "Last local terrorist killed in Kashmir. Why security forces aren’t celebrating",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80V6PJ8NJ1CXCWYM24VE3H8",
+   "title": "Police say man whose body lay undiscovered in Sydney bushland for 12 days was killed in suspected hit-and-run",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80XQ7Q0ZHYSAB31CAA79T1G",
+   "title": "Dozens missing after fire at Indonesian factory",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M80Y7Q20SR25J15Z46RNSE80",
+   "title": "Dozens missing as deadly fire hits Indonesian candy factory",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M813H7VR2G6WNVKQKD1YFWCB",
+   "title": "Indonesia factory fire kills three, 36 missing",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M826G8ERX97BHVXGX9V7DFCF",
+   "title": "'Danger seems greater all the time': Ukrainians search for missing after Russian strikes",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M811E8A04V3AQCBJDCBWNQJB",
+   "title": "Russian forces attack infrastructure facilities in Dnipropetrovsk region",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M811GKG8X78V3X1E03S71HC8",
+   "title": "Fire at confectionary factory in Indonesia leaves at least three dead and dozens missing",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8132P1G8CKP2S3KB4X7R59B",
+   "title": "Man arrested after Tsim Sha Tsui crash kills 1 pedestrian, injures 3",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8160QT0PR3CRS75PM9BDBR5",
+   "title": "Lithuania denies involvement in attack on Kaliningrad region following Russian allegations",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "denial of involvement; war event"
+  },
+  {
+   "pool": "platform",
+   "id": "01M816AEBGEJ6CXZH66TK9HV1J",
+   "title": "7 killed, 10 injured in fresh attack in Duk",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8177690EZJGYQQ8CHTFPGZB",
+   "title": "Russians attack energy infrastructure in Zhytomyr region four times in one day",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M817Z0Z8AT1G36JF03XCF9DG",
+   "title": "What’s behind Iran’s escalation of attacks in the Gulf?",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8189D08CKYJ198HDR2Y8FQA",
+   "title": "Palestinian homes, cars set ablaze in attacks decried by Eisenkot as ‘Jewish terror’",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "PS",
+   "place": "West Bank",
+   "attr": [
+    "suspected",
+    "unknown"
+   ],
+   "confirmable": true,
+   "dup": "settlers-wb",
+   "follow": false,
+   "note": "settler arson on Palestinian villages; 'Jewish terror' (politician)"
+  },
+  {
+   "pool": "platform",
+   "id": "01M81G1KCG21AMBPQVP9QMFBHB",
+   "title": "Russia-bound ship still on fire after attack in Gulf of Finland",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M819MJV0C3P0D7N62K3FF7SH",
+   "title": "Restored wells bring life back to Hebron’s occupied Old City",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M819NXT0T44T6G4WSAEAGVJ7",
+   "title": "War update: 131 clashes on frontline over past day, most attacks in Pokrovsk direction",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81ADQH0DXPKBJYDCBBYY8RH",
+   "title": "حمله به عضو حزب دموکرات آزاد آلمان در تجمع حامیان فلسطینیان",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81APWG0MGCCB5J7WBEB72T5",
+   "title": "Russia launches approximately 2,700 drones, nearly 1,460 glide bombs, and 165 missiles at Ukraine in one week – Zelensky",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81BZ1N0Y7P50PBGAB2V3ZBZ",
+   "title": "فنلندا ترصد هجوما بطائرة مسيّرة على سفينة شحن روسية في بحر البلطيق",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81CA170B5WTVMTFZQPWA1KB",
+   "title": "Cisjordanie : enquête ouverte par les autorités israéliennes après des attaques de colons ; Gadi Eisenkot dénonce un « terrorisme juif »",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "PS",
+   "place": "West Bank",
+   "attr": [
+    "suspected",
+    "unknown"
+   ],
+   "confirmable": true,
+   "dup": "settlers-wb",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81CMWW0AA1K7AYEJ04R0YM4",
+   "title": "Former Italian police chief found dead",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81D0EZR40BYPDMJ3BR824DM",
+   "title": "🚀✈️ Russian Aerospace Forces carried out FAB-500 glide bomb strikes on a crossing near Chervonyi Oskil and a command post of Ukraine’s 128th Mountain Assault Brigade in Dymy trove.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81DEF7GSQDGRMX6NDK2MRQB",
+   "title": "Russian cargo ship still on fire off Finland after drone attack",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81DGDQGTC9XGBYEAV69SPY9",
+   "title": "ما تداعيات الهجوم على السفينة الروسية؟",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81DPPX005SFEW3V5NF8AVK4",
+   "title": "🇺🇦 Ukraine’s rapidly growing defense industry is under threat from funding shortages, labor shortages, and Russian strikes — WSJ.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81E2XH04X97C1GQ6EGSB1VC",
+   "title": "Fire on Russian cargo ship off Finland remains unextinguished after attack",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81WWSK0E3YQH3TB014TPY43",
+   "title": "Suspected Drone Attack Caused Explosion On Russian Ship At Benghazi Port",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81ES0J0P8637WHVMZEKH5NV",
+   "title": "Aftermath of FAB-250 glide bomb strikes on Sloviansk.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81EWWJRMP4TT2F7A261MM3C",
+   "title": "Arrestations de l’ICE dans un aéroport : le gouverneur de Washington dénonce une police de l’immigration « hors de contrôle »",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81FFP4R2KKWB65QVRK3019P",
+   "title": "Russian ship attacked by drone in Baltic Sea off Finland",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81G1Q9GEG51H0JT32HTJ6T5",
+   "title": "La Finlande fait état d'une attaque de drone ukrainien contre un cargo russe en mer Baltique",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81GNZQGR7ZH74HP7Q3GBZRJ",
+   "title": "ربع طن من المتفجرات.. لبنان يعلن ضبط شحنة مهربة من سوريا واعتقال 3 أشخاص",
+   "label": [
+    "no",
+    "arrest"
+   ],
+   "cc": "LB",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": "leb-explosives",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81GTT10N3MJR5N6TF63TZKX",
+   "title": "Russians attack Zaporizhzhia, leaving one killed",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81J18G0DXZEJPG5M09JY7F5",
+   "title": "آتش‌ گرفتن کشتی باری روسیه در خلیج فنلاند پس از حمله پهپادی",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81JK8NGMYMNETR41WV7Q5TF",
+   "title": "EACJ steps into Somalia constitutional crisis over president term extension",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81MNJQR8QXFYB0T71KGCCSN",
+   "title": "عاجل | الأمن العام الأردني: تعرض أحد أفراد القوات المسلحة لإصابة بعد طعنه بأداة حادة",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "JO",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "soldier stabbed; motive unknown"
+  },
+  {
+   "pool": "platform",
+   "id": "01M81ZZDV0D113ZSQZ9RBENAJS",
+   "title": "Drone strike damages UN premises in Khartoum",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81P1ZMGD04TK0WG0XBJZGTV",
+   "title": "L’Italie secouée par le suicide de l’ancien chef de la police Gianni De Gennaro",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81PDSJ85VT2A9V14GHAHTAR",
+   "title": "Saudi Arabia intercepts drone, missile as Houthis report attack on Sanaa",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81PVC4GWFSBGKYFVJW7BRXG",
+   "title": "Man who killed three during psychotic episode ‘had been released after catalogue of failures’",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81QSKX8MNVPZBEJTAXHZPDX",
+   "title": "Four injured in Ukrainian drone attacks on Russia’s Belgorod Region",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81SBTBGFDB2VPWQFDEWKSQG",
+   "title": "Russian attacks cause 'serious damage' to Odesa power grid as outages disrupt city",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81WX0DRBA7EMJ69Y73JZ94V",
+   "title": "Lebanese army arrests three accused of smuggling explosives from Syria",
+   "label": [
+    "no",
+    "arrest"
+   ],
+   "cc": "LB",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": "leb-explosives",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81Z2QW037W2GRTGQSPGZ6H2",
+   "title": "Ворог атакував магазин у Вишневому - одна людина загинула, ще троє поранені",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81ZV170X0HF9CFCVJPCT5VK",
+   "title": "الحوثيون يقتلون 13 تربوياً ويدمرون 9 مدارس في تعز خلال أكتوبر https://hdth.tv/0g3zg",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M81ZY6S0RJ6GSMZN373SEB62",
+   "title": "Man arrested in Hong Kong over dog found hanging from tree on Tai Po trail",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8202GF80QP6T596XGCFE3SK",
+   "title": "—❗️🇺🇸/🇮🇷 NEW: An unidentified tanker was struck in the Gulf of Oman, UKMTO reports",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82116WRYRQ49D5K3PAV9A8Y",
+   "title": "3 TTP-linked terrorists killed in village on outskirts of Peshawar: CTD",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M822B8K81WZYX1XJ4MM6S6RE",
+   "title": "Man died after Ukrainian drone attack on his car in Bryansk Region",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M822MX68Y148RXSR7ZD5WKPX",
+   "title": "Un carguero ruso sancionado sigue ardiendo un día después del ataque de un dron en el golfo de Finlandia",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82B8RB0PD2ZHM68DTR8XVTJ",
+   "title": "Десятки загиблих і поранених внаслідок ударів РФ по Україні",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M823YCB051WK70Q9VMWZJRYE",
+   "title": "У Вишневому кількість жертв через атаку РФ на супермаркет зросла до двох",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M824P620AQ9WFQNECX9FEJB4",
+   "title": "У Білоцерківському районі через російську атаку загинув чоловік",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M824VA408AF2NNXEWKYC4TH3",
+   "title": "مقتل أربعة أطفال في انفجار لغم شمال غرب سوريا https://hdth.tv/7mou1",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M825XNQGBDSSX9DQXRY7V62H",
+   "title": "Le Pen denies receiving leaked information from French interior ministry official",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M827ABDG92G9ZCX79713CEB6",
+   "title": "⚡️Yemeni media:",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M827AM6R56WD1XVTNYQZJN5G",
+   "title": "Civilians killed in RSF drone strikes in Sudan",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M827KT503M2708V4GBNS40N3",
+   "title": "Hyderabad Police issue alert over terror threat email; security checks conducted at key locations",
+   "label": [
+    "threat"
+   ],
+   "cc": "IN",
+   "place": "Hyderabad",
+   "attr": null,
+   "confirmable": false,
+   "dup": "hyd-threat",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8284S40DZRRH7G29EDCEQV0",
+   "title": "A Ukrainian Mirage 2000 pilot shot down a Russian Geran-4 jet-powered kamikaze drone with 30 mm cannon fire.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M828B5785ZV9DKAM6ERD001M",
+   "title": "التلفزيون الرسمي: إيران تكشف عن منصّة جديدة لإطلاق الصواريخ https://hdth.tv/4rd5j",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M829H23RH61DSHWYFQ821FHQ",
+   "title": "⚡️'Routine shopping trip turned tragedy' — Russia attacks supermarket during working hours, killing 2, injuring at least 8.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82A375G7X84637VDJY1H9MR",
+   "title": "Війська РФ вдарили по Слов’янську, загинули двоє людей, ще троє поранені",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82ZR8X0N59KXB7NW1X9B630",
+   "title": "Polish authorities find Russian missile remains at three sites following airspace incursion",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82AGYM0WTXECCRGWRNYN4VV",
+   "title": "Russian attacks on Kharkiv continue, strike reported in one district",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82AS69G6E8DYPDT1JMQTJVQ",
+   "title": "چند دقیقه پیش از گفت‌وگویم با وحید صابری، در نزدیکی محل زندگی ما در کابل حمله انتحاری شده بود. آن شب در خانه تنها بودم و دلهره داشتم، اما از قبل با او برای مصاحبه قرار گذاشته بودم.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "essay mentioning a past Kabul suicide attack"
+  },
+  {
+   "pool": "platform",
+   "id": "01M82AVRAGVGDNX2E1ZBJSXW20",
+   "title": "3 killed and 1 wounded in shooting at Ohio baby shower, police say",
+   "label": [
+    "no"
+   ],
+   "cc": "US",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": "ohio-shooting",
+   "follow": false,
+   "note": "domestic dispute"
+  },
+  {
+   "pool": "platform",
+   "id": "01M82AWXE025WD0MRNFY9X5W4F",
+   "title": "Bahrein denuncia un ataque iraní a una instalación industrial; dos petroleros se incendian en Ormuz",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82CCBZRRSJ98CHM4M826XP9",
+   "title": "Man injured in crocodile attack near Chidambaram",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82CSMSGNA8PTH67R18MSCGX",
+   "title": "Washington governor calls ICE 'out of control' after Seattle airport arrests",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82XP2QR3PXTV3BQ01R5M1PV",
+   "title": "Greek Health Minister Adonis Georgiadis on Israel and the Gaza war:",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82DMWVRT4KYRB0VZGQ6MSHE",
+   "title": "مقتل 5 أطفال بانفجار لغم من مخلفات الحرب في ريف إدلب",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82F3PX8FFHGG19YJ5WP45YB",
+   "title": "الرئاسي اليمني يدعو لموقف دولي حازم من تهديد الحوثي للملاحة الدولية https://hdth.tv/0zhmw",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82FV3Y0RB8PP3624X7XTBQ3",
+   "title": "Внаслідок російської атаки на Слов’янськ Донецької області загинули двоє людей, ще троє дістали поранень.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82FVQF0684K1JXK25591VPH",
+   "title": "منظمة الصحة: قتال قرب منطقة تفشي إيبولا في الكونغو يعرقل جهود الاستجابة https://hdth.tv/w8284",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82FWA0RW0N1QBV4M23290DJ",
+   "title": "Wanted man held after 14 months for mob attack on Delhi police team in Chhatarpur",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82G9180MWFP1NHHQ26MTJ9M",
+   "title": "Kindergarten in Gorlovka damaged in Ukraine’s drone attack",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82GZVQ09HHKENK8FTFN507E",
+   "title": "Police arrest weed shop staff over licence breach",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82HRDV886CA9ZM22KWYX38A",
+   "title": "— 🇾🇪/🇸🇦 WATCH: Ansar Allah (Houthi) forces have released footage showing what they say are ammunition and weapons depots seized from Saudi-backed mobilization camps in Al-Khawjah during the “Valor an…",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82JKKZ03SK8JT3B8A6K2ZB2",
+   "title": "Israel’s Eisenkot slams ‘Jewish terrorism’ after attacks by settlers in West Bank",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "PS",
+   "place": "West Bank",
+   "attr": [
+    "suspected",
+    "unknown"
+   ],
+   "confirmable": true,
+   "dup": "settlers-wb",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82KCQNR2PV3HK64637GQ8CJ",
+   "title": "IDF said to warn Netanyahu an Israeli attack on Iran could spark multifront war",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82N5D50BJGSJQ4W8GYDMRFM",
+   "title": "New footage of the tanker explosion off the coast of Libya.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82N9A50S0PS7P0AP68GT44Q",
+   "title": "Nigeria: des dizaines de Peuls tués dans des représailles après une attaque de «bandits»",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "NG",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "bandit attack + reprisals"
+  },
+  {
+   "pool": "platform",
+   "id": "01M82NJ2DR245KX2TG235ERT11",
+   "title": "ترامب: إيران أصبح أكثر عدوانية بعد فوز الديمقراطيين بالانتخابات https://hdth.tv/y4c40",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82Q1D2G4N98BNFW351GSB1C",
+   "title": "عاجل | وسائل إعلام تابعة لأنصار الله #الحوثيين: هجوم على مدينة الحديدة",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82QNBR0KTPYKVY2SVX3YQ5J",
+   "title": "Trump amenaza con nuevos ataques contra Irán mientras se intensifican los bombardeos en el Golfo Pérsico",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82V6EWGFPNCQ00AGQ9CRGN0",
+   "title": "Iran war live: Tankers set ablaze in Hormuz as IRGC warns of unrest threat",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82V7M00RHQGBH994K2XB6YR",
+   "title": "Taiwan banks deploy AI to prevent cyberattacks",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82Y0DSGBB04VS3DQESCQCAA",
+   "title": "IRGC deputy commander warns of US-led plot to fuel unrest and destabilize Iran",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82Y2E80C8Q58GNF6991H46H",
+   "title": "Demonstrators near Glasgow, Scotland, UK, are protesting outside a Shivat Zion fair promoting emigration to Israel and occupied West Bank illegal settlements.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82Y4BRRT42QSCECJX9650KT",
+   "title": "US army to blow up bomb-making chemicals despite safety concerns",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82ZR130KT7KWMVMW3JQ6WXS",
+   "title": "Novoshakhtinsk oil refinery reportedly burning after Ukrainian drone attack",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M82ZXHV85H0C4CK19SRHQ259",
+   "title": "West Bengal BJP president Samik Bhattacharya calls for protest over attacks on Hindus in Bangladesh",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8307M3RV569SFZSMHVFJZZT",
+   "title": "Underground in Ukraine begins mass arson attacks on railway infrastructure",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "UA",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "TASS: 'underground' rail arson"
+  },
+  {
+   "pool": "platform",
+   "id": "01M83080T0V6N5V8TVSC1QFPAB",
+   "title": "Reportan ataque con explosivos contra subestación de Policía en Campo Dos, Tibú, Norte de Santander: esto se sabe sobre las detonaciones",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "CO",
+   "place": "Tibú",
+   "attr": [
+    "unknown",
+    "suspected"
+   ],
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "explosives vs police substation"
+  },
+  {
+   "pool": "platform",
+   "id": "01M8341KE05MQAXT8K88J87E1R",
+   "title": "Electricity restored in Rivne region following Russian attack",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M834620GNBZJMBP3C3RMX79C",
+   "title": "Germany's army ​began its first tactical tests of kamikaze drones during drills on Sunday in ‌Lithuania",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M835HXARX1BBG3XE0V3HMXDY",
+   "title": "4 killed and 10 injured in a Saudi strike targeting a building belonging to the telecommunications corporation in Hodeidah",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M835PPN0ZAWKQH0VNMDHZV2E",
+   "title": "Two More Tankers Hit Off Oman as Houthis Threaten Saudi Red Sea Ports",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M836D8ARKFSVCED0A08JBVXV",
+   "title": "В Альметьевске в Татарстане звучит воздушная тревога: местные жители сообщают о взрывах и работе ПВО",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83B52QGGGH3MA77X4H0J73Y",
+   "title": "Child rescued in Ukraine after Russian drone attack kills 10",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83BN4D0E1P6PJFC4QKFXDGW",
+   "title": "У Пармі, штат Огайо, в результаті стрілянини загинули троє людей, ще одна дістала поранень",
+   "label": [
+    "no"
+   ],
+   "cc": "US",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": "ohio-shooting",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83D5VZ80VDGX67F6HY3XW7F",
+   "title": "Kenya: Several Vehicles Detained As Police, NTSA Intensify Nationwide Traffic Crackdown",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83D6AM0RXV7W8PA1V2FBTCA",
+   "title": "عاجل | إنترفاكس: هجوم بالمسيرات ألحق أضرارا بمنشآت تخزين للنفط في تتارستان الروسية",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83D884R0SY5DQEZHKAEADBH",
+   "title": "Kenya: Gachagua Gives IEBC Jan Ultimatum, Threatens Mass Action Over Election Concerns",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83D9AAGMC5GVHQHQEAHHTDR",
+   "title": "More than 80 UAVs were destroyed or neutralized over Russia’s Rostov region overnight. However, the attacks were not without consequences.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83DNE0RZFVC5NA261VPVV4N",
+   "title": "مسعد بولس: هجمات المسيّرات على الخرطوم تسببت في أضرار جسيمة وهددت المدنيين https://hdth.tv/2s2f4",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83E1YD8CBNBG1N8M8GDPTHW",
+   "title": "Zimbabwe: Uebert Angel Arrested Over Indecent Assault and Sodomy Allegations",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83EEVG0SNHH9H6KN3S5XPNY",
+   "title": "Woman injured in drone attack in Zaporizhzhia",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83EM0H86SDYHA35ZG9WT81Z",
+   "title": "إعلام: إسرائيل لا تزال تضغط على إدارة ترامب لشن هجوم ضد إيران https://hdth.tv/bjsva",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83EMQ00A89SBKXB5W6R9BQ3",
+   "title": "Presidente anunció captura de alias Canasto, señalado explosivista de las disidencias de Iván Mordisco: lo vinculan con cinco atentados en el Huila",
+   "label": [
+    "arrest",
+    "no"
+   ],
+   "cc": "CO",
+   "place": "Huila",
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "capture of dissident explosives expert linked to 5 'atentados'"
+  },
+  {
+   "pool": "platform",
+   "id": "01M83F833RQ7HAAAWZN8KSRM2E",
+   "title": "Nigeria: Govt Intensifies Efforts to Cut Off Terrorism Financing",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83FDGY8H6R8V565DSBQDCE5",
+   "title": "تحذير إسرائيلي من اتساع \"الإرهاب اليهودي\" بالضفة الغربية",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "PS",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": "settlers-wb",
+   "follow": false,
+   "note": "warning article about settler violence"
+  },
+  {
+   "pool": "platform",
+   "id": "01M83FDZK0Y6CCWJ89X0FMADSS",
+   "title": "Війська РФ за добу завдали 66 ударів по Сумщині, загинула дитина",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83FYQQ8MEGM0R07CTX4J2AZ",
+   "title": "Ukrainian sources report an attack on an oil refinery in Perm and have published photos of the aftermath.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83G0HB0Q7PQ63XXW3VQYSD5",
+   "title": "روسيا تستهدف سفينة شحن في البحر الأسود محملة بمعدات عسكرية لأوكرانيا https://hdth.tv/41wkh",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83GB09RHZDTG52R0M2BY7Q3",
+   "title": "عاجل | القوات الجوية الأوكرانية: إسقاط 134 مسيرة روسية من أصل 153 خلال هجوم الليلة الماضية",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83GTJB82HG6YS7T4KAZBCK3",
+   "title": "عاجل | حاكم مقاطعة روستوف الروسية: إسقاط أكثر من 80 مسيرة خلال صد هجوم جوي على المقاطعة",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83GXH2G45XJZ93HECNCSE0D",
+   "title": "UN warns against turning Libya into ‘battleground for foreign conflicts’ after attacks on Russian, Maltese ships",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83H4XD0QY3SB5GZ8SP0V4TK",
+   "title": "'Out of control': ICE arrests at Seattle airport spark outcry",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83HFG8RHTCTAW7FR91QFPEM",
+   "title": "عاجل | إذاعة الجيش الإسرائيلي: ارتفاع اعتداءات المستوطنين خلال موسم قطف الزيتون في الضفة بنسبة 74% خلال عامين",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83JBYDRKM7BXDFN28B4BM6G",
+   "title": "Охота на беззащитных: ненависть и подлость боевиков ВСУ",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83K8NC0MVZY8TEXKY71C18H",
+   "title": "Red Sea tensions: How Djibouti is profiting from the global maritime crisis",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83KC7M8K0F0MM8VEWMNFXK1",
+   "title": "Al Mayadeen releases exclusive footage showing Martyr Lieutenant General Qassem Soleimani alongside martyred Hezbollah commander Haytham Ali Tabatabai and several other resistance leaders.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83MGYE0WCH86GYK3V9QEQDT",
+   "title": "الحوثيون: مقتل وإصابة 59 مدنيا خلال 48 ساعة في 5 محافظات يمنية",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83MR9S8PXKG936P7CAXY7FJ",
+   "title": "▶️ В США на газовом трубопроводе произошел взрыв, сообщил телеканал WBRC.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83MYTRR9SNBC7TR3SJ9KTWN",
+   "title": "NEW: Western intelligence agencies believe Russia could launch a nuclear-armed satellite into space before the end of 2026.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83N8S483PT7NFJYW6N8JJAC",
+   "title": "Palestinians injured, abducted as Israeli forces and settlers attack West Bank towns",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "PS",
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83NR3BRNHN64YE39AQJNXBE",
+   "title": "هجوم بنغازي بين الاستنزاف والردع.. ما حدود التلويح الروسي بالنووي؟",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83P9HYRJ48CNYRQFAXKN9Y5",
+   "title": "📋 Chronology of attacks on Russian and Russia-linked vessels in the Mediterranean Sea from late 2025 to late 2026:",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83QDCE8XRYK99G14E1HV5A4",
+   "title": "Ukraine claims responsiblity for drone attacks on Russian ships off Libya",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83QDS4GW1ZZ2W7G2J44WA2K",
+   "title": "At least 23 killed in cattle camp attack in Tonj East",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83R2F80TCBHZR88ARBQEE52",
+   "title": "В Одесі на пожежі загинули двоє дітей, ще троє людей постраждали",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83R2F80P3RSDG3CYDQ38HJD",
+   "title": "Drones attack Kaleykino oil pumping station in Russia's Tatarstan – social media",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83RNKHR3FQV18WBXM34J9P7",
+   "title": "Sinaloa: detienen a ocho de los Beltrán Leyva en ataque a militares de élite",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83RZRR0KYF2YYK5FFYBCGEH",
+   "title": "Enterprise, private homes damaged in Russian attack on Vinnytsia region",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83S0AAG6QWYZQ9S6B13VJPT",
+   "title": "Hyderabad bomb threat email sender used Europe-based VPN, temporary email account",
+   "label": [
+    "threat"
+   ],
+   "cc": "IN",
+   "place": "Hyderabad",
+   "attr": null,
+   "confirmable": false,
+   "dup": "hyd-threat",
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83S9Q3GRS1DZBPFQZBKGW86",
+   "title": "В Димері загинуло 11 людей після удару БПЛА «Герань-4», двох вдалося врятувати з-під завалів, — голова КОВА Тимур Ткаченко",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83SP7G0AYQMX3RFNBHWP34K",
+   "title": "Kenya: Two Killed, Seven Houses Torched in Suspected Retaliatory Attack in Isiolo",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83SPW081PAJE68R50845C9Z",
+   "title": "BoSS threatens closure of unlicensed forex dealers",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83T3DC0D8H2Y0B82AV32ZQG",
+   "title": "'No safe routes' — Ukraine sinks Russian corvette in drone attack off Libyan coast",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83T71JRQVH4AMQAZWC6JATF",
+   "title": "Far-right Israeli Finance Minister Bezalel Smotrich has called for forcibly displacing Palestinian refugees from Gaza to other Muslim-majority countries, claiming that dozens of millions of refugees…",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83V13J8HA3YKRX4ZGMT7KCB",
+   "title": "Reportan explosiones en el Comando de la Policía de Cúcuta, Norte de Santander: habría sido atacado con drones",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "CO",
+   "place": "Cúcuta",
+   "attr": [
+    "unknown",
+    "suspected"
+   ],
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "drone/explosives vs police command"
+  },
+  {
+   "pool": "platform",
+   "id": "01M83VXGR025MPQSWF3P702JXF",
+   "title": "🚨 Один человек погиб в ЛНР из-за атак ВСУ, еще шестеро ранены, в том числе трое детей, сообщил Пасечник.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83W111R2SHX0W4NRH5211MG",
+   "title": "7 killed, 2 injured as stone-laden truck overturns onto mini-truck in Bahawalpur",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83W274GZ8HMEB0P4H4D99YC",
+   "title": "Zelenskyy says Ukraine behind attacks on Russian ships near Libya",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83W3D78KAF1MF1ZGVJ5K1AG",
+   "title": "Death toll rises after deadly Russian attacks on Ukraine",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83W9NDGV92P6A8C863MK2A1",
+   "title": "Duterte’s drug war is state-sanctioned, killed over 8,000 – Truth Commission",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83WQHR8C5RSTR6HYNP5DRBN",
+   "title": "Thousands displaced after deadly storm hits Brazil town",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83WR77R5WJNKZD47NQ9JNHT",
+   "title": "Breaking | Adel al-Helou, an UNRWA employee, was killed in an Israeli airstrike in the Al-Tawbah area of Jabalia refugee camp in northern Gaza while carrying out his duties.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83X9YM0NQQM22FSFG6PKG4Q",
+   "title": "Anti-Annexation Platform: Minsk meeting between Georgian and Russian officials threatens to undermine Geneva talks",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83XJVS0AACEN823NAPKXF14",
+   "title": "One civilian killed, 10 wounded in Ukrainian attacks on Belgorod Region in past day",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83ZM9H0446E8FRE4RB8YF8X",
+   "title": "More than a year into the so-called ceasefire, Palestinians in Al-Maghazi refugee camp continue to face Israeli attacks, home demolitions and forced displacement. From explosive-laden boxes destroyin…",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M83ZSDK0C8QKQ5KGDXKBJAAN",
+   "title": "عاجل | الكرملين: نشعر بالقلق إزاء انتشار النشاط الإرهابي في منطقة البلطيق عقب الهجوم على السفينة سبارتا 2",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8400RY8T2SZYMATBPSTZJ18",
+   "title": "NATO, Ukraine creating threats to nuclear security, NPT: Medvedev’s statements",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "platform",
+   "id": "01M8408RSRVTA8742VG4P1EPW1",
+   "title": "Canadian police in Montreal have arrested former Israeli soldier Robert Moisescu, 58, more than two months after he assaulted a photojournalist during a pro-Palestine demonstration.",
+   "label": [
+    "no"
+   ],
+   "cc": null,
+   "place": null,
+   "attr": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-621277",
+   "title": "Terrorists wreaking havoc in Borgu area of Niger State - Residents\n\nAU \t\nMaimuna Raji Egigogo",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "NG",
+   "place": "Feyi in Borgu kingdom",
+   "lat": 10.358612,
+   "lon": 4.128719,
+   "date": "2026-02-12",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "JAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-630763",
+   "title": "Unidentified assailants shot dead a poet and former government teacher, Abdur Rehman alias Amn, in his hometown Pishlor under Martung Police Station in Shangla District of Khyber Pakhtunkhwa on the morning of June 1, reports Dawn.",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Pishlor under Martung Police Station in Shangla District of ",
+   "lat": 34.65304,
+   "lon": 72.71611,
+   "date": "2026-06-01",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-644517",
+   "title": "Suspected Islamists kill Nigerian villagers collecting firewood",
+   "label": [
+    "attack"
+   ],
+   "cc": "NG",
+   "place": "Ala and Musune wards of Marte Local Government Area of Borno",
+   "lat": 12.36532,
+   "lon": 13.8293,
+   "date": "2026-10-01",
+   "attr": [
+    "suspected"
+   ],
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-633515",
+   "title": "30 Killed in Attacks On Four Niger Mosques",
+   "label": [
+    "attack",
+    "possible"
+   ],
+   "cc": "NG",
+   "place": "Sabu Gangale community in Borgu LGA of Niger State",
+   "lat": 10.904309,
+   "lon": 4.129715,
+   "date": "2026-06-18",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "JAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-639640",
+   "title": "ISKP Claimed Responsbility for the targeted killing of an individual in Khar, Bajaur",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Khar, Bajaur",
+   "lat": 34.613448,
+   "lon": 71.938726,
+   "date": "2026-09-03",
+   "attr": [
+    "claimed"
+   ],
+   "group": "iskp",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-634656",
+   "title": "Tehreek-e-Taliban Pakistan (TTP) on July 3 issued a statement along with a video claiming responsibility for the killing of Shafiq, son of Maisar Jan, in the Miro Dara area of Tirah tehsil",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Miro Dara area of Tirah tehsil",
+   "lat": 33.8125,
+   "lon": 70.676944,
+   "date": "2026-07-03",
+   "attr": [
+    "claimed"
+   ],
+   "group": "ttp",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-630066",
+   "title": "Mambasa: more than 30 civilians killed in May in a series of ADF attacks, PROTECTION PLUS denounces “an unbearable human tragedy”",
+   "label": [
+    "attack"
+   ],
+   "cc": "CD",
+   "place": "in the village of Kidini, the Mongalyema cell, Andifele grou",
+   "lat": 1.35,
+   "lon": 29.05,
+   "date": "2026-05-19",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities"
+   ],
+   "group": "is_drc_adf",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-629841",
+   "title": "9 dead in Mambasa after incursion attributed to ADF",
+   "label": [
+    "attack"
+   ],
+   "cc": "CD",
+   "place": "in the villages of Ntombilo and Malindi, located in the terr",
+   "lat": 0.90877,
+   "lon": 29.26024,
+   "date": "2026-05-18",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities"
+   ],
+   "group": "is_drc_adf",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-647967",
+   "title": "On October 31, Tehreek-e-Taliban Pakistan (TTP) claimed responsibility for the targeted killing of Syed Wazir, a resident of Gandao village in Kurram District of Khyber Pakhtunkhwa, reports Frontier Files.",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Gandao village in Kurram District of Khyber Pakhtunkhwa,",
+   "lat": 33.710172,
+   "lon": 70.340096,
+   "date": "2026-10-31",
+   "attr": [
+    "claimed"
+   ],
+   "group": "ttp",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-642430",
+   "title": "Khurshid Pandrani Raisani was fatally shot by unidentified armed assailants in the Kank Ziarat area of Mastung District of Balochistan, and later succumbed to his injuries at the Quetta Trauma Centre, reports Frontier Files on September 9.",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Kank Ziarat area, Mastung, Balochistan",
+   "lat": 29.794547,
+   "lon": 66.720678,
+   "date": "2026-09-08",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-625043",
+   "title": "ISKP Claims Killing of Alleged Pakistani Intelligence Informant in Bajaur",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Patak area of Bajaur district",
+   "lat": 34.613448,
+   "lon": 71.938726,
+   "date": "2026-04-11",
+   "attr": [
+    "claimed"
+   ],
+   "group": "iskp",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-611892",
+   "title": "A female teacher was shot dead while she was on way to her school in Sibi town (Sibi District) of Balochistan on January 15, reports Dawn.",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Sibi town (Sibi District) of Balochistan",
+   "lat": 29.04174,
+   "lon": 67.82394,
+   "date": "2026-01-15",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "BRAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-643362",
+   "title": "Unidentified terrorists opened fire on civilians in the Singar Top area of Upper Dir District in Khyber Pakhtunkhwa at approximately 7:15 p.m. on September 15, resulting in the death of one local resident and injuries to another, reports The Khyber Chronicles.",
+   "label": [
+    "attack",
+    "possible"
+   ],
+   "cc": "PK",
+   "place": "Singar Top area of Upper Dir District in Khyber Pakhtunkhwa",
+   "lat": 35.308785,
+   "lon": 72.046918,
+   "date": "2026-09-15",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-647811",
+   "title": "Pakistan Election Commission official shot dead in Khyber Pakhtunkhwa",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "near Girah Baluch in Tank district, which borders South Wazi",
+   "lat": 32.22075,
+   "lon": 70.34585,
+   "date": "2026-10-10",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-629847",
+   "title": "At least 17 people killed in ADF attack in Mambasa",
+   "label": [
+    "attack"
+   ],
+   "cc": "CD",
+   "place": "in the village of Alima, in the territory of Mambasa, Ituri",
+   "lat": 1.00424,
+   "lon": 29.16763,
+   "date": "2026-05-19",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities"
+   ],
+   "group": "is_drc_adf",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-635342",
+   "title": "Identificado joven hallado muerto en Algeciras",
+   "label": [
+    "no"
+   ],
+   "cc": "CO",
+   "place": "Huila  La Palomera sector of the Quebradón village",
+   "lat": 2.565103,
+   "lon": -75.255674,
+   "date": "2026-07-06",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "Algeciras = Huila, Colombia (not Spain)",
+   "ucdp": {
+    "type": "3",
+    "side_a": "FARC-EMC",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-630665",
+   "title": "Malian Quran teacher executed by suspected jihadists: sources",
+   "label": [
+    "attack"
+   ],
+   "cc": "ML",
+   "place": "Tonka, Timbuktu",
+   "lat": 16.12886,
+   "lon": -3.74776,
+   "date": "2026-05-21",
+   "attr": [
+    "suspected"
+   ],
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "JNIM",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-625038",
+   "title": "Plus de 10 morts et de nombreux disparus dans une attaque attribuée aux ADF à Nzaro en Ituri",
+   "label": [
+    "attack"
+   ],
+   "cc": "CD",
+   "place": "in the village of Nzaro, located about 90 km from Mambasa-ce",
+   "lat": 2.244601,
+   "lon": 28.79442,
+   "date": "2026-03-19",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities"
+   ],
+   "group": "is_drc_adf",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-631585",
+   "title": "Tres hombres fueron asesinados y luego abandonados con carteles de las disidencias en Cauca: es la masacre 55 en 2026",
+   "label": [
+    "attack",
+    "possible"
+   ],
+   "cc": "CO",
+   "place": "Santander de Quilichao department of Cauca village of La Pal",
+   "lat": 3.0,
+   "lon": -76.5,
+   "date": "2026-05-17",
+   "attr": [
+    "suspected",
+    "unknown"
+   ],
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "FARC-EMC",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-624250",
+   "title": "Three women of family killed by unidentified gunmen in NW Pakistan",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Qasmi area, within the jurisdiction of Harki police station ",
+   "lat": 34.45137,
+   "lon": 72.05538,
+   "date": "2026-03-22",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-646284",
+   "title": "Four unidentified bullet riddled dead bodies were discovered in two separate areas of Kalat District in Balochistan on October 11, reports Zrumbesh.",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "PK",
+   "place": "three bodies were recovered at Chhapar and one at Malangzai ",
+   "lat": 29.347934,
+   "lon": 66.63944,
+   "date": "2026-10-11",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "BRAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-637855",
+   "title": "Six abducted non-local labourers of Punjabi ethnicity were killed by Fitna al-Hindustan",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Nasirabad area of Turbat tehsil",
+   "lat": 26.06688,
+   "lon": 62.71339,
+   "date": "2026-07-30",
+   "attr": [
+    "attributed_by_authorities",
+    "suspected"
+   ],
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": "'Fitna al-Hindustan' is the state umbrella term: no single group",
+   "ucdp": {
+    "type": "3",
+    "side_a": "BRAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-613860",
+   "title": "The United Baloch Army (UBA) cadres carried out an attack on February 5 in the Sanni area of Kachhi District of Balochistan, killed a man, identified as Gul Muhammad Jatak, also known as Gullu, son of Sahib Dad Jatak, reports Zrumbesh.",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Sanni area of Kachhi District of Balochistan",
+   "lat": 29.153449,
+   "lon": 67.562212,
+   "date": "2026-02-05",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities",
+    "claimed"
+   ],
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "BRAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-620897",
+   "title": "Un muerto y un herido en ataque armado en zona rural de Arauca",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "CO",
+   "place": "municipality of Arauca village of El Rosario",
+   "lat": 6.68532,
+   "lon": -70.35449,
+   "date": "2026-02-14",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "ELN",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-637793",
+   "title": "Tehreek-e-Taliban Pakistan (TTP) killed two persons",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Muhammad Khel area of Boya tehsil",
+   "lat": 32.9575,
+   "lon": 69.886667,
+   "date": "2026-07-21",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities",
+    "claimed"
+   ],
+   "group": "ttp",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-629568",
+   "title": "Unidentified assailants opened fire near the library of Government Boys High School in Killi Jamaludini area of Nushki District in Balochistan on May 8 and killed school teacher Muhammad Akram Jamaludini, reports Zrumbesh",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Government Boys High School in Killi Jamaludini area of Nush",
+   "lat": 29.53766,
+   "lon": 65.97213,
+   "date": "2026-05-08",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "BRAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-643354",
+   "title": "Unidentified gunmen kill JUI-F leader in northwest Pakistan",
+   "label": [
+    "attack",
+    "possible"
+   ],
+   "cc": "PK",
+   "place": "Ping area of Wazir Sub-Division in Bannu District of Khyber ",
+   "lat": 33.14469,
+   "lon": 70.71961,
+   "date": "2026-09-15",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "TTP",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-628897",
+   "title": "The United Baloch Army (UBA) cadres killed an individual it identified as a state informer involved in the death of one of its fighters in Harnai District of Balochistan on May 1, reports Zrumbesh.",
+   "label": [
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Harnai District of Balochistan",
+   "lat": 30.166158,
+   "lon": 67.681111,
+   "date": "2026-05-01",
+   "attr": [
+    "claimed",
+    "suspected"
+   ],
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "BRAS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-629247",
+   "title": "Ituri: Civilian killed in Mambasa after refusing to pay ADF tax",
+   "label": [
+    "attack",
+    "possible"
+   ],
+   "cc": "CD",
+   "place": "in Ndioka, a locality of the Babila Bakwanza chiefdom, in th",
+   "lat": 1.35,
+   "lon": 29.2,
+   "date": "2026-04-30",
+   "attr": null,
+   "group": "is_drc_adf",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "IS",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-635102",
+   "title": "Four Fitna-al-Hindustan (FaH, a State term for Baloch insurgents) terrorists were killed by Security Forces (SFs)",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "PK",
+   "place": "Saran Tangi area of Quetta District",
+   "lat": 30.40851,
+   "lon": 67.19311,
+   "date": "2026-07-12",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "BRAS"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-637792",
+   "title": "Prominent peace committee member Haji Izzat Gul was killed",
+   "label": [
+    "possible",
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Karrapa area of Hangu District",
+   "lat": 33.531085,
+   "lon": 71.05934,
+   "date": "2026-07-21",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "TTP"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-628052",
+   "title": "Bombardeo en Catatumbo deja dos miembros del Eln muertos y destruye campamentos, reporta Mindefensa\n\n\nAU",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "CO",
+   "place": "village of San Martín, in the rural area of ​​El Tarra, Nort",
+   "lat": 8.560737,
+   "lon": -72.977457,
+   "date": "2026-04-19",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Colombia",
+    "side_b": "ELN"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-615247",
+   "title": "Muere un combatiente del ELN en combates con el Ejército de Colombia en su frontera con Venezuela",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "CO",
+   "place": "municipality of Tame, Arauca border region with Venezuela",
+   "lat": 6.39833,
+   "lon": -71.78389,
+   "date": "2026-01-27",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Colombia",
+    "side_b": "ELN"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-635767",
+   "title": "Escalating Israeli strikes kill five people in Gaza, medics say",
+   "label": [
+    "no"
+   ],
+   "cc": "IL",
+   "place": "Tuffah neighbourhood [Gaza town] + tent encampment for displ",
+   "lat": 31.516667,
+   "lon": 34.45,
+   "date": "2026-07-16",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Israel",
+    "side_b": "Hamas"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-636003",
+   "title": "A martyr succumbed to his injuries sustained in the Israeli airstrike on Deir al-Balah.",
+   "label": [
+    "no"
+   ],
+   "cc": "IL",
+   "place": "near the Japanese Bridge in al-Qarara area, north of Khan Yo",
+   "lat": 31.373891,
+   "lon": 34.340847,
+   "date": "2026-07-27",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Israel",
+    "side_b": "PIJ"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-630166",
+   "title": "Five Security Forces (SFs) personnel were killed when the Baloch Liberation Army (BLA) cadres launched a heavy ambush on a SF checkpoint in the Kardgah area of Mastung District in Balochistan on May 13, reports Zrumbesh.",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "Kardgah area of Mastung District in Balochistan",
+   "lat": 29.73421,
+   "lon": 66.45643,
+   "date": "2026-05-13",
+   "attr": [
+    "suspected",
+    "attributed_by_authorities"
+   ],
+   "group": "bla",
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "BRAS"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-646163",
+   "title": "On October 4, at least 15 terrorists, including ‘commander’ Mazdigari Marwat of Waziri group of Tehreek-e-Taliban Pakistan (TTP) were killed when Security Forces (SFs) neutralised an infiltration attempt across the Pakistan-Afghanistan border in the Ghulam Khan sector of North Waziristan District in",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "PK",
+   "place": "Ghulam Khan sector of North Waziristan District in Khyber Pa",
+   "lat": 33.135918,
+   "lon": 70.031568,
+   "date": "2026-10-04",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "TTP"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-645187",
+   "title": "Three soldiers, 16 militants killed in northeast Nigeria army operations",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "NG",
+   "place": "Garkida and Garaha, Adamawa state",
+   "lat": 10.40026,
+   "lon": 12.8896,
+   "date": "2026-09-30",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Nigeria",
+    "side_b": "IS"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-628526",
+   "title": "Four martyrs in the occupation's bombing of southern Lebanon, as evacuation warnings continue for 12 towns and villages.",
+   "label": [
+    "no"
+   ],
+   "cc": "LB",
+   "place": "town of Zalaya in the Western Bekaa region .",
+   "lat": 33.45917,
+   "lon": 35.66667,
+   "date": "2026-05-06",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Israel",
+    "side_b": "Hezbollah"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-627372",
+   "title": "Troops kill suspected Boko Haram fighter in Yobe, recover rifle, motorcycles",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "NG",
+   "place": "Lotori-Garbiya village, Tarmuwa Local Government Area of Yob",
+   "lat": 12.17837,
+   "lon": 11.80232,
+   "date": "2026-04-20",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Nigeria",
+    "side_b": "IS"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-635993",
+   "title": "One martyr and several injuries resulted from the Israeli occupation's bombing of a displaced persons' tent in the central Gaza Strip.",
+   "label": [
+    "no"
+   ],
+   "cc": "IL",
+   "place": "vicinity of the “Taba al-Nuwairi” area, west of the Nuseirat",
+   "lat": 31.447656,
+   "lon": 34.392875,
+   "date": "2026-07-22",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Israel",
+    "side_b": "Hamas"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-634651",
+   "title": "2 policemen killed in attack in NW Pakistan",
+   "label": [
+    "possible",
+    "attack"
+   ],
+   "cc": "PK",
+   "place": "near the Machni area along the Warsak Left Cana",
+   "lat": 34.186667,
+   "lon": 71.445,
+   "date": "2026-07-02",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "TTP"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-644385",
+   "title": "ELIMINATED: Muhammad Abd al-Aziz Muhammad Nagar, a terrorist in the military wing of Hamas.",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "IL",
+   "place": "in front of the Awqaf Mosque in the Al-Mawasi area, west of ",
+   "lat": 31.34822,
+   "lon": 34.256182,
+   "date": "2026-09-30",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Israel",
+    "side_b": "Hamas"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-639119",
+   "title": "Security Forces (SFs) killed five terrorists using quadcopter drone during an intelligence-based operation (IBO) in Khuzdar District of Balochistan on August 12, reports Frontier Files.",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "PK",
+   "place": "Khuzdar District of Balochistan",
+   "lat": 27.486797,
+   "lon": 66.587031,
+   "date": "2026-08-12",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "BRAS"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-624463",
+   "title": "8 martyrs in Israeli raids on Lebanon",
+   "label": [
+    "no"
+   ],
+   "cc": "LB",
+   "place": "town of Jebchit",
+   "lat": 33.365364,
+   "lon": 35.432621,
+   "date": "2026-03-30",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Israel",
+    "side_b": "Hezbollah"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-629579",
+   "title": "Seven militants, including two key commanders, were killed during search and clearance operations in the Shewa tehsil (revenue unit) and adjoining areas of North Waziristan District in Khyber Pakhtunkhwa on May 10, reports Dawn.",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "PK",
+   "place": "Shewa tehsil (revenue unit) and adjoining areas of North Waz",
+   "lat": 33.25507,
+   "lon": 70.480685,
+   "date": "2026-05-10",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Pakistan",
+    "side_b": "TTP"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-638768",
+   "title": "Burkina Faso: From Tougouri to Sebba, the fighting forces confirm their dominance over the terrorists",
+   "label": [
+    "no",
+    "ct_operation"
+   ],
+   "cc": "BF",
+   "place": "Mbanga area",
+   "lat": 13.87739,
+   "lon": -0.07336,
+   "date": "2026-07-16",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Burkina Faso",
+    "side_b": "IS"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-639206",
+   "title": "Matan a conductor de motocarro cuando se disponía a recoger su vehículo en San Antonio",
+   "label": [
+    "no"
+   ],
+   "cc": "CO",
+   "place": "San Antonio neighborhood of Soledad  intersection of Calle 2",
+   "lat": 10.91843,
+   "lon": -74.76459,
+   "date": "2026-08-16",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX100",
+    "side_b": "XXX100"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-621438",
+   "title": "YABATECH student shot dead in Lagos",
+   "label": [
+    "no"
+   ],
+   "cc": "NG",
+   "place": "WAEC bus stop in Lagos --- Yabatech area",
+   "lat": 6.497892,
+   "lon": 3.382923,
+   "date": "2026-03-03",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "Black Axe",
+    "side_b": "Eyie"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-640423",
+   "title": "Jornada violenta en Colima deja nueve muertos y un policía municipal herido",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "El Naranjo bypass",
+   "lat": 19.11695,
+   "lon": -104.34214,
+   "date": "2026-08-16",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX70",
+    "side_b": "XXX70"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-641040",
+   "title": "Jomayra Patricia, a stylist, dies after being shot in the Esthela Ortiz neighborhood of Culiacán.",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "Esthela Ortiz de Toledo neighborhood.",
+   "lat": 24.79032,
+   "lon": -107.38782,
+   "date": "2026-07-28",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "Jalisco Cartel New Generation, Sinaloa Cartel - Los Chapitos",
+    "side_b": "Sinaloa Cartel - Los Mayos"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-648789",
+   "title": "Asesinan a una joven en su casa",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "San José de la Escalera neighborhood",
+   "lat": 19.42847,
+   "lon": -99.12766,
+   "date": "2026-10-14",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX70",
+    "side_b": "XXX70"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-639195",
+   "title": "Asesinan a balazos a un hombre con seis anotaciones judiciales en Ciudadela 20 de Julio",
+   "label": [
+    "no"
+   ],
+   "cc": "CO",
+   "place": "Ciudadela 20 de Julio neighborhood  intersection of Carrera ",
+   "lat": 10.963889,
+   "lon": -74.796389,
+   "date": "2026-08-14",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX100",
+    "side_b": "XXX100"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-631716",
+   "title": "Two bodies with signs of violence were found in the Del Sol subdivision",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "Del Sol subdivision",
+   "lat": 31.739444,
+   "lon": -106.486944,
+   "date": "2026-05-22",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX70",
+    "side_b": "XXX70"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-629271",
+   "title": "Truck found with dead person inside in Zona Río",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "between Paseo de los Héroes and the Vía Rápida Poniente, in ",
+   "lat": 32.5027,
+   "lon": -117.00371,
+   "date": "2026-04-27",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "Jalisco Cartel New Generation",
+    "side_b": "Sinaloa Cartel"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-621352",
+   "title": "Matan en Naucalpan a hombre a balazos\n\n\nAU \n\n\nElthon García",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "San José de los Leones Second Section neighborhood in Naucal",
+   "lat": 19.47851,
+   "lon": -99.23963,
+   "date": "2026-02-12",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX70",
+    "side_b": "XXX70"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-647916",
+   "title": "Tres muertos dejó masacre en el norte del Cauca Hombres armados abrieron fuego indiscriminadamente en un establecimiento público en Santander de Quilichao, Cauca, dejando el saldo fatal.",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "CO",
+   "place": "within the urban area of ​​Santander de Quilichao.",
+   "lat": 3.00945,
+   "lon": -76.48494,
+   "date": "2026-10-05",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "2",
+    "side_a": "XXX100",
+    "side_b": "XXX100"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-624943",
+   "title": "A farmer was shot dead in Jalduu district",
+   "label": [
+    "no"
+   ],
+   "cc": "ET",
+   "place": "Osolee village of Jalduu district in West Shaggar",
+   "lat": 9.382265,
+   "lon": 38.113846,
+   "date": "2026-04-04",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "Government of Ethiopia",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-637360",
+   "title": "One person killed near Taliban police headquarters in Herat",
+   "label": [
+    "no"
+   ],
+   "cc": "AF",
+   "place": "police headquarters in Herat",
+   "lat": 34.349991,
+   "lon": 62.200001,
+   "date": "2026-08-10",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "Government of Afghanistan",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-620665",
+   "title": "A young man killed by a soldier in Sororezo, Nyakabiga zone, Mukaza commune, in Bujumbura province.",
+   "label": [
+    "no"
+   ],
+   "cc": "BI",
+   "place": "Sororezo neighborhood, Muyira area, Mukaza commune, in Bujum",
+   "lat": -3.38193,
+   "lon": 29.36142,
+   "date": "2026-02-05",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "Government of Burundi",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-622909",
+   "title": "Mali: At least eight people executed by the army near Kayes",
+   "label": [
+    "no"
+   ],
+   "cc": "ML",
+   "place": "Aïté",
+   "lat": 15.08939,
+   "lon": -11.65122,
+   "date": "2026-02-26",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "Government of Mali",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-624344",
+   "title": "A Baloch youth, Muhammad Aamir, was reportedly killed by Security Forces in Kili Karez Soor area of Mastung District in Balochistan on March 21, reports Zrumbesh.",
+   "label": [
+    "no"
+   ],
+   "cc": "PK",
+   "place": "Kili Karez Soor area of Mastung District in Balochistan",
+   "lat": 29.794547,
+   "lon": 66.720678,
+   "date": "2026-03-21",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "Government of Pakistan",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-622779",
+   "title": "Mboki : deux égorgements publics en trois jours par les mercenaires russes de la milice Wagner",
+   "label": [
+    "no"
+   ],
+   "cc": "CF",
+   "place": "",
+   "lat": 5.318001,
+   "lon": 25.955293,
+   "date": "2026-02-10",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "Government of Russia (Soviet Union)",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-640553",
+   "title": "В ДНР при атаках БПЛА на автомобили погибли два человека, еще трое ранены",
+   "label": [
+    "no"
+   ],
+   "cc": "UA",
+   "place": "In the Mangush municipal district on the highway Mangush - B",
+   "lat": 47.05706,
+   "lon": 37.308121,
+   "date": "2026-07-21",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Russia (Soviet Union)",
+    "side_b": "Government of Ukraine"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-619927",
+   "title": "In the Kursk direction, border guards used drones to destroy an ATV and two Russian shelters",
+   "label": [
+    "no"
+   ],
+   "cc": "UA",
+   "place": "Kursk direction",
+   "lat": 50.8,
+   "lon": 34.4908,
+   "date": "2026-02-12",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Russia (Soviet Union)",
+    "side_b": "Government of Ukraine"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-633733",
+   "title": "The enemy has attacked the Dnipropetrovsk region almost 30 times since the evening - one dead , three injured",
+   "label": [
+    "no"
+   ],
+   "cc": "UA",
+   "place": "Kryvyi Rih, Zelenodolsk community",
+   "lat": 47.565464,
+   "lon": 33.646882,
+   "date": "2026-06-05",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Russia (Soviet Union)",
+    "side_b": "Government of Ukraine"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-635807",
+   "title": "Russians launched 853 strikes on Zaporizhia region in 24 hours, three killed",
+   "label": [
+    "no"
+   ],
+   "cc": "UA",
+   "place": "Zaporizhia",
+   "lat": 47.84126,
+   "lon": 35.121166,
+   "date": "2026-07-16",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "1",
+    "side_a": "Government of Russia (Soviet Union)",
+    "side_b": "Government of Ukraine"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-634903",
+   "title": "Alias ​​Malote shot dead on a field in Las Malvinas",
+   "label": [
+    "no"
+   ],
+   "cc": "CO",
+   "place": "on a field in Las Malvinas",
+   "lat": 10.95838,
+   "lon": -74.79183,
+   "date": "2026-06-21",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX100",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-642681",
+   "title": "Disputa de milícias rivais pode ter motivado chacina que deixou seis mortos na Baixada Fluminense Polícia investiga se ordem para o ataque partiu do miliciano Gilson Ingrácio de Souza Junior, o Juninho Varão",
+   "label": [
+    "no"
+   ],
+   "cc": "BR",
+   "place": "Geni Saraiva Street, in the Cerâmica neighborhood of Nova Ig",
+   "lat": -22.75917,
+   "lon": -43.45111,
+   "date": "2026-02-08",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX140",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-639300",
+   "title": "Security vacuum | Elderly Alawite man killed inside his home while sleeping in Sahil Al-Ghab",
+   "label": [
+    "no",
+    "possible"
+   ],
+   "cc": "SY",
+   "place": "Al-Aziziyah village in Sahil Al-Ghab",
+   "lat": 35.52333,
+   "lon": 36.32207,
+   "date": "2026-08-17",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX652",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-609855",
+   "title": "A 42-year-old man who was shot on January 1° in Pérez died",
+   "label": [
+    "no"
+   ],
+   "cc": "AR",
+   "place": "Santa Fe province Rosario department Los Guayacanes at 100, ",
+   "lat": -32.997825,
+   "lon": -60.773785,
+   "date": "2026-01-01",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX160",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-613707",
+   "title": "Man killed inside a dental office in Apaseo el Alto",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "Apaseo el Alto on José María Morelos Street in the city cent",
+   "lat": 20.45748,
+   "lon": -100.6224,
+   "date": "2026-01-18",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX70",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-613695",
+   "title": "Former officials attacked with gunfire at a torta shop in Apaseo el Alto",
+   "label": [
+    "no"
+   ],
+   "cc": "MX",
+   "place": "Cake shop on Enrique Fernández Street in the Alameda neighbo",
+   "lat": 20.45748,
+   "lon": -100.6224,
+   "date": "2026-01-07",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX70",
+    "side_b": "Civilians"
+   }
+  },
+  {
+   "pool": "ucdp",
+   "id": "ucdp-638567",
+   "title": "Khayelitsha extortion gangs move into Mitchells Plain as turf war claims teen victims",
+   "label": [
+    "no"
+   ],
+   "cc": "ZA",
+   "place": "Mitchells Plain",
+   "lat": -34.049091,
+   "lon": 18.60581,
+   "date": "2026-07-29",
+   "attr": null,
+   "group": null,
+   "confirmable": false,
+   "dup": null,
+   "follow": false,
+   "note": null,
+   "ucdp": {
+    "type": "3",
+    "side_a": "XXX560",
+    "side_b": "Civilians"
+   }
+  }
+ ]
+}

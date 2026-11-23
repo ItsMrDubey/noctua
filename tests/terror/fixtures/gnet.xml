@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+
+<channel>
+	<title>GNET</title>
+	<atom:link href="https://gnet-research.org/feed/" rel="self" type="application/rss+xml" />
+	<link>https://gnet-research.org</link>
+	<description>Global Network on Extremism and Technology</description>
+	<lastBuildDate>Fri, 20 Nov 2026 17:10:59 +0000</lastBuildDate>
+	<language>en-GB</language>
+	<sy:updatePeriod>
+	hourly	</sy:updatePeriod>
+	<sy:updateFrequency>
+	1	</sy:updateFrequency>
+	<generator>https://wordpress.org/?v=7.1.5</generator>
+
+<image>
+	<url>https://gnet-research.org/wp-content/uploads/2019/12/cropped-GNET-Branding-Icon-512px-32x32.png</url>
+	<title>GNET</title>
+	<link>https://gnet-research.org</link>
+	<width>32</width>
+	<height>32</height>
+</image> 
+	<item>
+		<title>Virtual Rallies, Real Belonging? The use of VRChat by the Southern State Knights</title>
+		<link>https://gnet-research.org/2026/11/20/virtual-rallies-real-belonging-the-use-of-vrchat-by-the-southern-state-knights/</link>
+		
+		<dc:creator><![CDATA[Emma Montagny]]></dc:creator>
+		<pubDate>Fri, 20 Nov 2026 17:10:59 +0000</pubDate>
+				<category><![CDATA[EGRN (Extremism and Gaming Research Network) Series]]></category>
+		<category><![CDATA[Insights]]></category>
+		<category><![CDATA[Far-Right]]></category>
+		<category><![CDATA[Gaming]]></category>
+		<category><![CDATA[Telegram]]></category>
+		<guid isPermaLink="false">https://gnet-research.org/?p=12188</guid>
+
+					<description><![CDATA[Legal restrictions as well as growing public rejection have not led to the disappearance of the Ku Klux Klan. Instead, the movement has adapted (p. 3989) into fragmented, interconnected groups that use virtual platforms to operate more discreetly. Its use of digital technology is not new (p. 3984): Klan groups have long used websites to spread propaganda, recruit members and [&#8230;]]]></description>
+										
+					
+		
+		
+			</item><item>
+		<title>From Active Clubs to ‘Acceleration Clubs’: How Neo-Nazi Accelerationists Are Adapting the Active Club Model</title>
+		<link>https://gnet-research.org/2026/11/19/from-active-clubs-to-acceleration-clubs-how-neo-nazi-accelerationists-are-adapting-the-active-club-model/</link>
+		
+		<dc:creator><![CDATA[Muskan Sangwan]]></dc:creator>
+		<pubDate>Thu, 19 Nov 2026 16:27:54 +0000</pubDate>
+				<category><![CDATA[Insights]]></category>
+		<category><![CDATA[Accelerationism]]></category>
+		<category><![CDATA[Neo-Nazi]]></category>
+		<guid isPermaLink="false">https://gnet-research.org/?p=12174</guid>
+
+					<description><![CDATA[Active Clubs have become an established organisational model within transnational white-supremacist movements, combining physical fitness, combat sports and local activism with a decentralised network of like-minded groups. Local chapters retain some operational autonomy rather than answering to a single central command, while shared messaging, online promotion, and cross-group relationships connect them to a wider ideological milieu. Recent research published by [&#8230;]]]></description>
+										
+					
+		
+		
+			</item></channel></rss>

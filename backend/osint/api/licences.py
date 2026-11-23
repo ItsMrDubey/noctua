@@ -152,7 +152,10 @@ def licences() -> dict:
     prof = [{"id": f"profile:{s.id}", "name": s.name, "licence": s.licence, "url": s.url,
              "attribution": s.attribution, "commercial": s.commercial, "notes": s.notes}
             for s in PROFILE_LOOKUPS.values()]
-    return {"sources": SOURCES + infra + web + prof, "ucdp_citation": UCDP_CITE}
+    from osint.terror.sources import licence_entries as terror_licences  # Terror Watch
+
+    return {"sources": SOURCES + infra + web + prof + terror_licences(),
+            "ucdp_citation": UCDP_CITE}
 
 
 def mount_licences(app: FastAPI) -> None:

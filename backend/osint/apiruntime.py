@@ -193,7 +193,8 @@ class ApiRuntime:
 
     async def stop(self) -> None:
         stores = [getattr(self, a, None) for a in (
-            "extraction_store", "translation_store", "imagery_store", "fire_score_store")]
+            "extraction_store", "translation_store", "imagery_store", "fire_score_store",
+            "terror_store")]
         if self._naval_job is not None:
             stores.append(self._naval_job.nstore)
         svc = getattr(self, "benchmark", None)

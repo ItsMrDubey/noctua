@@ -1,0 +1,253 @@
+# Derived from GeoNames countryInfo.txt (CC BY 4.0, https://www.geonames.org/): iso2, iso3, fips, name, capital, continent
+AD	AND	AN	Andorra	Andorra la Vella	EU
+AE	ARE	AE	United Arab Emirates	Abu Dhabi	AS
+AF	AFG	AF	Afghanistan	Kabul	AS
+AG	ATG	AC	Antigua and Barbuda	St. John's	NA
+AI	AIA	AV	Anguilla	The Valley	NA
+AL	ALB	AL	Albania	Tirana	EU
+AM	ARM	AM	Armenia	Yerevan	AS
+AO	AGO	AO	Angola	Luanda	AF
+AQ	ATA	AY	Antarctica		AN
+AR	ARG	AR	Argentina	Buenos Aires	SA
+AS	ASM	AQ	American Samoa	Pago Pago	OC
+AT	AUT	AU	Austria	Vienna	EU
+AU	AUS	AS	Australia	Canberra	OC
+AW	ABW	AA	Aruba	Oranjestad	NA
+AX	ALA		Aland Islands	Mariehamn	EU
+AZ	AZE	AJ	Azerbaijan	Baku	AS
+BA	BIH	BK	Bosnia and Herzegovina	Sarajevo	EU
+BB	BRB	BB	Barbados	Bridgetown	NA
+BD	BGD	BG	Bangladesh	Dhaka	AS
+BE	BEL	BE	Belgium	Brussels	EU
+BF	BFA	UV	Burkina Faso	Ouagadougou	AF
+BG	BGR	BU	Bulgaria	Sofia	EU
+BH	BHR	BA	Bahrain	Manama	AS
+BI	BDI	BY	Burundi	Gitega	AF
+BJ	BEN	BN	Benin	Porto-Novo	AF
+BL	BLM	TB	Saint Barthelemy	Gustavia	NA
+BM	BMU	BD	Bermuda	Hamilton	NA
+BN	BRN	BX	Brunei	Bandar Seri Begawan	AS
+BO	BOL	BL	Bolivia	Sucre	SA
+BQ	BES		Bonaire, Saint Eustatius and Saba 		NA
+BR	BRA	BR	Brazil	Brasilia	SA
+BS	BHS	BF	Bahamas	Nassau	NA
+BT	BTN	BT	Bhutan	Thimphu	AS
+BV	BVT	BV	Bouvet Island		AN
+BW	BWA	BC	Botswana	Gaborone	AF
+BY	BLR	BO	Belarus	Minsk	EU
+BZ	BLZ	BH	Belize	Belmopan	NA
+CA	CAN	CA	Canada	Ottawa	NA
+CC	CCK	CK	Cocos Islands	West Island	AS
+CD	COD	CG	Democratic Republic of the Congo	Kinshasa	AF
+CF	CAF	CT	Central African Republic	Bangui	AF
+CG	COG	CF	Republic of the Congo	Brazzaville	AF
+CH	CHE	SZ	Switzerland	Bern	EU
+CI	CIV	IV	Ivory Coast	Yamoussoukro	AF
+CK	COK	CW	Cook Islands	Avarua	OC
+CL	CHL	CI	Chile	Santiago	SA
+CM	CMR	CM	Cameroon	Yaounde	AF
+CN	CHN	CH	China	Beijing	AS
+CO	COL	CO	Colombia	Bogota	SA
+CR	CRI	CS	Costa Rica	San Jose	NA
+CU	CUB	CU	Cuba	Havana	NA
+CV	CPV	CV	Cabo Verde	Praia	AF
+CW	CUW	UC	Curacao	 Willemstad	NA
+CX	CXR	KT	Christmas Island	Flying Fish Cove	OC
+CY	CYP	CY	Cyprus	Nicosia	EU
+CZ	CZE	EZ	Czechia	Prague	EU
+DE	DEU	GM	Germany	Berlin	EU
+DJ	DJI	DJ	Djibouti	Djibouti	AF
+DK	DNK	DA	Denmark	Copenhagen	EU
+DM	DMA	DO	Dominica	Roseau	NA
+DO	DOM	DR	Dominican Republic	Santo Domingo	NA
+DZ	DZA	AG	Algeria	Algiers	AF
+EC	ECU	EC	Ecuador	Quito	SA
+EE	EST	EN	Estonia	Tallinn	EU
+EG	EGY	EG	Egypt	Cairo	AF
+EH	ESH	WI	Western Sahara	El-Aaiun	AF
+ER	ERI	ER	Eritrea	Asmara	AF
+ES	ESP	SP	Spain	Madrid	EU
+ET	ETH	ET	Ethiopia	Addis Ababa	AF
+FI	FIN	FI	Finland	Helsinki	EU
+FJ	FJI	FJ	Fiji	Suva	OC
+FK	FLK	FK	Falkland Islands	Stanley	SA
+FM	FSM	FM	Micronesia	Palikir	OC
+FO	FRO	FO	Faroe Islands	Torshavn	EU
+FR	FRA	FR	France	Paris	EU
+GA	GAB	GB	Gabon	Libreville	AF
+GB	GBR	UK	United Kingdom	London	EU
+GD	GRD	GJ	Grenada	St. George's	NA
+GE	GEO	GG	Georgia	Tbilisi	AS
+GF	GUF	FG	French Guiana	Cayenne	SA
+GG	GGY	GK	Guernsey	St Peter Port	EU
+GH	GHA	GH	Ghana	Accra	AF
+GI	GIB	GI	Gibraltar	Gibraltar	EU
+GL	GRL	GL	Greenland	Nuuk	NA
+GM	GMB	GA	Gambia	Banjul	AF
+GN	GIN	GV	Guinea	Conakry	AF
+GP	GLP	GP	Guadeloupe	Basse-Terre	NA
+GQ	GNQ	EK	Equatorial Guinea	Ciudad de la Paz	AF
+GR	GRC	GR	Greece	Athens	EU
+GS	SGS	SX	South Georgia and the South Sandwich Islands	Grytviken	AN
+GT	GTM	GT	Guatemala	Guatemala City	NA
+GU	GUM	GQ	Guam	Hagatna	OC
+GW	GNB	PU	Guinea-Bissau	Bissau	AF
+GY	GUY	GY	Guyana	Georgetown	SA
+HK	HKG	HK	Hong Kong	Hong Kong	AS
+HM	HMD	HM	Heard Island and McDonald Islands		AN
+HN	HND	HO	Honduras	Tegucigalpa	NA
+HR	HRV	HR	Croatia	Zagreb	EU
+HT	HTI	HA	Haiti	Port-au-Prince	NA
+HU	HUN	HU	Hungary	Budapest	EU
+ID	IDN	ID	Indonesia	Jakarta	AS
+IE	IRL	EI	Ireland	Dublin	EU
+IL	ISR	IS	Israel	Jerusalem	AS
+IM	IMN	IM	Isle of Man	Douglas	EU
+IN	IND	IN	India	New Delhi	AS
+IO	IOT	IO	British Indian Ocean Territory	Diego Garcia	AS
+IQ	IRQ	IZ	Iraq	Baghdad	AS
+IR	IRN	IR	Iran	Tehran	AS
+IS	ISL	IC	Iceland	Reykjavik	EU
+IT	ITA	IT	Italy	Rome	EU
+JE	JEY	JE	Jersey	Saint Helier	EU
+JM	JAM	JM	Jamaica	Kingston	NA
+JO	JOR	JO	Jordan	Amman	AS
+JP	JPN	JA	Japan	Tokyo	AS
+KE	KEN	KE	Kenya	Nairobi	AF
+KG	KGZ	KG	Kyrgyzstan	Bishkek	AS
+KH	KHM	CB	Cambodia	Phnom Penh	AS
+KI	KIR	KR	Kiribati	Tarawa	OC
+KM	COM	CN	Comoros	Moroni	AF
+KN	KNA	SC	Saint Kitts and Nevis	Basseterre	NA
+KP	PRK	KN	North Korea	Pyongyang	AS
+KR	KOR	KS	South Korea	Seoul	AS
+XK	XKX	KV	Kosovo	Pristina	EU
+KW	KWT	KU	Kuwait	Kuwait City	AS
+KY	CYM	CJ	Cayman Islands	George Town	NA
+KZ	KAZ	KZ	Kazakhstan	Nur-Sultan	AS
+LA	LAO	LA	Laos	Vientiane	AS
+LB	LBN	LE	Lebanon	Beirut	AS
+LC	LCA	ST	Saint Lucia	Castries	NA
+LI	LIE	LS	Liechtenstein	Vaduz	EU
+LK	LKA	CE	Sri Lanka	Colombo	AS
+LR	LBR	LI	Liberia	Monrovia	AF
+LS	LSO	LT	Lesotho	Maseru	AF
+LT	LTU	LH	Lithuania	Vilnius	EU
+LU	LUX	LU	Luxembourg	Luxembourg	EU
+LV	LVA	LG	Latvia	Riga	EU
+LY	LBY	LY	Libya	Tripoli	AF
+MA	MAR	MO	Morocco	Rabat	AF
+MC	MCO	MN	Monaco	Monaco	EU
+MD	MDA	MD	Moldova	Chisinau	EU
+ME	MNE	MJ	Montenegro	Podgorica	EU
+MF	MAF	RN	Saint Martin	Marigot	NA
+MG	MDG	MA	Madagascar	Antananarivo	AF
+MH	MHL	RM	Marshall Islands	Majuro	OC
+MK	MKD	MK	North Macedonia	Skopje	EU
+ML	MLI	ML	Mali	Bamako	AF
+MM	MMR	BM	Myanmar	Nay Pyi Taw	AS
+MN	MNG	MG	Mongolia	Ulaanbaatar	AS
+MO	MAC	MC	Macao	Macao	AS
+MP	MNP	CQ	Northern Mariana Islands	Saipan	OC
+MQ	MTQ	MB	Martinique	Fort-de-France	NA
+MR	MRT	MR	Mauritania	Nouakchott	AF
+MS	MSR	MH	Montserrat	Plymouth	NA
+MT	MLT	MT	Malta	Valletta	EU
+MU	MUS	MP	Mauritius	Port Louis	AF
+MV	MDV	MV	Maldives	Male	AS
+MW	MWI	MI	Malawi	Lilongwe	AF
+MX	MEX	MX	Mexico	Mexico City	NA
+MY	MYS	MY	Malaysia	Kuala Lumpur	AS
+MZ	MOZ	MZ	Mozambique	Maputo	AF
+NA	NAM	WA	Namibia	Windhoek	AF
+NC	NCL	NC	New Caledonia	Noumea	OC
+NE	NER	NG	Niger	Niamey	AF
+NF	NFK	NF	Norfolk Island	Kingston	OC
+NG	NGA	NI	Nigeria	Abuja	AF
+NI	NIC	NU	Nicaragua	Managua	NA
+NL	NLD	NL	The Netherlands	Amsterdam	EU
+NO	NOR	NO	Norway	Oslo	EU
+NP	NPL	NP	Nepal	Kathmandu	AS
+NR	NRU	NR	Nauru	Yaren	OC
+NU	NIU	NE	Niue	Alofi	OC
+NZ	NZL	NZ	New Zealand	Wellington	OC
+OM	OMN	MU	Oman	Muscat	AS
+PA	PAN	PM	Panama	Panama City	NA
+PE	PER	PE	Peru	Lima	SA
+PF	PYF	FP	French Polynesia	Papeete	OC
+PG	PNG	PP	Papua New Guinea	Port Moresby	OC
+PH	PHL	RP	Philippines	Manila	AS
+PK	PAK	PK	Pakistan	Islamabad	AS
+PL	POL	PL	Poland	Warsaw	EU
+PM	SPM	SB	Saint Pierre and Miquelon	Saint-Pierre	NA
+PN	PCN	PC	Pitcairn	Adamstown	OC
+PR	PRI	RQ	Puerto Rico	San Juan	NA
+PS	PSE	WE	Palestinian Territory	East Jerusalem	AS
+PT	PRT	PO	Portugal	Lisbon	EU
+PW	PLW	PS	Palau	Melekeok	OC
+PY	PRY	PA	Paraguay	Asuncion	SA
+QA	QAT	QA	Qatar	Doha	AS
+RE	REU	RE	Reunion	Saint-Denis	AF
+RO	ROU	RO	Romania	Bucharest	EU
+RS	SRB	RI	Serbia	Belgrade	EU
+RU	RUS	RS	Russia	Moscow	EU
+RW	RWA	RW	Rwanda	Kigali	AF
+SA	SAU	SA	Saudi Arabia	Riyadh	AS
+SB	SLB	BP	Solomon Islands	Honiara	OC
+SC	SYC	SE	Seychelles	Victoria	AF
+SD	SDN	SU	Sudan	Khartoum	AF
+SS	SSD	OD	South Sudan	Juba	AF
+SE	SWE	SW	Sweden	Stockholm	EU
+SG	SGP	SN	Singapore	Singapore	AS
+SH	SHN	SH	Saint Helena	Jamestown	AF
+SI	SVN	SI	Slovenia	Ljubljana	EU
+SJ	SJM	SV	Svalbard and Jan Mayen	Longyearbyen	EU
+SK	SVK	LO	Slovakia	Bratislava	EU
+SL	SLE	SL	Sierra Leone	Freetown	AF
+SM	SMR	SM	San Marino	San Marino	EU
+SN	SEN	SG	Senegal	Dakar	AF
+SO	SOM	SO	Somalia	Mogadishu	AF
+SR	SUR	NS	Suriname	Paramaribo	SA
+ST	STP	TP	Sao Tome and Principe	Sao Tome	AF
+SV	SLV	ES	El Salvador	San Salvador	NA
+SX	SXM	NN	Sint Maarten	Philipsburg	NA
+SY	SYR	SY	Syria	Damascus	AS
+SZ	SWZ	WZ	Eswatini	Mbabane	AF
+TC	TCA	TK	Turks and Caicos Islands	Cockburn Town	NA
+TD	TCD	CD	Chad	N'Djamena	AF
+TF	ATF	FS	French Southern Territories	Port-aux-Francais	AN
+TG	TGO	TO	Togo	Lome	AF
+TH	THA	TH	Thailand	Bangkok	AS
+TJ	TJK	TI	Tajikistan	Dushanbe	AS
+TK	TKL	TL	Tokelau		OC
+TL	TLS	TT	Timor Leste	Dili	OC
+TM	TKM	TX	Turkmenistan	Ashgabat	AS
+TN	TUN	TS	Tunisia	Tunis	AF
+TO	TON	TN	Tonga	Nuku'alofa	OC
+TR	TUR	TU	Turkey	Ankara	AS
+TT	TTO	TD	Trinidad and Tobago	Port of Spain	NA
+TV	TUV	TV	Tuvalu	Funafuti	OC
+TW	TWN	TW	Taiwan	Taipei	AS
+TZ	TZA	TZ	Tanzania	Dodoma	AF
+UA	UKR	UP	Ukraine	Kyiv	EU
+UG	UGA	UG	Uganda	Kampala	AF
+UM	UMI		United States Minor Outlying Islands		OC
+US	USA	US	United States	Washington	NA
+UY	URY	UY	Uruguay	Montevideo	SA
+UZ	UZB	UZ	Uzbekistan	Tashkent	AS
+VA	VAT	VT	Vatican	Vatican City	EU
+VC	VCT	VC	Saint Vincent and the Grenadines	Kingstown	NA
+VE	VEN	VE	Venezuela	Caracas	SA
+VG	VGB	VI	British Virgin Islands	Road Town	NA
+VI	VIR	VQ	U.S. Virgin Islands	Charlotte Amalie	NA
+VN	VNM	VM	Vietnam	Hanoi	AS
+VU	VUT	NH	Vanuatu	Port Vila	OC
+WF	WLF	WF	Wallis and Futuna	Mata Utu	OC
+WS	WSM	WS	Samoa	Apia	OC
+YE	YEM	YM	Yemen	Sanaa	AS
+YT	MYT	MF	Mayotte	Mamoudzou	AF
+ZA	ZAF	SF	South Africa	Pretoria	AF
+ZM	ZMB	ZA	Zambia	Lusaka	AF
+ZW	ZWE	ZI	Zimbabwe	Harare	AF
+CS	SCG	YI	Serbia and Montenegro	Belgrade	EU
+AN	ANT	NT	Netherlands Antilles	Willemstad	NA

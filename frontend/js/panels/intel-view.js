@@ -32,7 +32,10 @@ import { detection } from "/static/js/panels/sensor-detection.js";
 
 const CORE = "assessment,timeline,sources,entities,imagery,storyline,detection";
 const AROUND = "related,history,sensors,traffic,assets";
-const CONTEXT = "track,fire,environment,overhead,signals,exposure,activity,country,attention";
+const CONTEXT = "track,fire,environment,overhead,signals,exposure,activity,country,attention,terror";
+// tiles registered by feature modules (window.__noctuaPanels.intelTiles, e.g. terror.js):
+// id -> {title, sections, wide, kinds, render(D, subj, spec), notes(D), badge(D)}
+const extTiles = () => (window.__noctuaPanels || {}).intelTiles || {};
 const KIND_LABEL = { event: "Event", fire: "Thermal anomaly", quake: "Seismic event", hazard: "Hazard", aircraft: "Aircraft", ship: "Vessel", place: "Place", facility: "Facility", point: "Point", actor: "Actor" };
 const LEVEL = { known: ["KNOWN", "ok"], corroborated: ["CORROB", "cor"], unconfirmed: ["UNCONF", "unc"], caveat: ["CAVEAT", "cav"] };
 const ASSET = { base: "Base", airport: "Airfield", port: "Port", nuclear: "Nuclear", chokepoint: "Chokepoint" };
@@ -662,7 +665,9 @@ const TITLE_BY_KIND = {
   actor: { rel: "Events mentioning", story: "Storylines" },
 };
 function tilesFor(kind) {
-  return (MANIFEST[kind] || MANIFEST.place).map((id) => [id, (TITLE_BY_KIND[kind] || {})[id] || (id === "story" && kind !== "event" ? "Storylines" : TILE[id][0]), TILE[id][1], null, TILE[id][2]]);
+  const base = (MANIFEST[kind] || MANIFEST.place).map((id) => [id, (TITLE_BY_KIND[kind] || {})[id] || (id === "story" && kind !== "event" ? "Storylines" : TILE[id][0]), TILE[id][1], null, TILE[id][2]]);
+  const ext = Object.entries(extTiles()).filter(([, t]) => (t.kinds || []).includes(kind)).map(([id, t]) => [id, t.title, t.sections || [], null, !!t.wide]);
+  return [...base, ...ext];
 }
 
 // relevance per tile: {level: "alert" | "warn", text} promotes the tile (alert style, top of the
@@ -727,7 +732,7 @@ function notes(id, D, PV) {
     case "over": return O && !O.error && !O.passes.length ? { quiet: "no covering passes in the window" } : null;
     case "ctry": return C && !C.error && C.tempo && C.tempo.ratio >= 2 ? { level: "warn", text: "Event tempo in " + (C.name || C.cc) + " ×" + nf(C.tempo.ratio, 2) + " vs baseline" } : null;
     case "attn": return PV && PV.ratio >= 3 ? { level: "warn", text: "Wikipedia attention ×" + nf(PV.ratio, 1) + " (" + PV.title + ")" } : null;
-    default: return null;
+    default: { const x = extTiles()[id]; return x && x.notes ? x.notes(D) : null; }
   }
 }
 
@@ -838,7 +843,8 @@ export async function renderIntel(spec, body, hooks) {
   const draw = (id) => {
     const el = tileEl(id);
     if (!el || el.classList.contains("fold") || !visible.has(id) || !dirty.has(id)) return;
-    let h = RENDER[id]();
+    const x = extTiles()[id];
+    let h = RENDER[id] ? RENDER[id]() : x && x.render ? x.render(D, subj, spec) : null;
     if (h == null && settled && id !== "bg" && id !== "attn" && id !== "prof") h = empty("No data for this subject");
     if (h == null) return;
     dirty.delete(id);
@@ -879,7 +885,7 @@ export async function renderIntel(spec, body, hooks) {
         el.style.order = el.classList.contains("lead") ? "-3" : lvl === "alert" ? "-2" : lvl === "warn" ? "-1" : "";
         el.querySelector(".ic-q").textContent = quiet ? n.quiet : "";
         if (lvl) bar.push('<button type="button" class="' + lvl + '" data-go="' + id + '" title="' + esc(title) + '"><i></i>' + esc(n.text) + "</button>");
-        const b = BADGE[id] && BADGE[id](), s = SPARK[id] && SPARK[id]();
+        const xb = extTiles()[id], b = BADGE[id] ? BADGE[id]() : xb && xb.badge ? xb.badge(D) : null, s = SPARK[id] && SPARK[id]();
         el.querySelector(".ic-badge").textContent = b == null || b === false ? "" : b;
         el.querySelector(".ic-sp").innerHTML = s || "";
       }
