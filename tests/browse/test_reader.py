@@ -5,7 +5,7 @@ import pytest
 
 from osint.browse import BlockedURL, Browser, check_url, frameable, page_meta
 
-PUBLIC = lambda host: True  # noqa: E731 - test resolver: every host is public
+PUBLIC = lambda host: True
 
 ARTICLE = """<html><head><title>T</title>
 <meta property="og:title" content="Strike hits depot">

@@ -35,7 +35,7 @@ def read_acc(doc, binc, i):
     assert bv["byteOffset"] % 4 == 0
     assert a["count"] * n * size == bv["byteLength"]
     assert bv["byteOffset"] + bv["byteLength"] <= len(binc)
-    vals = struct.unpack_from("<%d%s" % (a["count"] * n, fmt), binc, bv["byteOffset"])
+    vals = struct.unpack_from(f"<{a['count'] * n}{fmt}", binc, bv["byteOffset"])
     return a, [vals[k:k + n] for k in range(0, len(vals), n)]
 
 
@@ -76,7 +76,7 @@ def test_glb_valid(outdir, name):
 @pytest.mark.parametrize("name", list(gen.MODELS))
 def test_scale_and_forward_axis(outdir, name):
     """Longest extent is along glTF +Z (forward) for fixed-wing/ships and matches length_m."""
-    doc, binc = parse_glb((outdir / (name + ".glb")).read_bytes())
+    doc, _binc = parse_glb((outdir / (name + ".glb")).read_bytes())
     mins = [min(doc["accessors"][p["attributes"]["POSITION"]]["min"][k] for p in doc["meshes"][0]["primitives"]) for k in range(3)]
     maxs = [max(doc["accessors"][p["attributes"]["POSITION"]]["max"][k] for p in doc["meshes"][0]["primitives"]) for k in range(3)]
     length = maxs[2] - mins[2]
@@ -90,7 +90,7 @@ def test_scale_and_forward_axis(outdir, name):
 def test_manifest(outdir):
     m = json.loads((outdir / "manifest.json").read_text())
     assert set(m["models"]) == set(gen.MODELS)
-    for k, v in m["models"].items():
+    for v in m["models"].values():
         assert (outdir / v["file"]).exists()
 
 
