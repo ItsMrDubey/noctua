@@ -226,6 +226,7 @@ class ImageryJob:
         events = [e for e in events if e.get("precision") in cfg.precisions
                   and (e.get("status") in cfg.statuses
                        or e.get("status") in cfg.category_statuses.get(e.get("category") or "", []))
+                  and e.get("subcategory") not in cfg.exclude_subcategories
                   and e.get("lat") is not None and e.get("lon") is not None
                   and e.get("t_start") and EVENT_ID_RE.match(e["id"])]
         state = self.store.assets_for([e["id"] for e in events])

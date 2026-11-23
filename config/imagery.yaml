@@ -4,7 +4,10 @@ max_per_run: 15            # events processed per pass
 concurrency: 3             # events processed in parallel
 event_age_days: 7          # only events updated in this window
 min_confidence: 0.0
-statuses: [multi-source, sensor-corroborated, official]
+statuses: [multi-source, sensor-corroborated, sensor-detected, official]
+# never imaged (nothing visible from orbit): GNSS / outage / squawk / radiation signals and
+# aircraft orbit / concentration patterns
+exclude_subcategories: [gnss_jam, outage, squawk, radiation, orbit, concentration]
 precisions: [city, point]
 # single-source events too, but only where something is visible from orbit
 category_statuses:
