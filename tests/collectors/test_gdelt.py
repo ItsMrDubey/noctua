@@ -14,6 +14,7 @@ from osint.collectors.gdelt import (
     LASTUPDATE_URL,
     N_COLUMNS,
     GdeltCollector,
+    export_slots,
     latest_export_url,
     parse_export,
     parse_row,
@@ -146,4 +147,67 @@ async def test_poll_checksum_mismatch_and_http_errors(tmp_path):
     respx.get(LASTUPDATE_URL).mock(return_value=httpx.Response(503))
     async with httpx.AsyncClient() as http:
         with pytest.raises(RuntimeError, match="HTTP 503"):
+            await GdeltCollector({}).poll(_ctx(http, tmp_path))
+
+
+def test_export_slots():
+    base = "http://data.gdeltproject.org/gdeltv2/"
+    assert export_slots(EXPORT, None, 3) == [
+        base + "20261121143000.export.CSV.zip", base + "20261121141500.export.CSV.zip",
+        base + "20261121140000.export.CSV.zip"]
+    assert export_slots(EXPORT, "20261121141500.export.CSV.zip", 8) == [EXPORT]
+    assert export_slots(EXPORT, "20261121143000.export.CSV.zip", 8) == []
+    assert export_slots(base + "odd.export.CSV.zip", None, 8) == [base + "odd.export.CSV.zip"]
+
+
+@respx.mock
+async def test_poll_skips_listed_but_unpublished_exports(tmp_path):
+    https = "https://data.gdeltproject.org/gdeltv2/"
+    data = make_zip([row()])
+    older = make_zip([row(GlobalEventID="8"), row(GlobalEventID="9")])
+    respx.get(LASTUPDATE_URL).mock(return_value=httpx.Response(200, text=lastupdate(data)))
+    listed = respx.get(https + "20261121143000.export.CSV.zip").mock(
+        return_value=httpx.Response(404))
+    respx.get(https + "20261121141500.export.CSV.zip").mock(return_value=httpx.Response(404))
+    respx.get(https + "20261121140000.export.CSV.zip").mock(
+        return_value=httpx.Response(200, content=older))
+    async with httpx.AsyncClient() as http:
+        ctx = _ctx(http, tmp_path)
+        c = GdeltCollector({})
+        batch = await c.poll(ctx)  # first run: newest published export only
+        assert len(batch.documents) == 2
+        assert ctx.get_cursor("gdelt")["last_file"] == "20261121140000.export.CSV.zip"
+        again = await c.poll(ctx)  # still unpublished: no error, cursor unchanged
+        assert again.documents == []
+        assert ctx.get_cursor("gdelt")["last_file"] == "20261121140000.export.CSV.zip"
+        listed.mock(return_value=httpx.Response(200, content=data))
+        caught_up = await c.poll(ctx)  # listed export now published; 14:15 stays a gap
+        assert len(caught_up.documents) == 1
+        assert ctx.get_cursor("gdelt")["last_file"] == "20261121143000.export.CSV.zip"
+
+
+@respx.mock
+async def test_poll_catches_up_missed_exports(tmp_path):
+    https = "https://data.gdeltproject.org/gdeltv2/"
+    data = make_zip([row()])
+    respx.get(LASTUPDATE_URL).mock(return_value=httpx.Response(200, text=lastupdate(data)))
+    respx.get(https + "20261121143000.export.CSV.zip").mock(
+        return_value=httpx.Response(200, content=data))
+    respx.get(https + "20261121141500.export.CSV.zip").mock(
+        return_value=httpx.Response(200, content=make_zip([row(GlobalEventID="8")])))
+    async with httpx.AsyncClient() as http:
+        ctx = _ctx(http, tmp_path)
+        ctx.set_cursor("gdelt", {"last_file": "20261121140000.export.CSV.zip"})
+        batch = await GdeltCollector({}).poll(ctx)
+    assert len(batch.documents) == 2
+    assert ctx.get_cursor("gdelt")["last_file"] == "20261121143000.export.CSV.zip"
+
+
+@respx.mock
+async def test_poll_first_run_nothing_published(tmp_path):
+    respx.get(LASTUPDATE_URL).mock(return_value=httpx.Response(200, text=lastupdate(b"x")))
+    respx.get(url__regex=r"https://data\.gdeltproject\.org/gdeltv2/.*export").mock(
+        return_value=httpx.Response(404))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(RuntimeError, match="none of the last 8 exports published"):
             await GdeltCollector({}).poll(_ctx(http, tmp_path))

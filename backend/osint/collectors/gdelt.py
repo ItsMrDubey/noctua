@@ -1,8 +1,10 @@
 """GDELT 2.0 event exports (every 15 minutes), as coded-event Documents.
 
-Each poll reads ``lastupdate.txt``, downloads the newest ``*.export.CSV.zip`` (unless it
-was already processed — the cursor is its filename) and parses the 61-column,
-tab-separated event rows in a worker thread. Rows enter the pipeline as candidates;
+Each poll reads ``lastupdate.txt`` and downloads the exports from the listed one back in
+15-minute slots to the last processed one (the cursor is its filename; at most
+``max_lookback`` slots). lastupdate.txt can list exports up to ~30 min before they are
+published (HTTP 404); those are skipped and picked up on a later poll. Exports parse the
+61-column, tab-separated event rows in a worker thread. Rows enter the pipeline as candidates;
 clustering later accepts or discards them (spec §5.3).
 """
 
@@ -11,7 +13,7 @@ import hashlib
 import io
 import logging
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -24,6 +26,10 @@ log = logging.getLogger(__name__)
 LASTUPDATE_URL = "https://data.gdeltproject.org/gdeltv2/lastupdate.txt"
 MAX_ZIP_BYTES = 50 * 1024 * 1024  # an export is ~0.1-1 MB zipped
 MAX_CSV_BYTES = 200 * 1024 * 1024  # zip-bomb guard on the uncompressed size
+SLOT = timedelta(minutes=15)
+SLOT_FORMAT = "%Y%m%d%H%M%S"
+EXPORT_SUFFIX = ".export.CSV.zip"
+MAX_LOOKBACK = 8  # slots (2 h) tried back from the listed export
 
 # GDELT 2.0 event table column indices (0-based), from the GDELT 2.0 Event Codebook
 # (http://data.gdeltproject.org/documentation/GDELT-Event_Codebook-V2.0.pdf) and checked
@@ -92,6 +98,23 @@ def latest_export_url(text: str) -> str | None:
         if len(parts) == 3 and parts[2].endswith(".export.CSV.zip"):
             return parts[2]
     return None
+
+
+def export_slots(url: str, last_file: str | None, max_lookback: int) -> list[str]:
+    """Export URLs from ``url`` back in 15-minute slots (newest first), stopping before
+    ``last_file``; just ``[url]`` if its name is not a slot timestamp."""
+    base, name = url.rsplit("/", 1)
+    try:
+        newest = datetime.strptime(name.removesuffix(EXPORT_SUFFIX), SLOT_FORMAT)
+    except ValueError:
+        return [url]
+    out = []
+    for i in range(max(1, max_lookback)):
+        name = (newest - i * SLOT).strftime(SLOT_FORMAT) + EXPORT_SUFFIX
+        if last_file is not None and name <= last_file:
+            break
+        out.append(f"{base}/{name}")
+    return out
 
 
 def _md5(text: str, url: str) -> str | None:
@@ -187,27 +210,48 @@ class GdeltCollector(PollCollector):
         try:
             r = await ctx.http.get(self.cfg.get("lastupdate_url", LASTUPDATE_URL), timeout=30)
             r.raise_for_status()
-            listing = r.text
-            url = latest_export_url(listing)
-            if url is None:
-                raise RuntimeError("gdelt: no export listed in lastupdate.txt")
-            filename = url.rsplit("/", 1)[-1]
-            cursor = ctx.get_cursor(self.name) or {}
-            if cursor.get("last_file") == filename:
-                return batch  # nothing new since the last poll
-            url = url.replace("http://", "https://", 1)  # the http URL only redirects
-            z = await ctx.http.get(url, timeout=120)
-            z.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise RuntimeError(f"gdelt: HTTP {e.response.status_code}") from None
         except httpx.HTTPError as e:
             raise RuntimeError(f"gdelt: {type(e).__name__}") from None
-        data = z.content
-        if len(data) > MAX_ZIP_BYTES:
-            raise RuntimeError(f"gdelt: export too large ({len(data)} bytes)")
-        expected = _md5(listing, url.replace("https://", "http://", 1)) or _md5(listing, url)
-        if expected and hashlib.md5(data).hexdigest() != expected:
-            raise RuntimeError(f"gdelt: checksum mismatch for {filename}")
-        batch.documents.extend(await asyncio.to_thread(parse_export, data, utcnow()))
-        ctx.set_cursor(self.name, {"last_file": filename, "rows": len(batch.documents)})
+        listing = r.text
+        listed = latest_export_url(listing)
+        if listed is None:
+            raise RuntimeError("gdelt: no export listed in lastupdate.txt")
+        cursor = ctx.get_cursor(self.name) or {}
+        last_file = cursor.get("last_file")
+        newest: str | None = None
+        unpublished = 0
+        for url in export_slots(listed, last_file,
+                                int(self.cfg.get("max_lookback", MAX_LOOKBACK))):
+            filename = url.rsplit("/", 1)[-1]
+            url = url.replace("http://", "https://", 1)  # the http URL only redirects
+            try:
+                z = await ctx.http.get(url, timeout=120)
+                if z.status_code == 404:  # listed ahead of publication, or a gap
+                    unpublished += 1
+                    continue
+                z.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise RuntimeError(f"gdelt: HTTP {e.response.status_code}") from None
+            except httpx.HTTPError as e:
+                raise RuntimeError(f"gdelt: {type(e).__name__}") from None
+            data = z.content
+            if len(data) > MAX_ZIP_BYTES:
+                raise RuntimeError(f"gdelt: export too large ({len(data)} bytes)")
+            expected = _md5(listing, url.replace("https://", "http://", 1)) or _md5(listing, url)
+            if expected and hashlib.md5(data).hexdigest() != expected:
+                raise RuntimeError(f"gdelt: checksum mismatch for {filename}")
+            batch.documents.extend(await asyncio.to_thread(parse_export, data, utcnow()))
+            newest = newest or filename
+            if last_file is None:
+                break  # first run: the newest published export only
+        if newest is None:
+            if last_file is None:
+                raise RuntimeError(f"gdelt: none of the last {unpublished} exports published")
+            log.debug("gdelt: %d listed export(s) not published yet", unpublished)
+            return batch
+        if unpublished:
+            log.debug("gdelt: skipped %d unpublished export(s)", unpublished)
+        ctx.set_cursor(self.name, {"last_file": newest, "rows": len(batch.documents)})
         return batch
