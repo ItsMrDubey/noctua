@@ -39,6 +39,7 @@ import { Signals, AREA_SIGNALS } from "/static/js/signals/index.js";
 import { StorylineList, StoryOverlay } from "/static/js/storylines.js";
 import { installDeclutter } from "/static/js/declutter.js";
 import { installBasemap } from "/static/js/basemap.js";
+import { installImageryViewer, openImageryViewer } from "/static/js/panels/imagery-viewer.js";
 import { renderAssetProfile, assetProfileHtml, setAssetProfileHooks } from "/static/js/panels/asset-profile.js";
 
 const errors = {};
@@ -900,6 +901,9 @@ async function main() {
   ctx.fireScore = fireScore;
   ctx.declutter = installDeclutter(ctx);
   ctx.palette = new Palette(ctx);
+  // ---- Satellite imagery viewer: globe right-click "Imagery here", drapes onto the globe ----
+  installImageryViewer({ viewer });
+  ctx.openImagery = openImageryViewer;
   window.__osint = ctx;
   tree.refresh(); // header "on" counts + preset state now that every module has mounted its rows
   return ctx;

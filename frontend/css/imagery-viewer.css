@@ -1,0 +1,133 @@
+/* Satellite imagery viewer (js/panels/imagery-viewer.js): floating panel over the globe. */
+.iv { top: calc(var(--bar-h) + 12px); right: 12px; bottom: 12px; width: min(1040px, 64vw); min-width: 560px; z-index: 40;
+  display: flex; flex-direction: column; background: var(--glass-hi); }
+.iv.max { top: 8px; left: 8px; right: 8px; bottom: 8px; width: auto; }
+.iv.min { bottom: auto; }
+.iv.min .iv-body { display: none; }
+.iv-hd { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.iv-hd label { font: 10px var(--f-mono); color: var(--fg-2); display: flex; gap: 4px; align-items: center; }
+.iv-hd button { padding: 4px 8px; }
+.iv-t { display: grid; line-height: 1.25; min-width: 0; }
+.iv-t b { font: 600 14px var(--f-head); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
+.iv-t small { font: 10px var(--f-mono); color: var(--dim); }
+.iv-sp { flex: 1; }
+.iv-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.iv-honest { font: 10px/1.45 var(--f-mono); color: var(--amber); border: 1px dashed rgba(242, 173, 61, .4); padding: 4px 7px; }
+
+/* time strip */
+.iv-strip { display: grid; gap: 2px; }
+.iv-axis { display: flex; justify-content: space-between; margin-left: 98px; font: 9px var(--f-mono); color: var(--dim); }
+.iv-row { display: flex; align-items: center; gap: 6px; min-height: 16px; }
+.iv-rl { width: 92px; flex: none; font: 600 9.5px var(--f-head); letter-spacing: .08em; color: var(--fg-2); white-space: nowrap; }
+.iv-rl small { color: var(--dim); font: 9px var(--f-mono); }
+.iv-track { position: relative; flex: 1; height: 14px; border-bottom: 1px solid var(--line); }
+.iv-tk { position: absolute; top: 1px; width: 6px; height: 12px; margin-left: -3px; padding: 0; border: 0; background: var(--ion); }
+.iv-tk.k-sar { background: var(--violet); }
+.iv-tk.k-vhr { background: var(--amber); }
+.iv-tk:hover { transform: scaleY(1.3); background: #fff; }
+.iv-tk.a, .iv-tk.b { width: 13px; margin-left: -6px; top: -2px; height: 17px; background: #fff; color: #000; box-shadow: 0 0 6px rgba(var(--acc-rgb), .9); }
+.iv-tk.b { background: var(--amber); }
+.iv-tk i { font: 700 9px/17px var(--f-mono); font-style: normal; }
+.iv-pred { position: absolute; top: 3px; width: 2px; height: 8px; margin-left: -1px; background: rgba(159, 176, 192, .45); border: 0; }
+.iv-now, .iv-ev { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 1px dashed var(--fg-2); }
+.iv-ev { border-left: 1px solid var(--red); }
+.iv-row.arch { align-items: flex-start; }
+.iv-chips { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; }
+.iv-chip { font: 9.5px var(--f-mono); letter-spacing: 0; text-transform: none; padding: 2px 5px; }
+.iv-chip b { font: 600 9px var(--f-head); letter-spacing: .08em; color: var(--amber); }
+.iv-chip.a { border-color: #fff; background: rgba(255, 255, 255, .15); }
+.iv-chip.b { border-color: var(--amber); background: rgba(242, 173, 61, .18); }
+.iv-wait { font: 9.5px var(--f-mono); color: var(--dim); }
+
+/* main: stage + details */
+.iv-main { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 8px; }
+.iv.max .iv-main { grid-template-columns: minmax(0, 1fr) 290px; }
+.iv-left { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.iv-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.iv-seg { display: flex; }
+.iv-seg button { padding: 4px 7px; font-size: 10px; margin-right: -1px; }
+.iv-one, .iv-side2 { display: grid; gap: 4px; }
+.iv-side2 { grid-template-columns: 1fr 1fr; }
+.iv-frame { position: relative; aspect-ratio: 1 / 1; max-height: 62vh; margin: 0 auto; width: 100%; overflow: hidden; cursor: grab; touch-action: none; outline-offset: -1px;
+  background: var(--void) repeating-linear-gradient(45deg, rgba(255, 255, 255, .02) 0 4px, transparent 4px 8px); }
+.iv-one .iv-frame { max-width: 62vh; }
+.iv.max .iv-frame { max-height: 72vh; } .iv.max .iv-one .iv-frame { max-width: 72vh; }
+.iv-frame:active { cursor: grabbing; }
+.iv-layers { position: absolute; inset: 0; transform-origin: 0 0; }
+.iv-l { position: absolute; inset: 0; }
+.iv-l > img:not([style]) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; -webkit-user-drag: none; user-select: none; }
+.iv-l > img[style] { position: absolute; display: block; -webkit-user-drag: none; user-select: none; }
+.iv-l.px > img { image-rendering: pixelated; }
+.iv-frame.cmp.mode-swipe .iv-lb { clip-path: inset(0 0 0 var(--pos)); }
+.iv-frame.cmp.mode-blink .iv-lb.off { visibility: hidden; }
+.iv-div { position: absolute; top: 0; bottom: 0; left: var(--pos); width: 0; border-left: 1px solid var(--acc); box-shadow: 0 0 8px rgba(var(--acc-rgb), .7); pointer-events: none; }
+.iv-div i { position: absolute; top: 50%; left: -8px; width: 15px; height: 26px; margin-top: -13px; border: 1px solid var(--acc); background: rgba(5, 8, 13, .85); }
+.iv-div i::before { content: "‹›"; position: absolute; inset: 0; display: grid; place-items: center; font: 10px/1 var(--f-mono); color: var(--acc); }
+.iv-frame.mode-swipe { cursor: crosshair; }
+.iv-frame.drag { cursor: ew-resize; }
+.iv-site { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.iv-site::before { content: ""; position: absolute; width: 16px; height: 16px; transform: translate(-50%, -50%) scale(calc(1 / var(--z, 1))); border: 1.5px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #000, 0 0 6px #000; }
+.iv-lab { position: absolute; top: 5px; max-width: 48%; display: grid; gap: 1px; padding: 3px 6px; font: 9.5px/1.35 var(--f-mono); color: var(--fg); background: rgba(5, 8, 13, .8); pointer-events: none; }
+.iv-lab span:first-child { font: 600 9.5px var(--f-head); letter-spacing: .08em; color: var(--acc); }
+.iv-lab.r { right: 5px; text-align: right; } .iv-lab.r span:first-child { color: var(--amber); }
+.iv-lab.l { left: 5px; }
+.iv-frame[data-tag="B"] .iv-lab.l span:first-child { color: var(--amber); }
+.iv-frame[data-tag="B"] .iv-tag { background: var(--amber); }
+.iv-lab .bad { color: #ff8a90; }
+.iv-lab .note { color: var(--amber); white-space: normal; }
+.iv-frame.blink-b .iv-lab.l { opacity: .35; }
+.iv-frame.mode-blink:not(.blink-b) .iv-lab.r { opacity: .35; }
+.iv-tag { position: absolute; left: 5px; bottom: 22px; font: 700 10px var(--f-mono); color: #000; background: var(--acc); padding: 0 4px; pointer-events: none; }
+.iv-scale { position: absolute; right: 6px; bottom: 22px; display: grid; justify-items: end; gap: 1px; pointer-events: none; }
+.iv-scale i { height: 5px; border: 1.5px solid #fff; border-top: 0; box-shadow: 0 1px 2px #000; }
+.iv-scale span { font: 9.5px var(--f-mono); color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000; }
+.iv-credit { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font: 9px var(--f-mono); color: var(--fg-2); background: rgba(5, 8, 13, .78); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iv-err { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; font: 11px var(--f-mono); color: #ff8a90; }
+
+.iv-side { display: flex; flex-direction: column; gap: 6px; font: 10px/1.4 var(--f-mono); min-width: 0; }
+.iv-det { border: 1px solid var(--line); padding: 5px 7px; display: grid; gap: 1px; }
+.iv-det > b { font: 700 10px var(--f-head); letter-spacing: .14em; color: var(--acc); }
+.iv-det + .iv-det > b { color: var(--amber); }
+.iv-det div { display: grid; grid-template-columns: 74px 1fr; gap: 4px; }
+.iv-det div span { color: var(--dim); }
+.iv-det div em { font-style: normal; color: var(--fg); overflow-wrap: anywhere; }
+.iv-det.none span { color: var(--dim); }
+.iv-act { display: flex; flex-wrap: wrap; gap: 4px; }
+.iv-act button { padding: 4px 7px; font-size: 10px; }
+.iv-op { display: flex; align-items: center; gap: 4px; color: var(--fg-2); width: 100%; }
+.iv-op input { flex: 1; padding: 0; }
+.iv-srcs { display: grid; gap: 2px; }
+.iv-srcs div { display: grid; } .iv-srcs b { font-weight: 600; color: var(--fg-2); } .iv-srcs span { color: var(--dim); }
+.iv-srcs .err span { color: #ff8a90; }
+
+/* list */
+.iv-listbar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font: 10px var(--f-mono); color: var(--fg-2); }
+.iv-listbar small { color: var(--dim); }
+.iv-src { font: 9.5px var(--f-mono); letter-spacing: 0; text-transform: none; padding: 2px 6px; }
+.iv-src.off { opacity: .4; } .iv-src.err b { color: var(--red); }
+.iv-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; max-height: 300px; overflow: auto; padding-right: 2px; }
+.iv.max .iv-list { max-height: 260px; }
+.iv-card { position: relative; border: 1px solid var(--line); cursor: pointer; font: 9.5px/1.35 var(--f-mono); background: rgba(0, 0, 0, .25); }
+.iv-card:hover { border-color: var(--line-2); }
+.iv-card.a { border-color: #fff; } .iv-card.b { border-color: var(--amber); }
+.iv-card > em { position: absolute; left: 3px; top: 3px; font: 700 10px var(--f-mono); font-style: normal; color: #000; background: #fff; padding: 0 4px; }
+.iv-card.b > em { background: var(--amber); }
+.iv-th { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: var(--void); }
+.iv-th img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.iv-th.ld::after { content: "rendering…"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); }
+.iv-th small { position: absolute; left: 0; right: 0; bottom: 0; padding: 1px 3px; background: rgba(5, 8, 13, .75); color: var(--fg-2); }
+.iv-terr { position: absolute; inset: 0; padding: 6px; color: #ff8a90; font-size: 9px; overflow: hidden; }
+.iv-cc { display: grid; padding: 3px 5px; }
+.iv-cc b { font: 600 10px var(--f-head); letter-spacing: .05em; color: var(--fg); }
+.iv-cc span { color: var(--fg-2); }
+.iv-card.k-sar .iv-cc b { color: var(--violet); } .iv-card.k-vhr .iv-cc b, .iv-card.k-basemap .iv-cc b { color: var(--amber); }
+.iv-cb { display: flex; gap: 3px; margin-top: 2px; }
+.iv-cb button { padding: 1px 6px; font-size: 9px; }
+
+/* globe right-click menu */
+.iv-ctx { position: fixed; z-index: 45; display: grid; gap: 4px; padding: 6px; min-width: 150px; }
+.iv-ctx-h { font: 10px var(--f-mono); color: var(--dim); }
+
+/* open-in-viewer buttons (intel console, dossier, before/after frame) */
+.iv-open { padding: 3px 8px; font-size: 10px; }
+.ic-ivbar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; font: 10px var(--f-mono); color: var(--dim); }
