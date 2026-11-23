@@ -356,6 +356,7 @@ class EventBuilder:
             self._lake_time_window = False
         self._warm = False
         self._rebuild_at: str | None = None
+        self.backlog = False  # the last pass read a full page: run the next one at once
         # OS lock shared with rebuild_events: passes are skipped while a rebuild runs
         path = getattr(store, "path", None)
         self.rebuild_lock: Path | None = rebuild_lock_path(path) if path else None
@@ -465,6 +466,7 @@ class EventBuilder:
             # the overlap window alone fills a page (a bulk write): it would be re-read
             # forever and the cursor never advance, so page from the cursor instead
             docs = self.read_documents(cursor, now)
+        self.backlog = len(docs) >= self.cfg.batch_limit
         fresh = [d for d in docs if d.id not in self._seen]
         res = self.clusterer.process(fresh, now)
         changed = [self.clusterer.events[eid].to_row() for eid in res.changed
@@ -709,6 +711,9 @@ class EventBuilder:
                 self.last_error = f"{type(e).__name__}: {e}"
                 self.metrics.inc("event_builder_errors_total")
                 log.exception("event builder pass failed")
+            if self.backlog and self.last_error is None:
+                await asyncio.sleep(0)  # catching up after a bulk write: next page now
+                continue
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.cfg.interval_s)
             except TimeoutError:

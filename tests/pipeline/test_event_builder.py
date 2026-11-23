@@ -283,3 +283,21 @@ def test_cursor_advances_past_overlap_window_filling_a_page(tmp_path):
         b.run_once()
     assert store.get_cursor(CURSOR_NAME)["fetched_at"].startswith("2026-11-21T11:59")
     store.close()
+
+
+def test_backlog_flag_set_while_pages_are_full(tmp_path):
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    lake.write("documents", [
+        _row(i, f"Strike report {i}", fetched=NOW - timedelta(minutes=30 - i)) for i in range(5)])
+    b = _builder(store, lake, lambda: NOW)
+    b.cfg.batch_limit = 3
+    b.run_once()
+    assert b.backlog
+    for _ in range(4):  # catch-up passes until a page is no longer full
+        b.run_once()
+        if not b.backlog:
+            break
+    assert not b.backlog
+    assert store.get_cursor(CURSOR_NAME)["fetched_at"].startswith("2026-11-21T11:34")
+    store.close()
