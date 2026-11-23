@@ -18,6 +18,14 @@ class Evidence:
     names: list[str] = field(default_factory=list)    # carrier names this evidence mentions
     half_life_h: float | None = None                  # override of the fusion half-life
     source_key: str = ""      # independence key (e.g. track id) - same key counts once per kind
+    # every underlying source when one evidence aggregates several (an air-track fit built from
+    # several flights): independence is judged on these, so the fit and the per-flight
+    # indicators of the same aircraft are never counted as independent signals
+    source_keys: list[str] = field(default_factory=list)
+    detail: dict | None = None  # structured payload (e.g. the fitted track) for the UI
+
+    def independence_keys(self, fallback: str) -> set[str]:
+        return set(self.source_keys) or {self.source_key or fallback}
 
     def to_dict(self) -> dict:
         d = {"kind": self.kind, "ts": self.ts.isoformat(), "lat": round(self.lat, 4),
@@ -28,4 +36,6 @@ class Evidence:
             d["polygon"] = self.polygon
         if self.names:
             d["names"] = self.names
+        if self.detail:
+            d["detail"] = self.detail
         return d

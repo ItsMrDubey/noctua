@@ -75,9 +75,15 @@ def test_carriers_envelope_and_detail(env):
     assert body["count"] == len(body["items"]) == 1
     h = body["items"][0]
     assert set(h["kinds"]) == {"sea_terminating_flight", "cvw_aircraft", "support_ship",
-                               "nav_warning"}
+                               "nav_warning", "air_track"}
+    # the air-track fit is built from the same C-2 flight: never an extra independent signal
     assert set(h["independent_kinds"]) == {"sea_terminating_flight", "support_ship",
                                            "nav_warning"}
+    fit = h["air_track"]
+    assert fit["aircraft"] == ["air:c2"] and fit["fixes"][0]["role"] == "recovery"
+    assert "RAWHIDE1" in fit["fixes"][0]["description"]
+    assert "carrier onboard delivery" in fit["fixes"][0]["label"]
+    assert h["ellipse"]["semi_major_km"] >= h["ellipse"]["semi_minor_km"] > 0
     assert h["confidence"] > 0.5 and h["radius_km"] >= 50 and h["label"].startswith("CSG? ")
     assert h["candidate_names"][0]["name"] == "USS Alpha"
     st = body["indicator_status"]
@@ -104,6 +110,9 @@ def test_surface_indicators_eval(env):
     allk = client.get("/api/naval/indicators").json()
     assert {i["kind"] for i in allk["items"]} >= {"sea_terminating_flight", "support_ship",
                                                    "usni_prior"}
+    at = client.get("/api/naval/air-tracks").json()
+    assert at["layer"] == "naval_air_tracks" and at["count"] == 1
+    assert at["items"][0]["ellipse"]["confidence"] == 0.95 and at["disclaimer"] == DISCLAIMER
     ev = client.get("/api/naval/eval").json()
     assert ev["available"] and ev["at_sea_carriers"] == 1 and ev["recall_with_slack"] == 1.0
     assert client.get("/api/naval/carriers?hours=0").status_code == 422

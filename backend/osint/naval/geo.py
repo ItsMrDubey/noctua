@@ -187,12 +187,30 @@ class AirportIndex:
         return (best, ident) if best <= within_km else (math.inf, None)
 
 
-class Geo:
-    """OceanMask + AirportIndex bundle used by the indicators."""
+def platforms_from_flares(path: Path) -> AirportIndex:
+    """Upstream (oil/gas production) flare sites from VIIRS Nightfire (``eog_flares.json``,
+    [[lat, lon, type], ...]) - the offshore ones are a proxy for platforms with helidecks."""
+    pts: list[tuple[float, float, str]] = []
+    try:
+        for row in json.loads(path.read_text(encoding="utf-8")):
+            if len(row) >= 3 and row[2] == "upstream":
+                pts.append((float(row[0]), float(row[1]), "flare"))
+    except (OSError, ValueError, TypeError):
+        log.info("naval: no flare sites (%s); offshore-platform guard disabled", path)
+    return AirportIndex(pts)
 
-    def __init__(self, mask: OceanMask, airports: AirportIndex) -> None:
+
+class Geo:
+    """OceanMask + AirportIndex (+ offshore platform proxy) bundle used by the indicators."""
+
+    def __init__(self, mask: OceanMask, airports: AirportIndex,
+                 platforms: AirportIndex | None = None) -> None:
         self.mask = mask
         self.airports = airports
+        self.platforms = platforms or AirportIndex([])
+
+    def near_platform(self, lat: float, lon: float, km: float) -> bool:
+        return self.platforms.count > 0 and self.platforms.nearest_km(lat, lon, km)[1] is not None
 
     def coast_km(self, lat: float, lon: float) -> float:
         return self.mask.coast_km(lat, lon)
@@ -214,7 +232,8 @@ class Geo:
         except Exception:  # noqa: BLE001 - curated bases are a nicety
             log.warning("naval: curated bases unavailable")
         return cls(OceanMask.from_natural_earth(ref_dir / "ne_50m_admin_0_countries.geojson"),
-                   AirportIndex.from_csv(ref_dir / "airports.csv", bases))
+                   AirportIndex.from_csv(ref_dir / "airports.csv", bases),
+                   platforms_from_flares(ref_dir / "eog_flares.json"))
 
 
 _geo: Geo | None = None

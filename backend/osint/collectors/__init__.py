@@ -3,6 +3,7 @@
 from osint.collectors import (  # noqa: F401
     acled,
     adsb,
+    adsb_naval,
     adsb_signals,
     ais,
     celestrak,

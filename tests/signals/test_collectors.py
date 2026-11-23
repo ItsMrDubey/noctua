@@ -100,6 +100,33 @@ async def test_adsb_signals_rate_limit_and_total_failure(tmp_path, ctx_factory):
             await c.poll(ctx_factory(http))  # 429 on the first request ends the cycle
 
 
+@respx.mock
+async def test_adsb_signals_naval_capture_from_region_polls(tmp_path):
+    from osint.config import ROOT
+
+    now = time.time()
+    region = [aircraft("b1", 34.0, 33.0, t="B738", flight="RYR1"),
+              aircraft("b2", 34.1, 33.1, t="V22", flight="TITAN1", alt_baro=800),
+              aircraft("b3", 34.2, 33.2, t="EH10", dbFlags=1)]  # flagged: adsb has it
+    respx.get(f"{BASE_FI}/lat/34/lon/33/dist/250").mock(
+        return_value=httpx.Response(200, json={"now": now, "aircraft": region}))
+    respx.get(f"{BASE_FI}/sqk/7700").mock(return_value=httpx.Response(200, json={"ac": []}))
+    cfg = {"base": BASE_FI, "squawks": ["7700"], "regions": [{"lat": 34, "lon": 33}]}
+    store = SqliteStore(tmp_path / "s.sqlite")
+    try:
+        async with httpx.AsyncClient() as http:
+            c = AdsbSignalsCollector(cfg)
+            c.sleep = nosleep
+            ctx = CollectorContext(http=http, store=store, settings=SimpleNamespace(
+                data_dir=tmp_path, config_dir=ROOT / "config", reference_dir=tmp_path))
+            batch = await c.poll(ctx)
+    finally:
+        store.close()
+    assert [p.track_id for p in batch.positions] == ["air:b2"]
+    assert batch.positions[0].source == "adsb_signals:naval" and batch.positions[0].alt_ft == 800
+    assert batch.tracks[0].extra["naval_capture"] == "type V22"
+
+
 def test_adsb_signals_closed_hours_become_observations():
     from osint.collectors.adsb_signals import gnss_observation
 

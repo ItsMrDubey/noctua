@@ -13,6 +13,21 @@ adsb:
               min_interval_s: 900}
   max_backoff_s: 1800       # per-endpoint exponential backoff cap
   denied_backoff_s: 21600   # 401/403: retry every 6 h, warn once
+adsb_naval:
+  # Carrier-associated / maritime-patrol aircraft NOT flagged military (the adsb /v2/mil feed
+  # misses them) for the carrier model. Verified 2026-11-23: adsb.lol /v2/type/{T} 200
+  # (x-ratelimit-limit 500/day, SHARED with adsb's /v2/mil polls); adsb.fi has no /type
+  # (400) but supports /hex/{a},{b} (multi) and /lat/../lon/../dist/.. (all aircraft).
+  enabled: true
+  interval_s: 60
+  type_budget_per_day: 48   # adsb.lol type queries/day (~10 % of the shared 500)
+  lol_reserve: 150          # never query types when the shared remaining budget is below this
+  region_interval_s: 300    # adsb.fi regional sweep (8 default regions, see adsb_naval.py)
+  spacing_s: 1.5            # between adsb.fi requests (1 req/s allowed; adsb_signals shares it)
+  follow_hours: 6           # keep polling captured hexes by /hex for this long
+  follow_max: 60
+  # types: {V22: 3, H60: 2, E2: 3, ...}   # ICAO type -> priority (default in adsb_naval.py)
+  # regions: [{name: ..., lat: .., lon: .., dist: 250}]
 ais:
   enabled: true
   batch_seconds: 5
@@ -256,6 +271,7 @@ adsb_signals:
   point_path: /lat/{lat}/lon/{lon}/dist/{dist}   # adsb.lol style: /point/{lat}/{lon}/{dist}
   sqk_path: /sqk/{code}
   spacing_s: 1.2
+  naval_capture: true   # also store non-flagged carrier/maritime types seen in the regions
   squawks: ["7500", "7600", "7700"]
   squawk: {gap_s: 1800, keep_h: 24, ignore_status: [lifeguard]}
   gnss:

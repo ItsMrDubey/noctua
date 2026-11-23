@@ -22,7 +22,7 @@ def _slim(h: dict) -> dict:
         "id", "lat", "lon", "radius_km", "confidence", "label", "kinds", "independent_kinds",
         "indicator_breakdown",
         "candidate_names", "first_seen", "last_updated", "evidence_count", "evidence",
-        "disclaimer") if k in h}
+        "centre_basis", "ellipse", "air_track", "disclaimer") if k in h}
 
 
 def mount_naval(app: FastAPI, runtime, job: CarrierJob | None = None) -> None:
@@ -56,6 +56,13 @@ def mount_naval(app: FastAPI, runtime, job: CarrierJob | None = None) -> None:
         out["history"] = (stored or {}).get("history", [])
         out["disclaimer"] = DISCLAIMER
         return out
+
+    @app.get("/api/naval/air-tracks")
+    async def air_tracks(hours: int = Hours) -> dict:
+        """Moving-point fits of carrier-aircraft launch/recovery/loiter fixes (all of them,
+        including ones too weak to form a hypothesis), each with its 95 % ellipse at now."""
+        res = await j().get(hours)
+        return _env("naval_air_tracks", res, res.get("air_tracks", []))
 
     @app.get("/api/naval/indicators")
     async def indicators(hours: int = Hours, kind: str | None = None) -> dict:

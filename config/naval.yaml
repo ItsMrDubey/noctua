@@ -22,6 +22,10 @@ flights:
   base_weight: 1.0
   sample_min: 30           # cvw_aircraft: at most one evidence per track per this many minutes
   cvw_weight: 0.6
+  # unlisted military types (no carrier_types entry): share of base_weight. 0 = ignored; the
+  # 2026-11 live false positives were an AW139 near Malta and an E170 0 ft / 0 kt glitch
+  generic_weight_factor: 0.0
+  platform_km: 25          # skip ends within this of an offshore flare site (platform proxy)
 
 # ICAO type code -> multiplier for carrier-associated aircraft
 carrier_types:
@@ -41,6 +45,103 @@ carrier_types:
   EH10: 1.5     # Merlin (QE class)
   NH90: 1.0
   KA27: 2.0
+  MIG29K: 2.0   # MiG-29K (Vikramaditya / Vikrant), when feeds use the variant code
+
+# ------------------------------------------------------------------ carrier aircraft model
+# Per-leg launch / recovery / helicopter-loiter signatures ("air fixes") -> moving-point fit
+# (osint.naval.airfix / osint.naval.trackfit). Everything here is evidence for a hypothesis,
+# never a position.
+aircraft:
+  lookback_h: 168            # air history read for fixes + track fits (fusion still decays it)
+  open_ocean_km: 80          # a fix must be > this from land AND from any airfield/heliport
+  low_alt_ft: 1500
+  slow_kts: 220
+  appear_alt_ft: 2500        # first/last report at or below this = launch/recovery height
+  climb_fpm: 300             # mean climb (launch) / descent (recovery) rate over the edge
+  edge_points: 4             # reports inspected at each end of a leg
+  min_speed_fixed_kts: 60    # fixed-wing reports slower than this at 0 ft are ground glitches
+  max_speed_kts: 650         # faster than this between reports = position glitch
+  platform_km: 25            # helicopter fixes within this of an offshore flare site (oil/gas
+                             # platform proxy, data/reference/eog_flares.json) are discarded
+  training_coast_km: 200     # fighter legs from a land airfield ending within this of the
+                             # coast are down-weighted (training range sortie, not a recovery)
+  training_factor: 0.35
+  generic_weight: 0.0        # unlisted military types: 0 = never a fix (were half weight; the
+                             # live false positives were AW139 / E170 records)
+  loiter:                    # helicopters circling a (slowly moving) point far from land
+    types: [H60, EH10, NH90, KA27, AS65, LYNX, WILD]
+    min_minutes: 30
+    max_radius_km: 45
+    max_alt_ft: 3000
+    max_drift_kts: 35        # centroid drift between halves (a carrier makes <= ~32 kt)
+  signature_factor: {recovery: 1.0, launch: 1.0, loiter: 0.8, launch_recovery: 1.2}
+  # Hexes of the JASDF Kawasaki C-2 (same ICAO type code C2 as the C-2A Greyhound, which
+  # retired from US service in 2026) - Japan's 24-bit block 0x840000-0x87FFFF.
+  type_hex_exclude:
+    C2: [["840000", "87ffff"]]
+  type_labels:
+    C2: C-2A Greyhound (COD)
+    V22: V-22 / CMV-22B Osprey
+    E2: E-2C/D Hawkeye
+    H60: MH-60R/S Seahawk
+    F18S: F/A-18E/F Super Hornet
+    F18H: F/A-18 Hornet
+    E18G: EA-18G Growler
+    EA18: EA-18G Growler
+    F35: F-35
+    RAFL: Rafale M
+    EH10: Merlin HM2
+    NH90: NH90 NFH
+    KA27: Ka-27/31
+    SU33: Su-33
+    J15: J-15
+    MIG29: MiG-29K
+    MIG29K: MiG-29K
+    P8: P-8 Poseidon
+    P1: Kawasaki P-1
+    ATLA: Atlantique 2
+    ATL2: Atlantique 2
+    Q4: MQ-4C / RQ-4
+    MQ4C: MQ-4C Triton
+    K35R: KC-135
+    KC46: KC-46
+  fighter_types: [F18S, F18H, E18G, EA18, F35, RAFL, SU33, J15, MIG29, MIG29K]
+  # Maritime patrol / ISR / tankers are land based: supporting evidence (orbits), never a fix.
+  # military-only ICAO types (no civil look-alikes: A332 = also every civil A330-200, so the
+  # KC-30 / MRTT is left to the military feed)
+  support_types: [P8, P3, P1, ATLA, ATL2, Q4, MQ4C, K35R, KC46, KC10]
+  # Callsign patterns (regex on the ADS-B flight field, upper case) with labels. Seed ONLY
+  # well-documented ones; add your own (they also drive adsb_naval's capture of aircraft that
+  # are not flagged military). weight replaces the type multiplier when higher.
+  callsigns:
+    # VRC-40 "Rawhides" (NS Norfolk) - Carrier Onboard Delivery for 2nd/5th/6th Fleet; flights
+    # use "RAWHIDE nn" (e.g. "Rawhide 78" on a COD resupply run, Smithsonian Air & Space,
+    # https://www.smithsonianmag.com/air-space-magazine/greyhound-and-osprey-180973131/;
+    # squadron: https://en.wikipedia.org/wiki/VRC-40). The C-2A retired in 2026 (DVIDS
+    # 571056); whether the CMV-22B successor keeps RAWHIDE is unverified, so the type is not
+    # assumed.
+    - {pattern: '^RAWHIDE ?\d{0,3}$', label: "VRC-40 'Rawhides' carrier onboard delivery", role: cod, weight: 3.0}
+    # Deliberately NOT seeded (could not verify from a citable source): VRC-30 / VRM-30 / VRM-50
+    # COD callsigns, HSC/HSM and CVW squadron tactical callsigns, foreign naval air arms.
+    # The ICAO designator CNV / "CONVOY" is US Navy *logistics* (land-based C-40/C-130
+    # airlift), not carrier aviation - not a carrier signal.
+
+# moving-point fit of air fixes (osint.naval.trackfit)
+trackfit:
+  max_speed_kts: 32          # carrier upper bound
+  pos_tol_km: 40             # a fix's own spread (aircraft within the pattern / last report)
+  inlier_km: 45              # RANSAC inlier residual
+  max_link_h: 36             # fixes further apart in time are not linked into one group
+  min_span_h: 1.0            # below this time span velocity is unknown (stationary model)
+  sigma_floor_km: 15
+  drift_kmh: 10              # manoeuvre growth of the ellipse per hour since the last fix
+  unknown_speed_kts: 16      # 1-sigma speed when the velocity cannot be fitted
+  ellipse_k: 2.4477          # 95 % ellipse scale (chi-square 2 dof)
+  max_axis_km: 1500
+  min_fixes_evidence: 1      # a fit needs >= this many fixes to become 'air_track' evidence
+  single_fix_factor: 0.5     # weight share of a one-fix "fit" (no motion information)
+  weight: 1.5                # air_track base weight, x (1 + 0.5 x (aircraft - 1)), capped
+  max_weight: 4.0
 
 orbits:
   min_turn_deg: 540        # cumulative heading change within one leg
@@ -255,7 +356,7 @@ fusion:
   max_evidence: 15
   # positional indicator kinds; news + usni_prior only name/prior and never count as independent
   positional_kinds: [sea_terminating_flight, cvw_aircraft, support_ship, nav_warning, traffic_void,
-                     traffic_diversion, orbit]
+                     traffic_diversion, orbit, support_orbit, air_track]
   kind_scale:                # saturation scale of each kind's summed weight
     sea_terminating_flight: 2.0
     cvw_aircraft: 3.0
@@ -264,6 +365,8 @@ fusion:
     traffic_void: 1.5
     traffic_diversion: 1.5
     orbit: 2.0
+    support_orbit: 2.0
+    air_track: 2.5
   kind_strength:             # max contribution of a kind (strong ~1, medium ~0.6)
     sea_terminating_flight: 1.0
     cvw_aircraft: 0.7
@@ -272,9 +375,26 @@ fusion:
     traffic_void: 0.6
     traffic_diversion: 0.5
     orbit: 0.5
+    support_orbit: 0.3
+    air_track: 0.9
     news: 0.15
     usni_prior: 0.15
   single_kind_cap: 0.45      # < 2 independent positional kinds can never exceed this
+  # kinds whose sources are all behind a stronger kind (the same flights) add only this share
+  # of their strength (one C-2 flight = sea_terminating + cvw + air_track is ONE signal)
+  shadowed_factor: 0.25
+  # aircraft-only hypotheses: the cap rises to this when one moving-point fit holds >= N
+  # distinct aircraft of >= 2 types (several independent flights agreeing on one moving point)
+  air_multi_cap: 0.6
+  # kinds of one family count as ONE kind for the 2-independent-kinds rule (different flights
+  # are independent sources, but aircraft alone are one modality: a second modality - ships,
+  # warnings, traffic - is needed to pass the caps above)
+  families:
+    aircraft: [sea_terminating_flight, cvw_aircraft, orbit, support_orbit, air_track]
+  # orbits of land-based tankers / maritime patrol / ISR (not carrier types) only SUPPORT a
+  # hypothesis; on their own they never make one
+  supporting_kinds: [support_orbit]
+  air_multi_min_aircraft: 3
   max_confidence: 0.95
   match_km: 300              # hypothesis identity across runs
   match_hours: 24

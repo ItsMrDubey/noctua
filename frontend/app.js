@@ -410,7 +410,7 @@ async function main() {
     if (!hits.length) { const p = scene.pick(click.position, 14, 14); if (Cesium.defined(p)) hits = [p]; }
     let best = null, bestD = Infinity, densityHit = null, refHit = null;
     // carrier hypotheses sit on top of everything else, then public webcams
-    for (const picked of hits) if (picked && picked.id && (picked.id.navalHyp || picked.id.navalIndicator) && mods.naval.pick(picked)) return;
+    for (const picked of hits) if (picked && picked.id && (picked.id.navalHyp || picked.id.navalIndicator || picked.id.navalFit || picked.id.navalLeg) && mods.naval.pick(picked)) return;
     for (const picked of hits) if (picked && picked.id && (picked.id.webcam || picked.id.webcamCluster)) { mods.wc.pick(picked); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.histCell) { histLayer.zoomCell(picked.id.histCell); return; }
     for (const picked of hits) if (picked && picked.id && picked.id.watch && byKind[picked.id.kind] && byKind[picked.id.kind].items.has(picked.id.id)) { select(picked.id.kind, picked.id.id); return; }
@@ -588,7 +588,15 @@ async function main() {
   const naval = mods.naval = new CarrierLayer(viewer, {
     onSelect: (it) => {
       if (it && it.indicator) showModule("carrier", it.indicator, "Naval indicator · hypothesis input", "#f2ad3d", (el) => naval.renderInspector(it, el));
+      else if (it && it.fit) showModule("carrier", it.fit, "Air-track fit · estimate", "#ffd166", (el) => naval.renderInspector(it, el));
       else if (it) showModule("carrier", it, "Carrier activity · hypothesis", "#5ee3ea", (el) => naval.renderInspector(it, el));
+    },
+    // a contributing aircraft leg: select it when it is live on the globe, else open its intel
+    // (profile + history) - the leg may be days old
+    onAircraft: (id, fx) => {
+      if (byKind.aircraft.items.has(id)) { select("aircraft", id); flyToItem("aircraft", id); return; }
+      fx = fx || {};
+      dossier.open({ type: "intel", kind: "aircraft", id, lat: fx.lat, lon: fx.lon, t: fx.ts || null, label: fx.callsign || id });
     },
   });
   const navalCounts = () => {

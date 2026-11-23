@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from osint.core.geo import haversine_km
+from osint.naval import airfix as AF
 from osint.naval import legs as L
 from osint.naval import msi
 from osint.naval.geo import Geo, mean_point
@@ -24,6 +25,22 @@ def _ts(us: int) -> datetime:
 
 # ------------------------------------------------------------------------ air
 
+def _by_track(rows: list[tuple]) -> dict[str, list[L.Pt]]:
+    by_track: dict[str, list[L.Pt]] = defaultdict(list)
+    for tid, ts_us, la, lo, alt, spd, hdg in rows:
+        by_track[tid].append(L.Pt(_ts(ts_us), la, lo, alt, spd, hdg))
+    return by_track
+
+
+def _meta(tid: str, meta: dict | None, model: AF.AircraftModel) -> dict:
+    """Track metadata with the type blanked when the hex block excludes it (JASDF C-2)."""
+    meta = dict(meta or {})
+    t = (meta.get("type_code") or "").upper()
+    if t in model.hex_exclude and AF._hex_in(tid, model.hex_exclude[t]):
+        meta["type_code"] = None
+    return meta
+
+
 def air_indicators(rows: list[tuple], metas: dict[str, dict], geo: Geo, cfg, *,
                    window_start: datetime, now: datetime) -> list[Evidence]:
     """rows: (track_id, ts_us, lat, lon, alt_ft, speed_kts, heading_deg)."""
@@ -31,22 +48,41 @@ def air_indicators(rows: list[tuple], metas: dict[str, dict], geo: Geo, cfg, *,
     ctypes = cfg.sec("carrier_types")
     orb = cfg.sec("orbits")
     far = float(cfg.sec("geo").get("far_from_land_km", 150))
-    by_track: dict[str, list[L.Pt]] = defaultdict(list)
-    for tid, ts_us, la, lo, alt, spd, hdg in rows:
-        by_track[tid].append(L.Pt(_ts(ts_us), la, lo, alt, spd, hdg))
+    model = AF.AircraftModel(cfg)
     out: list[Evidence] = []
     gap = timedelta(minutes=float(fl.get("max_gap_min", 20)))
     grace = timedelta(minutes=float(fl.get("live_grace_min", 20)))
-    for tid, pts in by_track.items():
-        meta = metas.get(tid) or {}
+    for tid, pts in _by_track(rows).items():
+        meta = _meta(tid, metas.get(tid), model)
         legs = L.segment_legs(tid, pts, window_start=window_start, now=now, max_gap=gap,
                               live_grace=grace)
         out += L.sea_terminating(legs, meta, geo, fl, ctypes)
         out += L.cvw_over_ocean(tid, pts, meta, geo, fl, ctypes)
+        carrier_type = model.mults.get((meta.get("type_code") or "").upper(), 0.0) > 0
         for leg in legs:
             ev = L.orbit(leg, meta, geo, orb, far)
             if ev is not None:
+                if not carrier_type:
+                    # land-based tanker / patrol / ISR orbit: supporting, never primary
+                    ev.kind = "support_orbit"
                 out.append(ev)
+    return out
+
+
+def air_fixes(rows: list[tuple], metas: dict[str, dict], geo: Geo, cfg, *,
+              window_start: datetime, now: datetime) -> list[AF.AirFix]:
+    """Launch / recovery / loiter fixes of carrier-associated aircraft (osint.naval.airfix)."""
+    fl = cfg.sec("flights")
+    model = AF.AircraftModel(cfg)
+    gap = timedelta(minutes=float(fl.get("max_gap_min", 20)))
+    grace = timedelta(minutes=float(fl.get("live_grace_min", 20)))
+    out: list[AF.AirFix] = []
+    for tid, pts in _by_track(rows).items():
+        meta = _meta(tid, metas.get(tid), model)
+        legs = L.segment_legs(tid, pts, window_start=window_start, now=now, max_gap=gap,
+                              live_grace=grace)
+        if legs:
+            out += AF.track_fixes(legs, meta, geo, cfg, model)
     return out
 
 
