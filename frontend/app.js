@@ -7,7 +7,7 @@ import { Timeline, RANGES } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
 import { $, esc, evTitle } from "/static/js/ui.js";
-import { fmtDateTime } from "/static/js/timefmt.js";
+import { fmtDateTime, onTzChange } from "/static/js/timefmt.js";
 import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
 import { BASE_URL } from "/static/js/layers.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
@@ -29,7 +29,7 @@ import { initLicences } from "/static/js/licences.js";
 import { CarrierLayer } from "/static/js/naval.js";
 import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
-import { Weather, setCinematic, sunTime } from "/static/js/weather.js";
+import { Weather, irNote, radarNote, setCinematic, sunTime } from "/static/js/weather.js";
 import { Dossier } from "/static/js/browser.js";
 import { installFireScore } from "/static/js/firescore.js";
 import { Freshness } from "/static/js/freshness.js";
@@ -123,11 +123,21 @@ async function main() {
   // ---- weather & lighting ----
   const weather = new Weather(viewer);
   weather.onStatus = (st) => {
-    const el = $("wx-clouds-n");
-    el.textContent = st.clouds ? String(st.clouds) : "";
-    el.closest("label").title = st.error ? "3D clouds: " + st.error : "Volumetric clouds from current cloud cover (Open-Meteo); grid " + (st.step || "-") + " deg";
+    const el = $("wx-clouds-note");
+    const txt = st.error ? st.error : st.clouds ? st.clouds + " clouds · model cover, " + st.step + "° grid (Open-Meteo)" : "";
+    if (el.textContent !== txt) el.textContent = txt;
   };
+  const wxNotes = () => {
+    for (const [id, html] of [["wx-ir-note", irNote(weather)], ["wx-radar-note", radarNote(weather)]]) {
+      const el = $(id);
+      if (el && el.innerHTML !== html) el.innerHTML = html;
+    }
+  };
+  weather.onLayerStatus = wxNotes;
+  setInterval(() => { if (weather.irOn || weather.radarOn) wxNotes(); }, 30e3); // ages + tile failure counts
+  onTzChange(wxNotes);
   $("t-wx-ir").addEventListener("change", (e) => weather.setIR(e.target.checked));
+  $("t-wx-ir-style").addEventListener("change", (e) => weather.setIRStyle(e.target.value));
   $("t-wx-radar").addEventListener("change", (e) => weather.setRadar(e.target.checked));
   $("t-wx-clouds").addEventListener("change", (e) => weather.setClouds(e.target.checked));
   const applyCinematic = () => {
@@ -835,7 +845,7 @@ async function main() {
   $("rail-dossier").addEventListener("click", () => dossier.toggle());
 
   // ---- Keyboard ----
-  const ctx = { viewer, scene, air, ships, byKind, refLayers, nuclear, moves, tree, timeline, hud, fps, mods, models, leaders, histLayer, showWebcam, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
+  const ctx = { viewer, scene, weather, air, ships, byKind, refLayers, nuclear, moves, tree, timeline, hud, fps, mods, models, leaders, histLayer, showWebcam, select, flyTo, flyToItem, clearSelection, showRef, inspector, setFollow: () => setFollow(!following) };
   document.addEventListener("keydown", (e) => {
     const typing = /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "");
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (ctx.palette.isOpen) ctx.palette.close(); else ctx.palette.open(); return; }
