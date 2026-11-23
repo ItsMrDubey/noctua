@@ -18,6 +18,7 @@ dependencies = [
   "numpy>=2.0",
   "sentencepiece>=0.2",
   "sgp4>=2.23",
+  "pillow>=10.4",
 ]
 
 [project.scripts]

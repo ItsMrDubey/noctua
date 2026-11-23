@@ -278,7 +278,7 @@ export class EventDossier {
       '</span><small>' + esc(x.basis) + "</small></li>").join("") + "</ul>" : '<div class="dz-empty">' + esc((A && A.error) || "No assessment") + "</div>");
     // imagery (evidence points overlaid)
     const pts = (this._evPts || []).filter((p) => p.lat != null);
-    const im = put("imagery", imageryHtml(S.imagery, { lat: it.lat, lon: it.lon }, pts),
+    const im = put("imagery", imageryHtml(S.imagery, { lat: it.lat, lon: it.lon, label: it.title_en || it.title, t: it.t_start }, pts),
       S.imagery && S.imagery.watch ? esc({ acquired: "before + after", awaiting: "after pending", expired: "watch ended", failed: "failed", not_scheduled: "not queued" }[S.imagery.watch.state] || S.imagery.watch.state) : "");
     if (im) wireImagery(im);
     // timeline

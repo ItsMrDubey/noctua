@@ -13,6 +13,7 @@ from osint.api.events import mount_events
 from osint.api.extraction import mount_extraction
 from osint.api.fires import mount_fires
 from osint.api.imagery import mount_imagery
+from osint.api.imagery_viewer import mount_imagery_viewer
 from osint.api.infra import mount_infra
 from osint.api.intel import mount_intel
 from osint.api.movements import mount_movements
@@ -117,6 +118,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     mount_infra(app, runtime)
     mount_movements(app, runtime)
     mount_events(app, runtime)
+    mount_imagery_viewer(app, runtime)  # before mount_imagery: /api/imagery/{event_id}
     mount_imagery(app, runtime)
     mount_intel(app, runtime)
     mount_storylines(app, runtime)

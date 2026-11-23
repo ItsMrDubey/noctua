@@ -25,6 +25,7 @@ import { eventCat, EVENT_STATUS } from "/static/js/symbology.js";
 import { fmtUtc, since, kmText, mgrs, latLonText, chip, gauge, bars, copyBtn, wireCopy, copyText, toast } from "/static/js/panels/dossier-kit.js";
 import { renderTimeline, wireTimeline } from "/static/js/panels/timeline-view.js";
 import { imageryHtml, wireImagery } from "/static/js/imagery.js";
+import { openImageryViewer } from "/static/js/panels/imagery-viewer.js";
 import { storylineHtml } from "/static/js/storylines.js";
 import { FIRE_REASONS, reasonLabel } from "/static/js/firescore.js";
 import { detection } from "/static/js/panels/sensor-detection.js";
@@ -252,6 +253,12 @@ function overhead(O) {
     "<span>" + esc(fmtUtc(O.window.from)) + "</span><span>" + esc(fmtUtc(O.window.to)) + "</span></div>";
   h += O.passes.length ? '<div class="ic-scroll"><table class="ip-t ic-pt"><thead><tr><th>Time (UTC)</th><th>Satellite</th><th>Type</th><th>Geometry</th><th>Cloud</th><th></th></tr></thead><tbody>' + O.passes.map(passRow).join("") + "</tbody></table></div>" : empty("No covering passes in the window");
   return h + '<div class="ic-basis">' + esc(O.basis) + " Elements up to " + nf(O.max_element_age_h, 1) + " h old.</div>";
+}
+
+// "View images": the imagery viewer on this site (every free scene, predicted passes greyed)
+function viewBar(subj) {
+  if (!subj || subj.lat == null) return "";
+  return '<div class="ic-ivbar"><button type="button" class="iv-open" data-ivo="1" title="Sentinel-2 / Landsat / Sentinel-1 scenes, Maxar Open Data and Esri Wayback over the site, at native resolution">View images</button><span>actual scenes over the site; the passes below are predictions</span></div>';
 }
 
 // ---- signals at the site ----
@@ -761,7 +768,7 @@ export async function renderIntel(spec, body, hooks) {
     det: () => detection(D.detection),
     loc: () => locator(subj, D),
     time: () => (D.timeline ? renderTimeline(D.timeline) : D.timeline === null ? empty("No timeline") : null),
-    over: () => overhead(D.overhead),
+    over: () => (D.overhead ? viewBar(subj) + overhead(D.overhead) : null),
     img: () => (D.imagery ? imageryHtml(D.imagery, subj, []) : D.imagery === null ? empty("No imagery") : null),
     env: () => environment(D.environment),
     sens: () => sensors(D.sensors),
@@ -915,6 +922,12 @@ export async function renderIntel(spec, body, hooks) {
   root.addEventListener("click", (e) => {
     const go = e.target.closest("[data-go]");
     if (go) { focusTile(go.dataset.go); return; }
+    if (e.target.closest("[data-ivo]") && subj && subj.lat != null) {
+      // centre on the imagery job's target (impact site / FIRMS hotspot hull) when it has one
+      const tg = (((D.imagery || {}).assets) || []).map((a) => a.target).find((x) => x && x.lat != null);
+      openImageryViewer({ lat: tg ? tg.lat : subj.lat, lon: tg ? tg.lon : subj.lon, label: subj.label || spec.label || kl, t: (D.overhead && D.overhead.event_t) || subj.t_start || null });
+      return;
+    }
     const more = e.target.closest("[data-more]");
     if (more) { const h = more.previousElementSibling; if (h) h.hidden = false; more.remove(); return; }
     const ic = e.target.closest("[data-ic]");

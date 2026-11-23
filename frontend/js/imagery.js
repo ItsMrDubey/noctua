@@ -8,10 +8,13 @@
 // it was moved to the impact site / FIRMS hotspot hull, and evidence points. Click a frame
 // for a full-size lightbox. Images load eagerly (the old loading="lazy" inside the inspector's
 // own scroll container left them unrequested until scrolled into view, showing only the alt
-// text) into fixed-aspect boxes, so nothing shifts while they decode.
+// text) into fixed-aspect boxes, so nothing shifts while they decode. "Open in viewer" hands the
+// site and both scenes to the imagery viewer (panels/imagery-viewer.js: every scene, presets,
+// full resolution, drape).
 import { esc, nf } from "/static/js/ui.js";
 import { since } from "/static/js/panels/dossier-kit.js";
 import { fmtDate, fmtDateTime } from "/static/js/timefmt.js";
+import { openImageryViewer } from "/static/js/panels/imagery-viewer.js";
 
 const BASIS = { impact_site: "impact site", firms_hull: "FIRMS hotspot hull", event: "event location" };
 const ROLE = { before: "Before", after: "After" };
@@ -60,7 +63,21 @@ function statusCard(role, a, watch) {
   return '<div class="im-st"><b>' + ROLE[role] + "</b><span>" + esc(a.status) + "</span></div>";
 }
 
-// `points`: [{lat, lon, label}] evidence to overlay; `ev`: {lat, lon}
+// imagery viewer scene key of a stored crop ("s2:<scene id>")
+const SRC = { "sentinel-2-l2a": "s2", "landsat-c2-l2": "landsat" };
+const sceneKey = (a) => (a && a.scene_id && SRC[a.collection] ? SRC[a.collection] + ":" + a.scene_id : null);
+function viewerBtn(by, ev) {
+  const tg = (by.after || by.before || {}).target;
+  const lat = tg && tg.lat != null ? tg.lat : ev && ev.lat, lon = tg && tg.lon != null ? tg.lon : ev && ev.lon;
+  if (lat == null || lon == null) return "";
+  const ok = (r) => by[r] && by[r].status === "ok";
+  const spec = { lat, lon, label: (ev && ev.label) || "Event site", t: (ev && (ev.t || ev.t_start)) || null,
+    select: { a: ok("after") ? sceneKey(by.after) : ok("before") ? sceneKey(by.before) : null, b: ok("after") && ok("before") ? sceneKey(by.before) : null,
+      aAt: (ok("after") ? by.after : by.before || {}).acquired_at || null, bAt: (by.before || {}).acquired_at || null } };
+  return '<div class="im-note"><button type="button" class="iv-open" data-iv="' + esc(JSON.stringify(spec)) + '" title="Every free scene over the site: presets, full resolution, compare, drape on the globe">Open in viewer</button></div>';
+}
+
+// `points`: [{lat, lon, label}] evidence to overlay; `ev`: {lat, lon, label?, t?}
 export function imageryHtml(j, ev, points) {
   if (!j) return '<div class="dz-empty">Loading imagery…</div>';
   if (j.error) return '<div class="dz-empty">Imagery unavailable: ' + esc(j.error) + "</div>";
@@ -88,7 +105,7 @@ export function imageryHtml(j, ev, points) {
   const tgt = (by.before || by.after || {}).target;
   const note = tgt && tgt.basis !== "event" ? '<div class="im-note">Crop centred on the ' + esc(BASIS[tgt.basis] || tgt.basis) + " (◇), not the reported location (◎)</div>" : "";
   const missing = points && points.length && (ok("before") || ok("after")) ? points.filter((p) => !frac((by.before || by.after).bounds, p.lat, p.lon)).length : 0;
-  return h + note + (missing ? '<div class="im-note">' + missing + " evidence point" + (missing === 1 ? " lies" : "s lie") + " outside this crop</div>" : "") +
+  return h + note + viewerBtn(by, ev) + (missing ? '<div class="im-note">' + missing + " evidence point" + (missing === 1 ? " lies" : "s lie") + " outside this crop</div>" : "") +
     (credit ? '<div class="im-credit">' + esc(credit) + "</div>" : "");
 }
 
@@ -137,6 +154,8 @@ function lightbox(frame) {
 export function wireImagery(root) {
   root.querySelectorAll(".im-cmp").forEach(dragCompare);
   root.addEventListener("click", (e) => {
+    const iv = e.target.closest(".iv-open[data-iv]");
+    if (iv) { try { openImageryViewer(JSON.parse(iv.dataset.iv)); } catch (err) { console.warn("imagery viewer", err); } return; }
     const z = e.target.closest(".im-zoom") || (e.target.closest(".im-frame:not(.im-cmp)") && !e.target.closest(".im-lb"));
     if (!z) return;
     const frame = e.target.closest(".im-frame");

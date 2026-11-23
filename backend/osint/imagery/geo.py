@@ -59,3 +59,37 @@ def pixel_window(easting: float, northing: float, origin_x: float, origin_y: flo
     col = (easting - origin_x) / px_x
     row = (origin_y - northing) / px_y
     return round(col - size_x / 2), round(row - size_y / 2), size_x, size_y
+
+
+def utm_forward_np(lat, lon, epsg: int):
+    """Vectorised :func:`utm_forward` over numpy arrays of lat/lon (deg)."""
+    import numpy as np
+
+    lon0, south = utm_zone_params(epsg)
+    phi = np.radians(lat)
+    dl = np.radians(((np.asarray(lon) - lon0 + 180) % 360) - 180)
+    e = 2 * math.sqrt(_N) / (1 + _N)
+    sp = np.sin(phi)
+    t = np.sinh(np.arctanh(sp) - e * np.arctanh(e * sp))
+    xi = np.arctan2(t, np.cos(dl))
+    eta = np.arctanh(np.sin(dl) / np.sqrt(1 + t * t))
+    xs, es = xi.copy(), eta.copy()
+    for j, a in enumerate(_ALPHA, start=1):
+        xs += a * np.sin(2 * j * xi) * np.cosh(2 * j * eta)
+        es += a * np.cos(2 * j * xi) * np.sinh(2 * j * eta)
+    return 500000.0 + K0 * _AA * es, (10000000.0 if south else 0.0) + K0 * _AA * xs
+
+
+def metres_per_degree(lat: float) -> tuple[float, float]:
+    """(metres per degree of longitude, of latitude) at ``lat`` (WGS84 ellipsoid)."""
+    p = math.radians(lat)
+    e2 = F * (2 - F)
+    w = math.sqrt(1 - e2 * math.sin(p) ** 2)
+    return (math.pi / 180 * A * math.cos(p) / w, math.pi / 180 * A * (1 - e2) / w ** 3)
+
+
+def bbox_around(lat: float, lon: float, half_km: float) -> tuple[float, float, float, float]:
+    """(west, south, east, north) of a square of side 2*half_km centred on the point."""
+    mx, my = metres_per_degree(lat)
+    dx, dy = half_km * 1000 / max(1.0, mx), half_km * 1000 / my
+    return (lon - dx, lat - dy, lon + dx, lat + dy)
