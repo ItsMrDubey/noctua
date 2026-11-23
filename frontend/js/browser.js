@@ -7,6 +7,8 @@
 //             (/api/browse/read: server-side fetch + main-text extraction)
 //   nearby  - Wikipedia articles around a point (thumbnails, distance, fly-to)
 //   search  - candidate Wikidata items for a name
+//   intel   - all-source intel buildup around a selection (panels/intel-view.js, /api/intel);
+//             Wikidata / Wikipedia is its "Background" card. Entities pivot within the pane.
 //
 // Wikidata / Wikipedia / Commons are queried straight from the app (CORS, origin=*): this is
 // user-driven browsing. Links clicked anywhere in the app (target=_blank) open here; Ctrl- or
@@ -17,6 +19,7 @@
 // pane to swap them; the star promotes a pane to master; zoom shows one pane alone.
 import { esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
+import { renderIntel, intelKey } from "/static/js/panels/intel-view.js";
 
 const WD = "https://www.wikidata.org/w/api.php";
 const COMMONS = "https://commons.wikimedia.org/w/api.php";
@@ -43,6 +46,7 @@ const ICON = {
   url: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c-2 2-2 9 0 11M8 2.5c2 2 2 9 0 11"/></svg>',
   nearby: '<svg viewBox="0 0 16 16"><path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 0 0-9 0C3.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/></svg>',
   search: '<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/></svg>',
+  intel: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>',
 };
 const B = {
   back: '<svg viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>',
@@ -267,8 +271,10 @@ export function tileLayout(n, wide = true) {
 let uid = 0;
 
 export class Dossier {
-  constructor({ flyTo } = {}) {
+  constructor({ flyTo, select, highlight } = {}) {
     this.flyTo = flyTo || (() => {});
+    this.select = select || (() => {});
+    this.highlight = highlight || (() => {});
     this.panes = [];
     this.focused = null;
     this.zoomed = null;
@@ -493,9 +499,15 @@ export class Dossier {
     el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("drop"); if (this._drag && this._drag !== pane) this.swap(this._drag, pane); });
     // in-pane actions
     el.querySelector(".ds-pb").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-qid],[data-tab],[data-img],[data-fly],[data-near],[data-radius]");
+      const t = e.target.closest("[data-pivot],[data-qid],[data-tab],[data-img],[data-fly],[data-near],[data-radius],[data-sel]");
       if (!t) return;
-      if (t.dataset.qid) { const spec = { type: "entity", qid: t.dataset.qid }; if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec); }
+      if (t.dataset.pivot) {
+        let spec = null;
+        try { spec = JSON.parse(t.dataset.pivot); } catch (err) { return; }
+        if (e.target.closest("[data-fly]") && t.dataset.fly && !e.shiftKey) { const [la, lo] = t.dataset.fly.split(",").map(Number); this.flyTo(la, lo, 2.5e4); }
+        if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec);
+      } else if (t.dataset.sel) this.select("events", t.dataset.sel);
+      else if (t.dataset.qid) { const spec = { type: "entity", qid: t.dataset.qid }; if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec); }
       else if (t.dataset.tab) this._setTab(pane, t.dataset.tab);
       else if (t.dataset.img != null) this._lbOpen(pane._photos || [], +t.dataset.img);
       else if (t.dataset.fly) { const [la, lo] = t.dataset.fly.split(",").map(Number); this.flyTo(la, lo, 2.5e4); }
@@ -531,6 +543,7 @@ export class Dossier {
       else if (spec.type === "nearby") await this._nearby(pane, body, stale);
       else if (spec.type === "search") await this._search(pane, body, stale);
       else if (spec.type === "resolve") await this._resolve(pane, body, stale);
+      else if (spec.type === "intel") await renderIntel(spec, body, { head: (h) => this._head(pane, h), stale, wdResolve, wdEntity, highlight: this.highlight });
     } catch (err) {
       if (stale()) return;
       this._head(pane, { title: pane.title === "Loading…" ? "Error" : pane.title, sub: spec.url || spec.qid || "", icon: spec.type, ext: spec.url });
@@ -672,6 +685,7 @@ function specKey(s) {
   if (s.type === "url") return "u:" + s.url;
   if (s.type === "nearby") return "n:" + (+s.lat).toFixed(3) + "," + (+s.lon).toFixed(3);
   if (s.type === "search") return "s:" + s.q;
+  if (s.type === "intel") return intelKey(s);
   return "r:" + [s.q, s.icao, s.lat, s.lon].join("|");
 }
 const tab = (id, label, disabled) => '<button data-tab="' + id + '"' + (disabled ? " disabled" : "") + ">" + label + "</button>";
