@@ -78,7 +78,9 @@ export class WatchOverlay {
     for (const [id, m] of this.marks) if (!this.active.has(id)) { this.bb.remove(m.b); this.labels.remove(m.l); this.marks.delete(id); }
     for (const [id, r] of this.active) {
       let m = this.marks.get(id);
-      const tag = (r.hits[0] && r.hits[0].entry && ((r.hits[0].entry.risk || [])[0] || r.hits[0].entry.label)) || "WATCHLIST";
+      // name-only hits are unverified: never label the hull as sanctioned on the globe
+      const weak = r.hits.length && r.hits.every((h) => h.strength === "weak");
+      const tag = weak ? "Name match?" : (r.hits[0] && r.hits[0].entry && ((r.hits[0].entry.risk || [])[0] || r.hits[0].entry.label)) || "WATCHLIST";
       if (!m) {
         const b = this.bb.add({ image: RING[r.severity] || RING.warn, width: 44, height: 44, disableDepthTestDistance: Number.POSITIVE_INFINITY, position: C.Cartesian3.fromDegrees(r.lon, r.lat) });
         const l = this.labels.add({ font: FONT, fillColor: C.Color.fromCssColorString(SEV_COLOR[r.severity] || SEV_COLOR.warn), outlineColor: BLACK, outlineWidth: 3,
@@ -114,10 +116,13 @@ export function watchHtml(id, overlay) {
   let html = "";
   for (const h of (r && r.hits) || []) {
     const e = h.entry || {}, c = SEV_COLOR[e.severity] || SEV_COLOR.warn, src = safe(e.url);
-    const tags = (e.risk || []).map((t) => '<span class="tag" style="border-color:' + c + ";color:" + c + '">' + esc(t) + "</span>").join("") +
-      (h.strength === "weak" ? '<span class="tag stale" title="Only the vessel name matched; verify IMO / MMSI">Name match only</span>' : "");
-    html += '<section class="dz-sec watch-hit" style="--wc:' + c + '"><h3>' + (e.source === "watchlist" ? "User watchlist" : "Sanctions / watchlist match") + "<small>matched on " + esc(String(h.matched_on).toUpperCase()) + "</small></h3>" +
-      '<div class="dz-tags">' + tags + "</div>" + kv([
+    const weak = h.strength === "weak", hc = weak ? SEV_COLOR.info : c;
+    // a name-only hit is a lead, not a finding: the listed vessel's risk tags read "listed as …"
+    const tags = (e.risk || []).map((t) => '<span class="tag' + (weak ? " stale" : "") + '" style="border-color:' + hc + ";color:" + hc + '">' + (weak ? "Listed vessel: " : "") + esc(t) + "</span>").join("") +
+      (weak ? '<span class="tag stale" title="Only the vessel name matched; verify IMO / MMSI">Name match only · unverified</span>' : "");
+    const doubts = (h.doubts || []).length ? '<ul class="watch-doubts">' + h.doubts.map((d) => "<li>" + esc(d) + "</li>").join("") + "</ul>" : "";
+    html += '<section class="dz-sec watch-hit" style="--wc:' + hc + '"><h3>' + (e.source === "watchlist" ? "User watchlist" : weak ? "Possible sanctions name match" : "Sanctions / watchlist match") + "<small>matched on " + esc(String(h.matched_on).toUpperCase()) + "</small></h3>" +
+      '<div class="dz-tags">' + tags + "</div>" + doubts + kv([
         ["Listed as", esc(e.name)], ["Label", esc(e.label)], ["IMO", esc(e.imo)], ["MMSI", esc(e.mmsi)], ["Registration", esc((e.regs || []).join(", "))], ["Flag", esc(e.flag ? String(e.flag).toUpperCase() : "")],
         ["Programmes", esc((e.programs || []).join(", "))], ["Lists", esc((e.datasets || []).slice(0, 4).join("; "))], ["Basis", esc(e.sanctions ? String(e.sanctions).slice(0, 320) + (e.sanctions.length > 320 ? "…" : "") : "")],
         ["Note", esc(e.note)], ["Source", src ? '<a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">OpenSanctions entity</a>' : esc(e.source === "watchlist" ? "config/watchlist.yaml" : "")],

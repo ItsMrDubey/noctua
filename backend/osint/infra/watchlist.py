@@ -52,6 +52,39 @@ def norm_name(v: str | None) -> str:
     return " ".join(t for t in toks if t not in _NAME_STOP)
 
 
+# AIS ship types that are never the merchant hulls sanctions lists carry: WIG, fishing,
+# towing, dredging, diving, sailing, pleasure, high-speed craft, pilot, SAR, tug, tender ...
+_SMALL_CRAFT = range(20, 60)
+
+
+def name_doubts(e: "Entry", mmsi: str, meta: dict, imo: str | None) -> list[str] | None:
+    """Why a name-only hit may be another hull with the same name (shown with the hit), or
+    None when the track's own AIS data rules the listed vessel out."""
+    try:
+        code = int(meta.get("type_code")) if meta.get("type_code") not in (None, "") else None
+    except (TypeError, ValueError):
+        code = None
+    if code in _SMALL_CRAFT:
+        return None  # a tug / pilot boat / yacht is not the listed merchant vessel
+    other_mmsi = bool(e.mmsi and mmsi and e.mmsi != mmsi)
+    if other_mmsi and not imo and code is not None:
+        # static data received without an IMO (merchant hulls broadcast one) and a
+        # different MMSI than the listed vessel's: another hull
+        return None
+    doubts = []
+    if other_mmsi:
+        doubts.append(f"MMSI differs: listed {e.mmsi}, this track {mmsi}"
+                      + (f" (flag prefix {e.mmsi[:3]} vs {mmsi[:3]})"
+                         if e.mmsi[:3] != mmsi[:3] else ""))
+    if not imo:
+        doubts.append("no IMO broadcast" + (f"; listed IMO {e.imo}" if e.imo else ""))
+    if code is None:
+        doubts.append("no AIS static data (type unknown)")
+    elif code == 0:
+        doubts.append("AIS ship type not set")
+    return doubts
+
+
 def distinctive(name: str) -> bool:
     """Names worth a (weak) name-only match: multi-word or numbered names, or long single
     words. Common single names (CHRISTINA, PROSPERITY) are shared by many hulls."""
@@ -285,8 +318,9 @@ class Matcher:
                 if not hits and self.name_matches:
                     n = norm_name(meta.get("name"))
                     for e in s.by_name.get(n, [])[:3] if n and distinctive(n) else []:
-                        if not clash(e):
-                            hits.append(self._hit(e.public(), "name", "weak"))
+                        doubts = name_doubts(e, ident, meta, imo)
+                        if not clash(e) and doubts is not None:
+                            hits.append(self._hit(e.public(), "name", "weak", doubts))
             elif kind == "air":
                 reg = norm_reg(meta.get("reg"))
                 e = s.by_reg.get(reg) if reg else None
@@ -303,5 +337,8 @@ class Matcher:
         return hits
 
     @staticmethod
-    def _hit(entry: dict, how: str, strength: str) -> dict:
-        return {"entry": entry, "matched_on": how, "strength": strength}
+    def _hit(entry: dict, how: str, strength: str, doubts: list[str] | None = None) -> dict:
+        hit = {"entry": entry, "matched_on": how, "strength": strength}
+        if doubts:
+            hit["doubts"] = doubts
+        return hit

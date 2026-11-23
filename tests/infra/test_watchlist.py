@@ -73,3 +73,19 @@ def test_user_watchlist(tmp_path):
     u.reload()
     assert u.error and len(u.entries) == 3
     assert UserWatchlist(tmp_path / "missing.yaml").entries == []
+
+def test_name_only_match_needs_plausible_ais(index):
+    m = Matcher(index, None)
+    # no static data yet: kept as a weak lead, with the reasons to doubt it
+    [h] = m.match("sea:261008020", {"name": "STRONG WIND 7"})
+    assert h["strength"] == "weak" and h["matched_on"] == "name"
+    assert any("MMSI differs: listed 538009985" in d for d in h["doubts"])
+    assert any("no IMO broadcast; listed IMO 9000002" in d for d in h["doubts"])
+    # static data without an IMO and another MMSI (a Polish harbour boat named like a
+    # listed tanker): another hull, no match
+    assert m.match("sea:261008020", {"name": "STRONG WIND 7", "type_code": "0"}) == []
+    # small craft never match a listed merchant vessel by name; a tanker still may (weak)
+    assert m.match("sea:999", {"name": "GREAT JACOMBO", "type_code": "52"}) == []
+    assert m.match("sea:999", {"name": "GREAT JACOMBO", "type_code": "80"})[0]["strength"] == "weak"
+    # same MMSI as listed is an MMSI hit, not a name hit
+    assert m.match("sea:538009985", {"name": "STRONG WIND 7"})[0]["matched_on"] == "mmsi"
