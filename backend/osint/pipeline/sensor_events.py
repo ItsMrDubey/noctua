@@ -36,8 +36,10 @@ Detectors (thresholds in ``config/corroboration.yaml`` -> ``sensor_events``):
   ``hazard_<type>`` keep the area merge (``merge_gap_h``) within one hazard type.
 
 Every event gets category air_activity / maritime_security (seismic: configurable; hazard:
-disaster), status ``sensor-corroborated`` by definition (hazard: ``official``), ``confidence`` from the pattern strength, and its
-supporting tracks / observations as corroboration rows. De-duplication: an event is keyed
+disaster), status ``sensor-detected`` (hazard: ``official``; see osint.core.sensor_status:
+the detecting sensor's own readings are evidence, not independent corroboration),
+``confidence`` from the pattern strength, and its supporting tracks / observations as
+evidence rows (roll-up: not corroborated, score 0). De-duplication: an event is keyed
 ``<detector>:<res-3 cell>:<window>``; a detection in the same area (cell or neighbours) whose
 time overlaps an existing event of the detector within ``merge_gap_h`` extends that event
 instead of creating a new one, so re-running a pass over the same data changes nothing.
@@ -66,6 +68,7 @@ from osint.config import ROOT
 from osint.core.geo import haversine_km, utcnow
 from osint.core.hazards import ALERT_LEVELS, HAZARD_TYPES, parse_time
 from osint.core.metrics import Metrics
+from osint.core.sensor_status import SENSOR_DETECTED
 from osint.enrich.mil_types import TRAINERS
 from osint.pipeline.cluster import CLUSTER_VERSION, new_ulid
 from osint.pipeline.corroborate import ts_from_us
@@ -167,7 +170,7 @@ class Detection:
     merge_gap_h: float = 1.0  # 0 = never merge with an earlier event
     key: str | None = None  # explicit dedupe key (default <detector>:<cell>:<window>)
     subcategory: str | None = None  # default: the detector name
-    status: str = "sensor-corroborated"
+    status: str = SENSOR_DETECTED
     precision: str = "point"
     place_name: str | None = None  # default: the coordinates
     country: str | None = None
@@ -819,7 +822,8 @@ class SensorEventDetector:
             "source_diversity": 0, "gdelt_ids": [], "first_seen": iso(first_seen),
             "updated_at": iso(now),
             "cluster_state": {"sensor": True, "detector": det.detector,
-                              "sensor_corroborated": True, "v": CLUSTER_VERSION},
+                              "sensor_corroborated": False, "sensor_detected": True,
+                              "v": CLUSTER_VERSION},
         }
         if old is not None:  # keep the original cells with the original point
             row["h3_3"], row["h3_5"], row["h3_7"] = old["h3_3"], old["h3_5"], old["h3_7"]
@@ -831,8 +835,8 @@ class SensorEventDetector:
                   else existing["cell"], "details": {
                       **det.details,
                       "detector_version": DETECTOR_VERSIONS.get(det.detector, 1)}},
-            evidence, {"event_id": eid, "score": round(conf, 4), "kinds": kinds,
-                       "evidence": n_evidence, "corroborated": True})
+            evidence, {"event_id": eid, "score": 0.0, "kinds": kinds,
+                       "evidence": n_evidence, "corroborated": False})
         for kind, n in new.items():
             self.metrics.inc("corroborations_total", n, kind=kind)
         return "created" if old is None else "updated"

@@ -222,7 +222,7 @@ async def test_job_selection_cap_and_idempotent_run(tmp_path):
     ran = await job.run_once()
     assert ran == [f"EV{i:03d}" for i in range(5)]
     kw = fake.calls[0]
-    assert kw["status"] == "multi-source,sensor-corroborated,official" and kw["since"]
+    assert kw["status"] == "multi-source,sensor-corroborated,sensor-detected,official" and kw["since"]
     assert await job.run_once() == ["EV005", "EV006"]  # processed events are not repicked
     assert await job.run_once() == []
     assert sorted(done) == sorted(f"EV{i:03d}" for i in range(7))
@@ -320,4 +320,18 @@ def test_selection_admits_category_gated_statuses(tmp_path):
                      cfg(category_statuses={"armed_conflict": ["reported"]}), tmp_path,
                      client_factory=lambda: httpx.Client())
     assert [e["id"] for e in job.select(NOW)] == ["EVMS", "EVREP"]
-    assert fake.calls[0]["status"] == "multi-source,sensor-corroborated,official,reported"
+    assert fake.calls[0]["status"] == (
+        "multi-source,sensor-corroborated,sensor-detected,official,reported")
+
+
+def test_selection_skips_sensor_signal_events(tmp_path):
+    """GNSS / outage / squawk / radiation / aircraft-pattern events have nothing to see from
+    orbit: never imaged; an AIS gap (sensor-detected) still is."""
+    evs = [event(f"EV{d.upper()}", status="sensor-detected", subcategory=d,
+                 category="cyber_outage") for d in ("gnss_jam", "outage", "squawk",
+                                                     "radiation", "orbit", "concentration")]
+    evs.append(event("EVAIS", status="sensor-detected", subcategory="ais_gap",
+                     category="maritime_security"))
+    job = ImageryJob(FakeEvents(evs), ImageryStore(tmp_path / "imagery.sqlite"), cfg(),
+                     tmp_path, client_factory=lambda: httpx.Client())
+    assert [e["id"] for e in job.select(NOW)] == ["EVAIS"]

@@ -831,6 +831,12 @@ async function main() {
     if (refSel) {
       const it = refSel.item || {};
       if (it.lat == null) return;
+      // an emergency squawk is an aircraft: open the aircraft console (asset profile, flight,
+      // squawk alerts), never the generic point console of its last position
+      if (refSel.kind === "signal" && it.hex && it.code) {
+        const who = it.flight || it.reg || String(it.hex).toUpperCase();
+        return open({ type: "intel", kind: "aircraft", id: "air:" + String(it.hex).toLowerCase(), lat: it.lat, lon: it.lon, label: who + " · squawk " + it.code });
+      }
       return open({ type: "intel", kind: REF_KIND[refSel.kind] || "point", id: it.id || it.ident || null, lat: it.lat, lon: it.lon, label: it.name || refSel.kind, wikidata: it.wikidata || null, icao: it.icao || null });
     }
     if (!selected) { dossier.toggle(); return; }

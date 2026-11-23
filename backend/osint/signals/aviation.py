@@ -2,7 +2,13 @@
 
 An episode is keyed by (ICAO hex, code, callsign) and lasts while the aircraft keeps
 reporting the code; after ``gap_s`` without it, a reappearance is a new episode. Episodes are
-kept in the collector cursor so a restart does not re-announce an ongoing emergency."""
+kept in the collector cursor so a restart does not re-announce an ongoing emergency.
+
+A single report is not an emergency: crews dial through 7500 / 7600 / 7700 while changing
+codes, and a mis-set transponder shows the code for one poll. Each episode counts its
+distinct ``reports`` (position times); ``persistent`` asks for at least ``min_reports``
+spanning ``min_span_s`` before the episode becomes an event or a high-severity alert. A
+one-report blip stays a low-severity "transient squawk" entry."""
 
 from __future__ import annotations
 
@@ -16,6 +22,23 @@ EMERGENCY_STATUS = {"general": "General emergency", "nordo": "Radio failure",
 STATUS_CODE = {"general": "7700", "nordo": "7600", "unlawful": "7500"}
 DEFAULT_IGNORE_STATUS = ("lifeguard",)  # priority status, not an emergency
 SEVERITY = {"7500": "high", "7700": "high", "7600": "warn"}
+PERSIST_DEFAULTS: dict[str, Any] = {"min_reports": 2, "min_span_s": 20.0}
+
+
+def reports(ep: dict) -> int:
+    """Distinct reports of an episode (older cursors without the counter: 1 report when
+    first and last seen coincide, else at least 2)."""
+    n = ep.get("reports")
+    if isinstance(n, int):
+        return n
+    return 1 if float(ep.get("last_seen", 0)) - float(ep.get("first_seen", 0)) < 1 else 2
+
+
+def persistent(ep: dict, cfg: dict | None = None) -> bool:
+    """True when the code was reported often and long enough to be more than a blip."""
+    c = {**PERSIST_DEFAULTS, **(cfg or {})}
+    span = float(ep.get("last_seen", 0)) - float(ep.get("first_seen", 0))
+    return reports(ep) >= int(c["min_reports"]) and span >= float(c["min_span_s"])
 
 
 def emergency_code(ac: dict, ignore: tuple[str, ...] = DEFAULT_IGNORE_STATUS) -> str | None:
@@ -67,10 +90,12 @@ class SquawkTracker:
             if ep is None or seen - ep["last_seen"] > self.gap_s:
                 ep = {"id": f"{hex_code}:{code}:{int(seen)}", "hex": hex_code, "code": code,
                       "label": code_label(code), "flight": flight, "first_seen": seen,
-                      "source": source}
+                      "source": source, "reports": 0}
                 self.episodes[ep["id"]] = ep
                 latest[k] = ep
                 started.append(ep)
+            if "last_seen" not in ep or seen - float(ep["last_seen"]) >= 1.0:
+                ep["reports"] = reports(ep) + 1 if "last_seen" in ep else 1
             ep["last_seen"] = max(seen, ep.get("last_seen", seen))
             alt = ac.get("alt_baro")
             ep.update({
@@ -94,7 +119,8 @@ class SquawkTracker:
 
     def items(self, now_s: float) -> list[dict]:
         """All kept episodes, newest first, with ``active`` (seen within ``gap_s``)."""
-        out = [{**e, "active": now_s - e["last_seen"] <= min(self.gap_s, 300.0)}
+        out = [{**e, "active": now_s - e["last_seen"] <= min(self.gap_s, 300.0),
+                "reports": reports(e), "persistent": persistent(e)}
                for e in self.episodes.values()]
         out.sort(key=lambda e: -e["last_seen"])
         return out

@@ -122,7 +122,8 @@ export function mergeClose(cells, minDeg) {
 }
 
 // ---- priorities (higher = more important; Infinity = always drawn, never budgeted) ----
-export const STATUS_RANK = { "sensor-corroborated": 4, official: 3, "multi-source": 2, reported: 1 };
+// sensor-detected: one sensor saw it (no independent corroboration) - ranked with official
+export const STATUS_RANK = { "sensor-corroborated": 4, official: 3, "sensor-detected": 3, "multi-source": 2, reported: 1 };
 export const CAT_SEVERITY = { armed_conflict: 9, air_activity: 7, maritime_security: 6, cyber_outage: 5, disaster: 5, civil_unrest: 4, infrastructure: 3, political: 2, economic: 1 };
 const clamp01 = (x) => Math.min(1, Math.max(0, +x || 0));
 

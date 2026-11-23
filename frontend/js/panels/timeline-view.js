@@ -15,9 +15,9 @@ const KIND = { occurred: ["OCC", "Occurred (claimed)"], reported: ["RPT", "Repor
 const FLAG = { first_report: "First report", first_sensor: "First sensor detection", first_imagery: "First post-event imagery", conflict: "Conflicting claim", future: "Scheduled / future" };
 const PREC = {
   minute: "stated time + zone", time_local: "stated time, zone assumed local ±1 h", part_of_day: "date + part of day", date: "date only", range: "stated range",
-  exact: "timestamp", scan: "satellite scan time", origin: "origin time", pass: "satellite pass", recorded: "system clock", upper_bound: "upper bound only",
+  exact: "timestamp", scan: "satellite scan time", origin: "origin time", pass: "satellite pass", recorded: "system clock", upper_bound: "upper bound only", window: "end of the sensor's 60-min window", detection: "sensor detection",
 };
-const SENSOR_CLS = { fire: "fire", quake: "quake", hazard: "hazard", aircraft: "air", ship: "sea", imagery: "img" };
+const SENSOR_CLS = { fire: "fire", quake: "quake", hazard: "hazard", aircraft: "air", ship: "sea", imagery: "img", gnss_cell: "hazard", outage: "hazard", radiation: "hazard" };
 const tms = (s) => (s ? Date.parse(s) : NaN);
 const entryT = (e) => tms(e.t || e.lo);
 
@@ -32,13 +32,19 @@ function occurredHead(tl) {
     return '<div class="tl-occ" title="' + esc(localHint(o.lo, off)) + '"><b>OCCURRED</b><span>' + esc(bandText(o.lo, o.hi)) + "</span><small>" +
       esc([o.qualifier, PREC[o.precision] || o.precision, o.tz_basis === "longitude" ? "local zone by longitude" : "", o.n_claims > 1 ? o.n_claims + " agreeing claims" : "1 claim"].filter(Boolean).join(" · ")) + "</small></div>";
   }
+  if (o.basis === "sensor") {
+    // sensor-derived event: the detection window(s) on the sensor's clock, no claim involved
+    const w = o.windows || [];
+    return '<div class="tl-occ" title="' + esc(localHint(o.lo, off)) + '"><b>OCCURRED · DETECTED</b><span>' + esc(w.length > 1 ? w.map((x) => bandText(x[0], x[1])).join(" · ") : bandText(o.lo, o.hi)) + "</span><small>" +
+      esc([o.sensor, o.note].filter(Boolean).join(" · ")) + "</small></div>";
+  }
   if (o.basis === "before_first_report") return '<div class="tl-occ weak"><b>OCCURRED</b><span>before ' + esc(fmtUtc(o.hi)) + "</span><small>no stated time · upper bound = first report</small></div>";
   return '<div class="tl-occ weak"><b>OCCURRED</b><span>unknown</span></div>';
 }
 
 // overview strip: claimed bands, report ticks, sensor dots, milestone diamonds
 function strip(tl) {
-  const first = tms((tl.anchor || {}).first_report);
+  const A = tl.anchor || {}, first = tms(A.first_report || A.first_detection), t0Label = A.first_report ? "T0 first report" : A.first_detection ? "T0 first detection" : "";
   const es = (tl.entries || []).filter((e) => !isNaN(entryT(e)) && !(e.milestone === "status" && e.baseline));
   const inScale = es.filter((e) => isNaN(first) || entryT(e) >= first - 3 * 86400e3);
   if (inScale.length < 2) return "";
@@ -56,7 +62,7 @@ function strip(tl) {
   }
   if (!isNaN(first)) svg += '<line class="t0" x1="' + x(first) + '" x2="' + x(first) + '" y1="0" y2="36"/>';
   return '<div class="tl-strip"><svg viewBox="0 0 ' + W + ' 36" preserveAspectRatio="none" aria-hidden="true">' + svg + '</svg><div class="tl-axis"><span>' + esc(fmtUtc(lo)) +
-    "</span><span>T0 first report</span><span>" + esc(fmtUtc(hi)) + "</span></div></div>";
+    "</span><span>" + esc(t0Label) + "</span><span>" + esc(fmtUtc(hi)) + "</span></div></div>";
 }
 
 function row(e, i, tl, lastDay) {

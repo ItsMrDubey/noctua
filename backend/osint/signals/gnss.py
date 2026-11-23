@@ -20,6 +20,7 @@ Spoofing (a false position reported with high integrity) is not detectable this 
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,6 +42,7 @@ DEFAULTS: dict[str, Any] = {
     "min_bad_high": 2,  # "high" needs at least this many degraded aircraft
     "carried_min": 30,  # continuously degraded this long ...
     "carried_km": 300,  # ... over this distance = degradation carried from elsewhere
+    "max_listed": 40,  # aircraft listed per cell (with their NIC / NACp) in the snapshot
 }
 
 
@@ -125,6 +127,8 @@ class GnssAggregator:
         # hex -> (degraded since ts, lat, lon at that time, last seen ts) while degraded
         self._run: dict[str, tuple[float, float, float, float]] = {}
         self.carried: set[str] = set()
+        # hex -> latest sample (NIC / NACp / GPS-lost for the per-cell aircraft list)
+        self.last: dict[str, NavSample] = {}
         self.samples = 0
 
     def _track_run(self, s: NavSample) -> None:
@@ -144,6 +148,9 @@ class GnssAggregator:
     def add(self, samples: list[NavSample]) -> None:
         for s in samples:
             self._track_run(s)
+            prev_s = self.last.get(s.hex)
+            if prev_s is None or s.ts >= prev_s.ts:
+                self.last[s.hex] = s
             cell = h3.latlng_to_cell(s.lat, s.lon, self.res)
             per = self.live.setdefault(cell, {})
             prev = per.get(s.hex)
@@ -157,6 +164,7 @@ class GnssAggregator:
         cutoff = now_s - float(self.cfg["window_min"]) * 60
         self._run = {h: r for h, r in self._run.items() if r[3] >= now_s - 3 * 3600}
         self.carried &= set(self._run)
+        self.last = {h: s for h, s in self.last.items() if s.ts >= cutoff}
         for cell in list(self.live):
             per = {h: v for h, v in self.live[cell].items() if v[0] >= cutoff}
             if per:
@@ -175,6 +183,16 @@ class GnssAggregator:
             bad = sum(1 for h, (_, b) in per.items() if b and h not in self.carried)
             item = cell_item(cell, n, bad, self.cfg)
             item["carried"] = sum(1 for h, (_, b) in per.items() if b and h in self.carried)
+            if bad:  # who is degraded here, with what they report (the evidence itself)
+                rows = []
+                for h, (seen, b) in per.items():
+                    s = self.last.get(h)
+                    rows.append({"hex": h, "bad": bool(b and h not in self.carried),
+                                 "carried": bool(b and h in self.carried), "seen": round(seen),
+                                 "nic": s.nic if s else None, "nac_p": s.nac_p if s else None,
+                                 "gps_lost": bool(s.gps_lost) if s else False})
+                rows.sort(key=lambda r: (not r["bad"], -r["seen"]))
+                item["ac"] = rows[: int(self.cfg["max_listed"])]
             out.append(item)
         out.sort(key=lambda c: (-c["pct"], -c["n"]))
         return out
@@ -195,3 +213,49 @@ def cell_item(cell: str, n: int, bad: int, cfg: dict | None = None) -> dict:
     pct = round(100.0 * bad / n, 1) if n else 0.0
     return {"h3": cell, "lat": round(lat, 4), "lon": round(lon, 4), "n": n, "bad": bad,
             "pct": pct, "level": level(n, bad, cfg), "b": cell_boundary(cell)}
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval (95 % by default) of a proportion k / n, as fractions."""
+    if n <= 0:
+        return 0.0, 1.0
+    p = k / n
+    den = 1 + z * z / n
+    mid = (p + z * z / (2 * n)) / den
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return max(0.0, mid - half), min(1.0, mid + half)
+
+
+ASSESS_DEFAULTS: dict[str, Any] = {
+    "likely_min_aircraft": 15,  # "likely jamming" needs at least this many aircraft ...
+    "likely_min_wilson": 0.10,  # ... a 95 % lower bound of the degraded share >= 10 % ...
+    "likely_min_windows": 2,  # ... seen in this many non-overlapping 60-min windows
+    "max_confidence": 0.9,
+}
+
+
+def assess(n: int, bad: int, windows: int, cfg: dict | None = None) -> dict:
+    """Detection quality of a GNSS-interference reading from its own statistics.
+
+    ``n`` aircraft with ``bad`` degraded in the best window, seen degraded in ``windows``
+    non-overlapping windows. Confidence grows with the Wilson 95 % lower bound of the
+    degraded share (not the raw share: 4 of 11 is weak evidence), the sample size and the
+    persistence; the wording is "likely" only when all three clear their minimum, else
+    "possible". This is single-sensor confidence, not news corroboration."""
+    c = {**ASSESS_DEFAULTS, **(cfg or {})}
+    lo, hi = wilson(bad, n)
+    conf = (0.25 + 0.45 * min(1.0, lo / 0.3) + 0.15 * min(1.0, max(0, windows - 1) / 2)
+            + 0.10 * min(1.0, n / 30))
+    likely = (n >= int(c["likely_min_aircraft"]) and lo >= float(c["likely_min_wilson"])
+              and windows >= int(c["likely_min_windows"]))
+    why = []
+    if n < int(c["likely_min_aircraft"]):
+        why.append(f"only {n} aircraft (< {int(c['likely_min_aircraft'])})")
+    if lo < float(c["likely_min_wilson"]):
+        why.append(f"95 % lower bound {100 * lo:.0f}% (< {100 * float(c['likely_min_wilson']):.0f}%)")
+    if windows < int(c["likely_min_windows"]):
+        why.append(f"seen in {windows} window(s) (< {int(c['likely_min_windows'])})")
+    return {"wording": "likely" if likely else "possible",
+            "confidence": round(min(float(c["max_confidence"]), conf), 4),
+            "wilson_lo": round(100 * lo, 1), "wilson_hi": round(100 * hi, 1),
+            "n": n, "bad": bad, "windows": windows, "limits": why}

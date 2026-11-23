@@ -104,8 +104,16 @@ export class TrackList {
     if (this.head._h !== headHtml) { this.head._h = headHtml; this.head.innerHTML = headHtml; }
     this.head.style.gridTemplateColumns = "20px " + spec.grid;
     this.space.style.height = rows.length * ROW_H + "px";
+    // an empty list must say why: the map layer is switched off or a layer filter hides every
+    // live track (the header still counts them), not a silent "0"
+    const live = layer.items ? layer.items.size : 0;
+    const label = this.tab === "ships" ? "ships" : "aircraft";
+    this._note = rows.length || !live ? null : !layer.show
+      ? "The " + label + " layer is switched off (" + live.toLocaleString() + " live). Turn it on under Layers to list them."
+      : q ? "No " + label + " match “" + this.q + "” (" + live.toLocaleString() + " live)."
+        : "The layer filter hides all " + live.toLocaleString() + " live " + label + " (" + (this.tab === "ships" ? "Military ships only" : "High-priority only") + ").";
     const c = $("tracks-count");
-    const txt = rows.length.toLocaleString();
+    const txt = rows.length || !live ? rows.length.toLocaleString() : "0/" + live.toLocaleString();
     if (c && c.textContent !== txt) c.textContent = txt;
     this._painted = null;
     this.paint();
@@ -124,6 +132,7 @@ export class TrackList {
       html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + "px;grid-template-columns:20px " + spec.grid + '"><div class="g" style="color:' + threatColor(this.tab, it) + '">' + uiGlyph(this.tab, it) + "</div>" +
         spec.cols.map(([key, , c2], j) => "<div" + (c2 ? ' class="' + c2 + '"' : "") + ">" + (j === 0 && pins && pins.has(it.id) ? '<span class="pin">◆</span> ' : "") + esc(cell(it, key)) + "</div>").join("") + "</div>";
     }
+    if (!this.rows.length && this._note) html = '<div class="dz-empty tk-note" style="padding:10px 12px">' + esc(this._note) + "</div>";
     if (html !== this._painted) { this._painted = html; this.space.innerHTML = html; }
   }
 }

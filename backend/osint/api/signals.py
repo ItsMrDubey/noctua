@@ -15,7 +15,7 @@ from osint.signals.cache import SignalReader
 from osint.signals.countries import get_countries
 from osint.signals.gnss import DEFAULTS as GNSS_DEFAULTS
 from osint.signals.gnss import cell_item
-from osint.signals.radiation import assess
+from osint.signals.radiation import assess_detail
 from osint.signals.satellites import select
 
 
@@ -61,8 +61,9 @@ def radiation_items(snap: dict | None, base: dict | None) -> list[dict]:
     out = []
     for s in (snap or {}).get("stations") or []:
         b = stations.get(s["id"])
+        status, provisional = assess_detail(float(s["value"]), b, thresholds)
         out.append({**s, "baseline": b[0] if b else None, "baseline_n": b[1] if b else 0,
-                    "status": assess(float(s["value"]), b, thresholds)})
+                    "status": status, "provisional": provisional})
     return out
 
 
@@ -96,7 +97,8 @@ def status_summary(r: SignalReader, now: float | None = None) -> dict:
                          "latest_alert": (sw.get("alerts") or [None])[0]},
         "radiation": {"updated": (r.get("radiation") or {}).get("updated"),
                       "stations": len(rad),
-                      "elevated": sum(1 for s in rad if s["status"] in ("elevated", "alert"))},
+                      "elevated": sum(1 for s in rad if s["status"] in ("elevated", "alert")
+                                      and not s.get("provisional"))},
         "satellites": {"updated": sats.get("updated"), "objects": len(sats.get("objects") or {}),
                        "groups": {g: (v or {}).get("count") for g, v in
                                   (sats.get("groups") or {}).items()}},

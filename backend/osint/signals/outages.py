@@ -15,6 +15,7 @@ not merit-nt alone) become platform events.
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime
 from typing import Any
 
 DEFAULT_WEIGHTS = {"bgp": 1.0, "ping-slash24": 1.0, "gtr": 0.75, "merit-nt": 0.3}
@@ -35,6 +36,49 @@ def severity(score: float, weight: float) -> float:
 
 def level(sev: float) -> str:
     return "high" if sev >= 0.6 else "medium" if sev >= 0.35 else "low"
+
+
+DATASOURCE_LABEL = {"bgp": "BGP routing", "ping-slash24": "active probing",
+                    "gtr": "Google traffic", "merit-nt": "network telescope"}
+
+
+def datasource_label(ds: str) -> str:
+    return DATASOURCE_LABEL.get(ds, ds)
+
+
+def confirmed(datasources: list[str], weights: dict[str, float] | None = None,
+              cfg: dict | None = None) -> bool:
+    """An outage is confirmed when at least one datasource carries the weight of an event
+    (``event_min_weight``): BGP / active probing / Google traffic. A network-telescope
+    (merit-nt) signal alone is an unconfirmed anomaly, the same rule as for events."""
+    c = {**DEFAULTS, **(cfg or {})}
+    w = {**DEFAULT_WEIGHTS, **(weights or {})}
+    return any(float(w.get(ds, 0.5)) >= float(c["event_min_weight"]) for ds in datasources)
+
+
+def _iso(s: float | None) -> str | None:
+    if s is None:
+        return None
+    return datetime.fromtimestamp(float(s), UTC).isoformat(timespec="seconds")
+
+
+def country_label(row: dict | None) -> dict:
+    """What a country roll-up may be called: {label, confirmed, ongoing, since, until}
+    (ISO times; IODA ``from`` / ``until`` are unix seconds). "outage" only when confirmed
+    by a weighty datasource; a network-telescope-only signal is a "telescope-only anomaly
+    (unconfirmed)", the collector's own weighting."""
+    if not row:
+        return {"label": "normal", "confirmed": False, "ongoing": False}
+    conf = confirmed(row.get("datasources") or [])
+    ongoing = bool(row.get("ongoing"))
+    if conf:
+        label = ("outage" if ongoing else "recent outage") + f" ({row.get('level')})"
+    elif all(ds == "merit-nt" for ds in row.get("datasources") or []):
+        label = "telescope-only anomaly (unconfirmed)"
+    else:
+        label = "weak signal (unconfirmed)"
+    return {"label": label, "confirmed": conf, "ongoing": ongoing,
+            "since": _iso(row.get("from")), "until": _iso(row.get("until"))}
 
 
 def parse_events(payload: dict, now_s: float, cfg: dict | None = None,

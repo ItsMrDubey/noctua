@@ -85,7 +85,8 @@ async function cached(key, ttlMs, fn) {
 async function api(base, params) {
   const u = new URL(base);
   for (const [k, v] of Object.entries({ format: "json", origin: "*", ...params })) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: { "Api-User-Agent": "NOCTUA-desktop/0.1 (in-app browser)" } });
+  // bounded: a Wikimedia request that never answers must not leave panes "Loading..." forever
+  const r = await fetch(u, { headers: { "Api-User-Agent": "NOCTUA-desktop/0.1 (in-app browser)" }, signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error(host(base) + " HTTP " + r.status);
   return r.json();
 }

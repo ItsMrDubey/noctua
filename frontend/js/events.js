@@ -12,7 +12,7 @@ for (const [k, v] of Object.entries(EVENT_CATS)) {
 }
 const DEFAULT = C.Color.fromCssColorString(eventCat("")[1]);
 const DEFAULT_FAINT = DEFAULT.withAlpha(0.5);
-export const STATUSES = ["reported", "multi-source", "sensor-corroborated", "official"];
+export const STATUSES = ["reported", "multi-source", "sensor-detected", "sensor-corroborated", "official"];
 const isHollow = (it) => it.precision === "country";
 const tsOf = (s) => { const t = Date.parse(s); return isNaN(t) ? 0 : t; };
 

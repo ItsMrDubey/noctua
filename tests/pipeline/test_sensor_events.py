@@ -118,7 +118,7 @@ def test_orbit_detector_tanker_racetrack_not_straight_or_civil(env):
     out = det.run_once()
     assert out["created"] == {"orbit": 1}
     [ev] = sensor_events(store, "orbit")
-    assert ev["category"] == "air_activity" and ev["status"] == "sensor-corroborated"
+    assert ev["category"] == "air_activity" and ev["status"] == "sensor-detected"
     assert ev["title"].startswith("Military orbit: K35R QID61") and ev["precision"] == "point"
     assert 0.5 <= ev["confidence"] <= 0.95
     [c] = store.list_corroborations(ev["id"])

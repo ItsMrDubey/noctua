@@ -505,13 +505,14 @@ class SqliteStore:
 
         ``include_unlocated=False`` drops events without coordinates. ``map_default`` keeps
         only events worth showing on the map: status multi-source / sensor-corroborated /
-        official, or reported with city/point precision and confidence >= 0.5."""
+        sensor-detected / official, or reported with city/point precision and confidence >= 0.5."""
         where: list[str] = []
         params: list[object] = []
         if not include_unlocated:
             where.append("lat IS NOT NULL")
         if map_default:
-            where.append("(status IN ('multi-source', 'sensor-corroborated', 'official') OR "
+            where.append("(status IN ('multi-source', 'sensor-corroborated', 'sensor-detected', "
+                         "'official') OR "
                          "(status = 'reported' AND precision IN ('city', 'point') "
                          "AND confidence >= 0.5))")
             where.append("id NOT IN (SELECT event_id FROM event_verification "
@@ -1232,6 +1233,75 @@ class SqliteStore:
                  json.dumps(sensor.get("details") or {}, default=str), now, now))
         return self.save_corroborations(corroborations, events=[{**event, "origin": "sensor"}],
                                         summaries=[summary])
+
+    def get_sensor_event(self, event_id: str) -> dict | None:
+        """The sensor_events row (detector, dedupe key, cell, details) of an event."""
+        with self._lock:
+            row = self._db.execute("SELECT * FROM sensor_events WHERE event_id=?",
+                                   (event_id,)).fetchone()
+        return self._sensor_out(row)
+
+    def recent_sensor_events(self, detector: str, since: datetime) -> list[dict]:
+        """sensor_events rows of ``detector`` with t_end >= ``since``."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM sensor_events WHERE detector=? AND t_end >= ? ORDER BY t_end",
+                (detector, iso(since))).fetchall()
+        return [self._sensor_out(r) for r in rows]
+
+    def sensor_events_near(self, detector: str, cells: list[str], since: datetime,
+                           exclude: str | None = None) -> list[dict]:
+        """sensor_events rows of ``detector`` in ``cells`` with t_end >= ``since``."""
+        if not cells:
+            return []
+        marks = ",".join("?" * len(cells))
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT * FROM sensor_events WHERE detector=? AND cell IN ({marks}) "
+                f"AND t_end >= ? AND event_id != ? ORDER BY t_end",
+                (detector, *cells, iso(since), exclude or "")).fetchall()
+        return [self._sensor_out(r) for r in rows]
+
+    def update_sensor_event(self, event_id: str, details: dict, *, now: datetime,
+                            summary: str | None = None, confidence: float | None = None,
+                            status: str | None = None) -> bool:
+        """Rewrite a sensor event's details (lifecycle, latest reading) and, when given,
+        its summary / confidence / status (version + 1). False if the event is unknown."""
+        sets, params = ["version = version + 1", "updated_at = ?"], [iso(now)]
+        for col, val in (("summary", summary), ("confidence", confidence),
+                         ("status", status)):
+            if val is not None:
+                sets.append(f"{col} = ?")
+                params.append(val)
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "UPDATE sensor_events SET details=?, updated_at=? WHERE event_id=?",
+                (json.dumps(details, default=str), iso(now), event_id))
+            if not cur.rowcount:
+                return False
+            self._db.execute(f"UPDATE events SET {', '.join(sets)} WHERE id=?",
+                             (*params, event_id))
+            if confidence is not None:
+                self._db.execute("UPDATE event_corroboration SET evaluated_at=? "
+                                 "WHERE event_id=?", (iso(now), event_id))
+        return True
+
+    def migrate_sensor_statuses(self, status: str, *, keep_prefix: str = "hazard_") -> int:
+        """One-off (idempotent): sensor events other than ``keep_prefix`` detectors that are
+        still ``sensor-corroborated`` (by their own detection) get ``status``; their roll-up
+        is marked not corroborated with score 0 (their evidence is the detection itself).
+        Returns the number of events changed."""
+        ids_sql = ("SELECT event_id FROM sensor_events WHERE substr(detector, 1, ?) != ?")
+        args = (len(keep_prefix), keep_prefix)
+        with self._lock, self._db:
+            n = self._db.execute(
+                f"UPDATE events SET status=? WHERE origin='sensor' AND "
+                f"status='sensor-corroborated' AND id IN ({ids_sql})",
+                (status, *args)).rowcount
+            self._db.execute(
+                f"UPDATE event_corroboration SET corroborated=0, score=0 WHERE "
+                f"corroborated=1 AND event_id IN ({ids_sql})", args)
+        return n
 
     def stale_sensor_event_ids(self, versions: dict[str, int]) -> list[str]:
         """Sensor events written by an older detector version (``details.detector_version``

@@ -16,12 +16,13 @@ overlaps most (``assign_ids``); a new thread is named after its origin event.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from osint.core.geo import utcnow
+from osint.core.geo import haversine_km, utcnow
 
 STORE_NAME = "storylines.sqlite"
 SCHEMA = """
@@ -186,10 +187,22 @@ class StorylineStore:
     def list(self, *, bbox: tuple[float, float, float, float] | None = None,
              since: datetime | None = None, until: datetime | None = None,
              category: str | None = None, theatre: str | None = None, q: str | None = None,
-             min_events: int = 2, limit: int = 100) -> list[dict]:
+             min_events: int = 2, limit: int = 100,
+             near: tuple[float, float, float] | None = None) -> list[dict]:
         """Storylines, latest activity (best-known event time) first. ``since`` / ``until``
         select threads whose span overlaps the range; bbox = (west, south, east, north)
-        intersects the thread's bounds (west > east wraps the antimeridian)."""
+        intersects the thread's bounds (west > east wraps the antimeridian).
+
+        A thread's bounds can span a continent (one member in Kyiv, another in Lisbon), so
+        bbox intersection alone admits threads that have nothing near the point. ``near`` =
+        (lat, lon, km) keeps only threads with at least one located member within ``km`` of
+        the point and adds ``distance_km`` (nearest member); it implies the bbox prefilter."""
+        if near is not None and bbox is None:
+            dlat = near[2] / 111.0
+            dlon = near[2] / (111.0 * max(0.05, math.cos(math.radians(near[0]))))
+            w, e = near[1] - dlon, near[1] + dlon
+            bbox = (w + 360 if w < -180 else w, max(-90.0, near[0] - dlat),
+                    e - 360 if e > 180 else e, min(90.0, near[0] + dlat))
         where = ["n_events >= ?"]
         params: list[object] = [int(min_events)]
         if since is not None:
@@ -220,12 +233,44 @@ class StorylineStore:
             where.append("(title LIKE ? ESCAPE '!' OR places LIKE ? ESCAPE '!' OR "
                          "theatre_label LIKE ? ESCAPE '!')")
             params += [like, like, like]
-        params.append(max(1, int(limit)))
+        params.append(max(1, int(limit)) if near is None else -1)
         with self._lock:
             rows = self._db.execute(
                 f"SELECT * FROM storylines WHERE {' AND '.join(where)} "
                 "ORDER BY t_last DESC, id LIMIT ?", params).fetchall()
-        return [_story_out(r) for r in rows]
+            out = [_story_out(r) for r in rows]
+            if near is None:
+                return out
+            nearest = self._nearest_member_km([s["id"] for s in out], near[0], near[1],
+                                              near[2])
+        keep = []
+        for s in out:
+            d, within, located = nearest.get(s["id"], (None, 0, 0))
+            centre = s.get("lat") is not None and s.get("lon") is not None and haversine_km(
+                near[0], near[1], s["lat"], s["lon"]) <= near[2]
+            # the thread is "here" when its representative point is in range or a real share
+            # of its events are (one EU reaction in Brussels does not move a Kyiv thread)
+            if d is not None and (centre or within >= max(1, math.ceil(0.25 * located))):
+                keep.append({**s, "distance_km": round(d, 1)})
+                if len(keep) >= max(1, int(limit)):
+                    break
+        return keep
+
+    def _nearest_member_km(self, ids: list[str], lat: float, lon: float, km: float
+                           ) -> dict[str, tuple[float, int, int]]:
+        """storyline id -> (km to its nearest located member, members within ``km``, located
+        members); the caller holds the lock."""
+        out: dict[str, tuple[float, int, int]] = {}
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            for sid, la, lo in self._db.execute(
+                    "SELECT storyline_id, lat, lon FROM storyline_members WHERE lat IS NOT NULL "
+                    f"AND lon IS NOT NULL AND storyline_id IN ({','.join('?' * len(chunk))})",
+                    chunk):
+                d = haversine_km(lat, lon, la, lo)
+                best, within, located = out.get(sid, (d, 0, 0))
+                out[sid] = (min(best, d), within + (d <= km), located + 1)
+        return out
 
     def get(self, storyline_id: str) -> dict | None:
         """Full thread: row, members (by best-known time) and links. A redirected id

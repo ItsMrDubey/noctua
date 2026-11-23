@@ -14,11 +14,16 @@ class ImageryConfig:
     event_age_days: int = 7
     min_confidence: float = 0.0
     statuses: list[str] = field(
-        default_factory=lambda: ["multi-source", "sensor-corroborated", "official"])
+        default_factory=lambda: ["multi-source", "sensor-corroborated", "sensor-detected",
+                                 "official"])
     precisions: list[str] = field(default_factory=lambda: ["city", "point"])
     # statuses that qualify only in these categories (e.g. single-source "reported" events,
     # where imagery is only worth fetching for something visible from orbit)
     category_statuses: dict[str, list[str]] = field(default_factory=dict)
+    # event subcategories (sensor detectors) with nothing to see from orbit: GNSS
+    # interference, internet outages, emergency squawks, radiation readings, aircraft patterns
+    exclude_subcategories: list[str] = field(default_factory=lambda: [
+        "gnss_jam", "outage", "squawk", "radiation", "orbit", "concentration"])
     stac_url: str = "https://earth-search.aws.element84.com/v1"
     collections: list[str] = field(default_factory=lambda: ["sentinel-2-l2a"])
     max_cloud_pct: float = 30.0

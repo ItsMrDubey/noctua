@@ -1,7 +1,7 @@
 # Nuclear facilities with coordinates from Wikidata (CC0). The class list was taken from the
 # subclasses of wd:Q1739545 (nuclear facility) that have located instances, plus wd:Q53732481
 # (nuclear test site); fusion devices and nuclear-powered ships are deliberately left out.
-SELECT ?i ?kind (SAMPLE(?en) AS ?label) (SAMPLE(?nat) AS ?native) (SAMPLE(?co) AS ?coord)
+SELECT ?i ?kind (SAMPLE(?en) AS ?label) (SAMPLE(?anyl) AS ?label_any) (SAMPLE(?nat) AS ?native) (SAMPLE(?co) AS ?coord)
        (SAMPLE(?ctry) AS ?country) (SAMPLE(?op) AS ?operator) (SAMPLE(?dis) AS ?dissolved)
        (SAMPLE(?svc) AS ?service) (SAMPLE(?mw) AS ?capacity_mw) (SAMPLE(?useLbl) AS ?state_of_use)
 WHERE {
@@ -21,6 +21,7 @@ WHERE {
   }
   ?i wdt:P31 ?c ; wdt:P625 ?co .
   OPTIONAL { ?i rdfs:label ?en FILTER(LANG(?en) = "en") }
+  OPTIONAL { ?i rdfs:label ?anyl }  # items with no English label (the loader never shows a QID)
   OPTIONAL { ?i wdt:P1705 ?nat }
   OPTIONAL { ?i wdt:P17/rdfs:label ?ctry FILTER(LANG(?ctry) = "en") }
   OPTIONAL { ?i wdt:P137/rdfs:label ?op FILTER(LANG(?op) = "en") }

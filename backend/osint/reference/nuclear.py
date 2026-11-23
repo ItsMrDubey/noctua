@@ -84,6 +84,28 @@ def _num(v: str | None) -> float | None:
         return None
 
 
+TYPE_LABEL = {"power": "Nuclear power plant", "research": "Research reactor",
+              "enrichment": "Enrichment plant", "reprocessing": "Reprocessing plant",
+              "conversion": "Conversion plant", "fuel_fab": "Fuel fabrication plant",
+              "weapons_lab": "Weapons laboratory", "test_site": "Nuclear test site",
+              "storage": "Nuclear storage site", "heavy_water": "Heavy-water plant",
+              "other": "Nuclear facility"}
+_QID = re.compile(r"Q\d+")
+
+
+def _real_label(v: str | None, qid: str) -> str | None:
+    """A usable name: not empty and not a bare Wikidata id (the label service's fallback)."""
+    v = " ".join(str(v or "").split())
+    return None if not v or v == qid or _QID.fullmatch(v) else v
+
+
+def fallback_name(typ: str, operator: str | None, country: str | None) -> str:
+    """'Nuclear storage site (BGZ ...)' / 'Research reactor, France' for an unlabelled item."""
+    base = TYPE_LABEL.get(typ, "Nuclear facility")
+    op = _real_label(operator, "")
+    return f"{base} ({op})" if op else f"{base}, {country}" if country else base
+
+
 def load_wikidata(path: Path) -> list[dict]:
     if not path.is_file():
         log.warning("reference file missing: %s", path)
@@ -111,9 +133,15 @@ def load_wikidata(path: Path) -> list[dict]:
         if prev and _KIND_ORDER.index(prev["_kind"]) <= _KIND_ORDER.index(kind):
             continue
         native = _val(b, "native")
-        label = _val(b, "label") or native or qid
+        label = _real_label(_val(b, "label"), qid) or _real_label(native, qid) or _real_label(
+            _val(b, "label_any"), qid)
+        resolved = label is not None
+        if label is None:  # no label in any language: describe it, never show a bare QID
+            label = fallback_name(_KIND_TYPE.get(kind, kind), _val(b, "operator"),
+                                  _val(b, "country"))
         by_id[qid] = {
             "id": "wd:" + qid, "name": label, "name_native": native if native != label else None,
+            "label_resolved": resolved,
             "type": _KIND_TYPE.get(kind, kind), "_kind": kind, "status": status,
             "country": _val(b, "country"), "operator": _val(b, "operator"),
             "capacity_mw": _num(_val(b, "capacity_mw")),

@@ -19,7 +19,10 @@ const INTEL_SECTIONS = "assessment,timeline,imagery,sensors,assets,related,histo
 const LEVEL = { known: ["KNOWN", "ok"], corroborated: ["CORROB", "cor"], unconfirmed: ["UNCONF", "unc"], caveat: ["CAVEAT", "cav"] };
 const SRC_KIND = { rss: "RSS", telegram: "TG", gdelt: "GDELT", nga: "NGA", news_alterlab: "WEB", alterlab: "WEB", acled: "ACLED", ucdp: "UCDP", reliefweb: "RW" };
 const ASSET = { base: "Base", airport: "Airfield", port: "Port", nuclear: "Nuclear", chokepoint: "Chokepoint" };
-const SENSOR = { fire: "FIRMS", quake: "USGS", hazard: "Hazard", aircraft: "ADS-B", ship: "AIS" };
+const SENSOR = { fire: "FIRMS", quake: "USGS", hazard: "Hazard", aircraft: "ADS-B", ship: "AIS", gnss_cell: "GNSS cell", outage: "IODA", radiation: "Probe", ais_gap: "AIS gap" };
+// sensor-derived events: the detecting sensor's readings are detection evidence, not corroboration
+const isSensor = (d) => d && (d.origin === "sensor" || d.source === "sensor");
+const PREC_SENSOR = { gnss_jam: "H3 res-3 cell (~60 km edge)", outage: "country (IODA)", squawk: "aircraft position", radiation: "probe position" };
 // extracted fields already shown elsewhere in the pane
 const FIELD_LABEL = { cause_stated: "Stated cause", event_type: "Type", where: "Where", when: "When", actors: "Actors", actor: "Actor", casualties: "Casualties", location: "Location", weapons_platforms: "Weapons", consequences: "Consequences" };
 const srcKind = (s) => String(s || "").split(":")[0];
@@ -95,22 +98,24 @@ export class EventDossier {
     const title = this.showOrig && hasOriginal(tx) ? tx.title : evTitle(tx) || it.id;
     const summary = this.showOrig && tx.summary ? tx.summary : tx.summary_en || tx.summary;
 
+    const sensorEv = isSensor(d) || isSensor(it), sb = d.sensor || null, det = (sb && sb.detector) || d.detector || it.subcategory;
     const classBar = '<div class="dk-class st-' + stCls + '"><span>INTSUM // ' + esc((d.origin || "news").toUpperCase()) + "</span><b>" + esc((EVENT_STATUS[status] || status).toUpperCase()) + "</b>" +
-      '<span class="dk-r" title="' + esc(localHint(firstRep, null)) + '">FIRST RPT <i data-since="' + esc(firstRep || "") + '">' + esc(since(firstRep)) + "</i> AGO</span></div>";
+      '<span class="dk-r" title="' + esc(localHint(firstRep, null)) + '">' + (sensorEv ? "DETECTED " : "FIRST RPT ") + '<i data-since="' + esc(firstRep || "") + '">' + esc(since(firstRep)) + "</i> AGO</span></div>";
     const head = '<header class="dk-head" style="--threat:' + color + '"><div class="dz-glyph" style="color:' + color + '">' + uiGlyph("events", it) + "</div>" +
       '<div class="dk-ht"><div class="dz-eyebrow">' + esc(cat[0]) + (it.subcategory ? " · " + esc(String(it.subcategory).replace(/_/g, " ")) : "") + "</div>" +
       '<h2 class="dz-title">' + esc(title) + (trPending(tx) ? " " + TR_TAG : "") + '</h2><div class="dz-sub">' + esc(place || it.precision || "") + "</div></div>" + gauge(conf) + "</header>";
     const chips = '<div class="dk-chips">' + chip(EVENT_STATUS[status] || status, "st st-" + stCls) +
       (d.verdict ? chip("verdict " + d.verdict, d.verdict === "supported" ? "ok" : "warn", "Extraction verification verdict") : "") +
       kinds.map((k) => chip(SRC_KIND[k] || k, "src")).join("") +
-      (d.corroboration_kinds || []).map((k) => chip(SENSOR[k] || k, "sens", "Sensor corroboration: " + k)).join("") +
+      (sensorEv ? chip("Sensor-derived" + (sb ? " · " + sb.sensor : ""), "sens", "Detected by this sensor; its readings are detection evidence, not independent corroboration") + (sb && sb.details && sb.details.lifecycle ? chip(sb.details.lifecycle, sb.details.lifecycle === "active" ? "warn" : "src", "Lifecycle from the latest reading") : "")
+        : (d.corroboration_kinds || []).map((k) => chip(SENSOR[k] || k, "sens", "Sensor corroboration: " + k)).join("")) +
       (d.gdelt_ids && d.gdelt_ids.length ? chip("GDELT ×" + d.gdelt_ids.length, "src", d.gdelt_ids.join(", ")) : "") +
       (this.nearNuc ? chip("Near nuclear site", "nuc", "Within 50 km of " + this.nearNuc.site.name) : "") +
       (hasOriginal(tx) || docOrig ? '<button type="button" class="orig-tg ghost' + (this.showOrig ? " on" : "") + '" data-a="orig" title="Show the source-language text">Original (' + esc(langName) + ")</button>" : "") + "</div>";
     const tgt = this._target();
     const loc = '<div class="dk-loc"><div><span>POS</span><b>' + esc(latLonText(it.lat, it.lon)) + "</b>" + copyBtn(nf(it.lat, 5).replace(/,/g, "") + ", " + nf(it.lon, 5).replace(/,/g, ""), "copy") + "</div>" +
       (m ? "<div><span>MGRS</span><b>" + esc(m) + "</b>" + copyBtn(m.replace(/ /g, ""), "copy") + "</div>" : "") +
-      "<div><span>PREC</span><b>" + esc(it.precision || "–") + (d.geo_confidence != null ? " · geo " + nf(d.geo_confidence, 2) : "") + (d.impact_precision ? " · impact " + esc(d.impact_precision) : "") + "</b></div>" +
+      "<div><span>PREC</span><b>" + esc((sensorEv && PREC_SENSOR[det]) || it.precision || "–") + (d.geo_confidence != null ? " · geo " + nf(d.geo_confidence, 2) : "") + (d.impact_precision ? " · impact " + esc(d.impact_precision) : "") + "</b></div>" +
       (tgt ? '<div><span>SITE</span><b title="' + esc(tgt.basis) + '">' + esc(latLonText(tgt.lat, tgt.lon, 4)) + " · " + esc(kmText(distKm(it.lat, it.lon, tgt.lat, tgt.lon))) + " " + compass(bearing(it.lat, it.lon, tgt.lat, tgt.lon)) + "</b></div>" : "") + "</div>";
     const tools = '<div class="dk-tools">' +
       '<button type="button" data-a="fly" title="Fly the camera to the event">Fly to</button>' +
@@ -127,7 +132,7 @@ export class EventDossier {
     return '<div class="dk-root ev">' + classBar + head + chips + '<div data-slot="storyline"></div>' + loc + tools + sum + nuc +
       sec("assess", "Assessment", slot("assessment"), { meta: '<span data-meta="assessment"></span>' }) +
       sec("imagery", "Satellite imagery", slot("imagery"), { meta: '<span data-meta="imagery"></span>' }) +
-      sec("evidence", "Sensor evidence", this._evidence(), { meta: esc(this._evidenceMeta()) }) +
+      sec("evidence", sensorEv ? "Detection evidence" : "Sensor evidence", this._evidence(), { meta: esc(this._evidenceMeta()) }) +
       sec("timeline", "Timeline", slot("timeline"), { meta: "UTC · hover for local" }) +
       sec("sources", "Sources", this._sources(), { meta: docs.length ? docs.length + " reports · " + new Set(docs.map((x) => x.source)).size + " outlets" : "" }) +
       this._fields() +
@@ -140,6 +145,7 @@ export class EventDossier {
   _evidenceMeta() {
     const c = this.d.corroborations;
     if (!c) return "";
+    if (isSensor(this.d)) return c.length ? c.length + " reading" + (c.length === 1 ? "" : "s") + " of the detecting sensor (not corroboration)" : "";
     return c.length ? c.length + " detection" + (c.length === 1 ? "" : "s") + " · score " + nf(this.d.corroboration_score, 2) : "";
   }
   // corroborations grouped by sensor pass, with the fire conflict score from /api/intel sensors
@@ -168,6 +174,9 @@ export class EventDossier {
       if (kind === "fire") title += " " + (det.satellite || "") + " scan · " + g.length + " hotspot" + (g.length === 1 ? "" : "s");
       else if (kind === "quake") title += " M" + nf(det.magnitude, 1) + " " + (det.event_type || "");
       else if (kind === "hazard") title += " " + [det.source, det.hazard, det.alert_level].filter(Boolean).join(" ");
+      else if (kind === "gnss_cell") title += " " + g[0].ref_id + " · " + det.degraded + "/" + det.aircraft + " aircraft degraded (" + nf(det.pct, 0) + "%)" + (det.window_min ? " · " + det.window_min + "-min window" : "");
+      else if (kind === "outage") title += " " + (det.datasource || "") + " · score " + nf(det.score);
+      else if (kind === "radiation") title += " " + nf(det.value, 3) + " µSv/h";
       else title += " " + (det.name || det.callsign || g[0].ref_id);
       h += '<div class="ev-g" data-g="' + gi + '"><div class="ev-gh"><b>' + esc(title) + '</b><time title="' + esc(localHint(det.ts, null)) + '">' + esc(fmtUtc(det.ts)) + "</time>" +
         (dt != null ? "<em>" + esc(relMin(dt)) + " vs first report</em>" : "") + "</div>";
@@ -188,7 +197,7 @@ export class EventDossier {
     const d = this.d;
     const docs = (d.documents || []).slice().sort((a, b) => String(a.published_at).localeCompare(String(b.published_at)));
     if (!this.detail) return '<div class="dz-empty">Loading sources…</div>';
-    if (!docs.length) return '<div class="dz-empty">No source documents</div>';
+    if (!docs.length) return '<div class="dz-empty">' + (isSensor(d) ? "Sensor-derived" + (d.sensor ? " (" + esc(d.sensor.sensor) + ")" : "") + "; no news reports" : "No source documents") + "</div>";
     const first = docs[0].published_at;
     // repost groups: near-identical titles collapse under the first publication
     const groups = [];
@@ -380,8 +389,8 @@ export class EventDossier {
     L.push("**Status:** " + (EVENT_STATUS[it.status] || it.status) + " · confidence " + nf(d.confidence ?? it.confidence, 2) + " · " + eventCat(it.category)[0] + (d.verdict ? " · verdict " + d.verdict : ""));
     const occ = (S.timeline || {}).occurred || {};
     const docs = (d.documents || []).slice().sort((a, b) => String(a.published_at).localeCompare(String(b.published_at)));
-    L.push("**Occurred:** " + (occ.basis === "claims" ? bandText(occ.lo, occ.hi) + " (" + [occ.qualifier, occ.precision].filter(Boolean).join(", ") + ")" : occ.conflicts && occ.conflicts.length ? "sources disagree" : "not stated") +
-      " · **First report:** " + (docs[0] ? fmtUtc(docs[0].published_at) : fmtUtc(it.t_start)));
+    L.push("**Occurred:** " + (occ.basis === "claims" ? bandText(occ.lo, occ.hi) + " (" + [occ.qualifier, occ.precision].filter(Boolean).join(", ") + ")" : occ.basis === "sensor" ? bandText(occ.lo, occ.hi) + " (sensor detection window" + ((occ.windows || []).length > 1 ? "s" : "") + ")" : occ.conflicts && occ.conflicts.length ? "sources disagree" : "not stated") +
+      (isSensor(d) ? " · **Source:** sensor-derived" + (d.sensor ? " (" + d.sensor.sensor + ")" : "") + ", no news reports" : " · **First report:** " + (docs[0] ? fmtUtc(docs[0].published_at) : fmtUtc(it.t_start))));
     const m = mgrs(it.lat, it.lon), t = this._target();
     L.push("**Location:** " + [d.place_name, d.country].filter(Boolean).join(", ") + " — " + nf(it.lat, 5) + ", " + nf(it.lon, 5) + (m ? " (MGRS " + m + ")" : "") + " · precision " + it.precision +
       (t ? " · site " + nf(t.lat, 5) + ", " + nf(t.lon, 5) + " (" + t.basis + ", " + kmText(distKm(it.lat, it.lon, t.lat, t.lon)) + " " + compass(bearing(it.lat, it.lon, t.lat, t.lon)) + ")" : ""));

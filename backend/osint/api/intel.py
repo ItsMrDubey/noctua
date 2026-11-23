@@ -18,7 +18,13 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import Response
 
 from osint.api import kml
-from osint.api.events import CATEGORY_COLORS, DEFAULT_COLOR, add_corroboration, impact_detail
+from osint.api.events import (
+    CATEGORY_COLORS,
+    DEFAULT_COLOR,
+    add_corroboration,
+    impact_detail,
+    sensor_block,
+)
 from osint.intel import aggregate, context, hooks
 from osint.translate import english
 from osint.translate import job as translate_job
@@ -41,6 +47,8 @@ def full_event(runtime, event_id: str) -> dict | None:
         return None
     add_corroboration(store, [ev])
     ev["corroborations"] = store.list_corroborations(event_id)
+    if ev.get("origin") == "sensor":
+        ev["sensor"] = sensor_block(store.get_sensor_event(event_id))
     tstore = translate_job.get_store(runtime)
     english.annotate_events(tstore, [ev], summaries=True,
                             extractions=getattr(runtime, "extraction_store", None))
@@ -163,7 +171,13 @@ def mount_intel(app: FastAPI, runtime) -> None:
         if ev:
             subject.update({k: ev.get(k) for k in ("category", "status", "confidence",
                                                    "place_name", "country", "precision",
-                                                   "t_start", "t_end")})
+                                                   "t_start", "t_end", "origin", "h3_3",
+                                                   "subcategory")})
+            sb = ev.get("sensor")
+            if sb:  # sensor-derived: which sensor detected it, and where it stands now
+                subject.update(detector=sb["detector"], sensor=sb["sensor"],
+                               signal=sb["signal"],
+                               lifecycle=(sb.get("details") or {}).get("lifecycle"))
         if subj.get("track"):
             subject["track"] = {k: subj["track"].get(k) for k in (
                 "name", "ident", "reg", "type_code", "operator", "is_mil", "high_priority")}

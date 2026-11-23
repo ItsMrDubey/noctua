@@ -119,7 +119,7 @@ export const HAZARDS = {
 };
 const innerGlyph = (cat, sub) => (cat === "disaster" && HAZARDS[sub] ? HAZARDS[sub][1] : eventCat(cat)[2]);
 export const EVENT_STATUS = {
-  "reported": "Reported", "multi-source": "Multi-source", "sensor-corroborated": "Sensor-corroborated", "official": "Official",
+  "reported": "Reported", "multi-source": "Multi-source", "sensor-detected": "Sensor-detected", "sensor-corroborated": "Sensor-corroborated", "official": "Official",
 };
 // map glyph: white strokes (tinted by billboard colour) inside a status ring; country-level = hollow
 const ringSvg = (cat, status, hollow, sub) => {

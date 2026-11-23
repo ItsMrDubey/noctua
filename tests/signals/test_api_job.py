@@ -94,7 +94,9 @@ def test_job_emits_events_alerts_and_is_idempotent(env):
     assert events["gnss_jam"]["title"].startswith("GNSS interference: Persian Gulf")
     assert events["outage"]["precision"] == "country" and events["outage"]["country"] == "IR"
     assert events["radiation"]["category"] == "disaster"
-    assert all(e["status"] == "sensor-corroborated" for e in events.values())
+    assert all(e["status"] == "sensor-detected" for e in events.values())
+    summ = env.store.corroboration_summaries(list(env.store.sensor_event_ids()))
+    assert not any(s["corroborated"] or s["score"] for s in summ.values())
     alerts = job.alerts
     kinds = sorted(a["kind"] for a in alerts)
     assert kinds == ["aircraft", "gnss_jam", "outage", "radiation", "space", "squawk"]
