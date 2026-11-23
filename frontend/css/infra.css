@@ -1,0 +1,6 @@
+/* Critical infrastructure layers + watchlist matches (js/infra.js, js/watch.js) */
+#i-pipe-chips .chip, #i-fuel-chips .chip, #i-air-chips .chip { cursor: pointer; }
+.dz-sec.watch-hit { border-left: 2px solid var(--wc); padding-left: 8px; background: linear-gradient(90deg, color-mix(in srgb, var(--wc) 10%, transparent), transparent 60%); }
+.dz-sec.watch-hit h3 { color: var(--wc); }
+.dz-sec.watch-hit .dz-tags { margin: 2px 0 6px; padding: 0; }
+.dz-sec.watch-hit a { color: var(--wc); }

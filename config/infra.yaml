@@ -1,0 +1,38 @@
+# Critical infrastructure layers + watchlist matching (osint.infra). Datasets live in
+# data/reference/ (`osint infra-fetch`); missing keys fall back to the defaults in
+# backend/osint/infra/job.py.
+job:
+  interval_s: 60            # watch pass cadence (worker)
+  initial_delay_s: 45
+  auto_refresh: true        # re-download stale datasets in the background (see max ages below)
+  refresh_check_h: 6        # how often staleness is checked
+  max_fix_age_min: 30       # only tracks with a fix this recent are matched
+
+# Max dataset ages (days) are defined per dataset in osint/infra/datasets.py:
+# opensanctions 2, cables 30, pipelines 30, refineries 30, wikidata 30, wpi 90, power 365.
+
+watchlist:
+  # OpenSanctions topics that put a vessel on the watchlist (maritime.csv "risk" column):
+  # sanction, mare.shadow (shadow fleet), poi, sanction.linked, mare.detained, reg.warn
+  topics: [sanction, mare.shadow, poi, sanction.linked]
+  name_matches: true        # exact distinctive-name matches are shown (weak, never alerted)...
+  alert_weak: false         # ...unless this is true
+  realert_h: 24             # alert again after a track was unseen this long
+
+proximity:
+  enabled: true
+  targets: [cables, pipelines_offshore]   # or "pipelines" for every pipeline
+  max_kts: 3.0              # "loitering" speed
+  km: 2.0                   # within this distance of a cable / pipeline
+  minutes: 30               # for at least this long
+  require_transit: true     # only vessels seen under way (> transit_kts) in the last transit_window_h
+  transit_kts: 6.0
+  transit_window_h: 6
+  port_exclusion_km: 8.0    # ignore positions this close to a World Port Index port
+  coast_km: 3.0             # ...or to the Natural Earth coastline
+  dark_min: 60              # a loitering vessel silent this long (feed alive) -> "AIS dark" alert
+  exclude_categories: [Fishing, Pilot Vessel, Port Tender, Pleasure Craft, Sailing, Search & Rescue,
+                       Law Enforcement, Tug, Towing, Diving Ops, Medical Transport, Passenger,
+                       High Speed Craft]
+
+retention_days: 30          # alert events kept in data/infra_watch.sqlite

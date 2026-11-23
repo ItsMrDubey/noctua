@@ -1,0 +1,22 @@
+# User watchlist: live tracks matching any entry are ringed on the globe and raise an alert on
+# first sighting. Reloaded automatically when this file changes (next watch pass, <= 60 s).
+#
+# Keys per entry (at least one identifier):
+#   mmsi      vessel MMSI (AIS)                 e.g. "273125140"
+#   imo       vessel IMO number                 e.g. "9319703" or "IMO9319703"
+#   icao      aircraft ICAO 24-bit hex (ADS-B)  e.g. "ae1234"
+#   reg       aircraft registration             e.g. "RA-85041"
+#   callsign  callsign, * and ? wildcards       e.g. "RCH*"
+#   label     shown on the globe / in alerts
+#   note      free text shown in the inspector
+#   severity  high | warn | info (default warn)
+entries: []
+# entries:
+#   - icao: "ae1234"
+#     label: "Example tanker aircraft"
+#     severity: high
+#   - callsign: "FORTE*"
+#     label: "RQ-4 Global Hawk"
+#   - mmsi: "273125140"
+#     label: "Example vessel"
+#     note: "Followed since 2026-11"

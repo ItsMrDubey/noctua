@@ -17,9 +17,12 @@ for f in ne_50m_admin_0_boundary_lines_land ne_10m_admin_0_boundary_lines_disput
          ne_10m_admin_0_boundary_lines_maritime_indicator ne_50m_admin_0_countries; do
   get "$NE/$f.geojson" "$f.geojson"
 done
-# NGA World Port Index; fall back to Natural Earth ports when NGA is unavailable (it returned 503 in testing).
-if ! get "https://msi.nga.mil/api/publications/download?key=16694622/SFH00000/UpdatedPub150.csv&type=download" wpi.csv \
-   || head -c 200 "$DIR/wpi.csv" 2>/dev/null | grep -qi "<!doctype\|<html"; then
+# NGA World Port Index; NGA's MSI site often serves a 503 apology page, so try the RIMES CKAN
+# datastore copy next and fall back to Natural Earth ports when both are unavailable.
+wpi_ok() { [ -s "$DIR/wpi.csv" ] && ! head -c 200 "$DIR/wpi.csv" | grep -qi "<!doctype\|<html"; }
+get "https://msi.nga.mil/api/publications/download?key=16694622/SFH00000/UpdatedPub150.csv&type=download" wpi.csv
+wpi_ok || { rm -f "$DIR/wpi.csv"; get "https://ckan.rimes.int/datastore/dump/23538e38-830f-4df1-b69d-4469fa6ee7af" wpi.csv; }
+if ! wpi_ok; then
   rm -f "$DIR/wpi.csv"
   echo "WPI unavailable -> falling back to Natural Earth ports"
   get "$NE/ne_10m_ports.geojson" ne_10m_ports.geojson
@@ -37,3 +40,6 @@ elif curl -fsS -G -m 180 -H "User-Agent: osint-poc/0.1 (reference data fetch)" \
 else
   rm -f "$DIR/nuclear_wikidata.json.part"; echo "FAIL nuclear_wikidata.json (query.wikidata.org)"
 fi
+
+# Critical infrastructure layers + sanctions watchlists (cables, pipelines, power plants,
+# refineries, LNG, dams, ground stations, OpenSanctions): `uv run osint infra-fetch`.

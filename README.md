@@ -52,6 +52,39 @@ turns them into `disaster` events (status `official`, glyph per hazard type), me
 by several sources and keying GDACS/EONET quakes on the matching USGS event; news events about disasters
 use them as corroboration evidence.
 
+## Critical infrastructure and watchlists
+
+`uv run osint infra-fetch [ids...] [--force]` downloads the infrastructure layers into `data/reference/`
+(normalised once at download; only stale datasets are re-fetched). The worker's watch job also refreshes
+stale datasets in the background (`config/infra.yaml`, `job.auto_refresh`). Wikimedia rejects anonymous
+clients: set `OSINT_CONTACT` (a URL or mailbox) to identify the installation in the User-Agent.
+
+| id | layer | source | licence (commercial) | refresh |
+|----|-------|--------|----------------------|---------|
+| cables | submarine cables + landing points | TeleGeography public map JSON | public map CC BY-SA 4.0; data under a commercial licence (no) | 30 d |
+| power | power plants (fuel, MW) | WRI Global Power Plant Database v1.3 | CC BY 4.0 (ok) | 365 d |
+| pipelines | oil/gas transmission + submarine pipelines | OpenStreetMap via Overpass | ODbL (review, share-alike) | 30 d |
+| refineries | oil refineries | OpenStreetMap via Overpass | ODbL (review) | 30 d |
+| wikidata | LNG terminals, dams >= 50 m, satellite ground stations | Wikidata SPARQL | CC0 (ok) | 30 d |
+| wpi | seaports (reference layer) | NGA World Port Index (RIMES mirror when NGA is down) | public domain (ok) | 90 d |
+| opensanctions | sanctioned / shadow-fleet vessels, sanctioned aircraft | OpenSanctions `maritime` + `sanctions` targets | CC BY-NC 4.0 (no) | 2 d |
+
+Heliports, small airfields and seaplane bases come from the OurAirports file the reference layer
+already uses (viewport-loaded below ~700 km).
+
+**Watchlists.** The worker matches live tracks every 60 s: vessels by IMO (strong), MMSI (strong unless the
+AIS IMO contradicts it) and distinctive former/current names (weak, shown but never alerted); aircraft by
+registration. `config/watchlist.yaml` adds your own MMSIs / IMOs / ICAO hexes / registrations / callsign
+patterns with labels (reloaded on change). Matches are ringed on the globe, the track inspector shows the
+programme, risk topics and OpenSanctions link, and the first sighting raises an alert (again after 24 h
+unseen). OpenSanctions data is non-commercial (`commercial_ok = false`).
+
+**Proximity alerts.** A vessel seen under way that then stays at <= 3 kn within 2 km of a submarine cable or
+offshore pipeline for 30 min raises "Loitering near ..."; if it then stops transmitting for 60 min while the
+AIS feed is alive, "AIS dark near ...". Positions near ports / coastlines and fishing, tug, pilot, passenger
+etc. categories are ignored (all thresholds in `config/infra.yaml`). Alerts and current matches live in
+`data/infra_watch.sqlite`; API: `/api/infra/*`, `/api/watch/active`, `/api/watch/alerts`, `/api/watch/list`.
+
 ## History histogram
 
 `GET /api/history/counts?layer=fires|quakes|events|historical|aircraft|ships&bin=hour|day&start=&end=`
