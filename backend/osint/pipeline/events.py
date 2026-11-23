@@ -459,6 +459,12 @@ class EventBuilder:
         else:
             since = cursor - timedelta(minutes=self.cfg.cursor_overlap_min)
         docs = self.read_documents(since, now)
+        if (cursor is not None and len(docs) >= self.cfg.batch_limit
+                and max((d.fetched_at for d in docs if d.fetched_at), default=cursor)
+                <= cursor):
+            # the overlap window alone fills a page (a bulk write): it would be re-read
+            # forever and the cursor never advance, so page from the cursor instead
+            docs = self.read_documents(cursor, now)
         fresh = [d for d in docs if d.id not in self._seen]
         res = self.clusterer.process(fresh, now)
         changed = [self.clusterer.events[eid].to_row() for eid in res.changed

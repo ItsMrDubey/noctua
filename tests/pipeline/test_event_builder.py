@@ -262,3 +262,24 @@ def test_extraction_verdicts_merge_into_events(tmp_path):
     b2.warm_start()
     assert b2.verdicts[ids["Drone"]] == "unsupported"
     store.close()
+
+
+def test_cursor_advances_past_overlap_window_filling_a_page(tmp_path):
+    # a bulk write puts more documents in the overlap window than one page holds: the
+    # builder must page from the cursor instead of re-reading the same page forever
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    now = [NOW]
+    bulk = NOW - timedelta(minutes=30)
+    lake.write("documents", [
+        _row(i, f"Strike report {i}", fetched=bulk + timedelta(seconds=i)) for i in range(6)])
+    b = _builder(store, lake, lambda: now[0])
+    b.cfg.batch_limit = 4
+    b.run_once()
+    b.run_once()
+    lake.write("documents", [
+        _row(100, "Missile strike on Kyiv power plant", fetched=NOW - timedelta(minutes=1))])
+    for _ in range(3):
+        b.run_once()
+    assert store.get_cursor(CURSOR_NAME)["fetched_at"].startswith("2026-11-21T11:59")
+    store.close()
