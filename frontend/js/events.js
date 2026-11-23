@@ -1,11 +1,10 @@
 // News events: map layer (billboards by category / status / confidence), filter state, 60 s incremental poll.
-import { Layer } from "/static/js/layers.js";
+import { Layer, GLYPH_SCALE, GLYPH_FADE } from "/static/js/layers.js";
 import { EVENT_CATS, eventCat, eventGlyph } from "/static/js/symbology.js";
 import { fetchJson } from "/static/js/api.js";
 
 const C = Cesium;
-const EV_SCALE = new C.NearFarScalar(1e6, 1.15, 2.5e7, 0.8);
-const EV_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.9);
+const EV_SCALE = GLYPH_SCALE, EV_FADE = GLYPH_FADE; // same distance scale / fade as the track glyphs
 const COLOR = {}, COLOR_FAINT = {};
 for (const [k, v] of Object.entries(EVENT_CATS)) {
   COLOR[k] = C.Color.fromCssColorString(v[1]);
