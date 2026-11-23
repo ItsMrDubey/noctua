@@ -580,6 +580,32 @@ class SqliteStore:
                 out.setdefault(eid, {}).setdefault(f, v)
         return out
 
+    def field_rows(self, event_ids: list[str], fields: tuple[str, ...]) -> dict[str, list[dict]]:
+        """event id -> every {field, value, doc_id, quote} row of the given fields."""
+        out: dict[str, list[dict]] = {}
+        fmarks = ",".join("?" * len(fields))
+        for i in range(0, len(event_ids), 800):
+            chunk = event_ids[i: i + 800]
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT event_id, field, value, doc_id, quote FROM event_fields WHERE "
+                    f"field IN ({fmarks}) AND event_id IN ({','.join('?' * len(chunk))}) "
+                    "ORDER BY event_id, field, value, doc_id", (*fields, *chunk)).fetchall()
+            for eid, f, v, d, q in rows:
+                out.setdefault(eid, []).append({"field": f, "value": v, "doc_id": d,
+                                                "quote": q})
+        return out
+
+    def events_fingerprint(self, since: datetime) -> dict:
+        """Cheap change marker for jobs that derive from events: count and newest
+        ``updated_at`` of non-historical events with t_end >= since, plus the newest merge."""
+        with self._lock:
+            n, newest = self._db.execute(
+                "SELECT COUNT(*), MAX(updated_at) FROM events WHERE t_end >= ? AND "
+                "origin != 'historical'", (iso(since),)).fetchone()
+            merged = self._db.execute("SELECT MAX(merged_at) FROM event_redirects").fetchone()[0]
+        return {"events": n, "updated_at": newest, "merged_at": merged}
+
     def event_actors(self, event_ids: list[str]) -> dict[str, list]:
         """event id -> actors list (the slim list rows do not carry it)."""
         out: dict[str, list] = {}

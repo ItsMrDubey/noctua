@@ -1,0 +1,62 @@
+# Storylines (osint.storylines): distinct events linked into one narrative thread
+# ("Benghazi port drone attack" -> FIRMS fire at the port -> satellite imagery of the burning
+# corvette -> UN mission statement -> follow-up attacks). Worker job only; the API reads the
+# stored result. Every link keeps its reasons; see backend/osint/storylines/link.py.
+#
+# Calibration (2026-11-23, DB copy: 992 news + 111 sensor events over 4 days, 17,500 candidate
+# pairs passing the hard gates): 273 pairs sampled per score bin and hand-labelled "same
+# thread" / "not" (162 / 111). At link_threshold 3.75, pair links: precision 0.90 / recall
+# 0.30 weighted back to all candidates (0.88 / 0.70 on the labelled sample); threads after
+# assembly (both events end up in one storyline): precision 0.92 / recall 0.53 weighted
+# (0.87 / 0.69 sample). Recall is the cheap side to give up: a missed link leaves two
+# shorter threads, a wrong one merges two stories. Grid-searched: cos_floor, cos_points,
+# gap_penalty, name / generic term weights, country points. Repeat with
+# `python -m osint.storylines.calibrate --help` (pairs -> label -> eval) on a data copy.
+enabled: true
+interval_s: 300           # pass cadence; a pass with no changed events costs one query
+initial_delay_s: 150      # let the event builder warm up first
+window_days: 21           # events whose best-known time is in this window are linked
+rebuild_h: 6              # full deterministic re-derivation this often (else incremental)
+
+linking:
+  link_threshold: 3.75    # pair score needed for a link (see link.py for the points)
+  max_gap_h: 96           # two events further apart than this never link directly
+  core_window_h: 72       # a new member must link to a member within this of its own time
+  max_span_days: 14       # a thread whose first event is older than this takes no members
+  coherence_min: 0.40     # cosine of a new member to the story core centroid (drift guard)
+  cos_floor: 0.45         # cosine points: 0 at cos_floor, full at cos_full
+  cos_full: 0.80
+  cos_points: 4.0
+  same_place_points: 3.0  # the same specific place (place name / H3 res-5 cell)
+  near_points: 2.0        # both located at city/point precision within near_km
+  near_km: 25.0
+  mention_points: 2.0     # one event's documents name the other's place
+  country_points: 0.5     # same country, one of them only located at country level
+  busy_place_events: 6    # a place with this many events (located there or naming it) ...
+  busy_place_days: 3      # ... on this many different days is background: weighs 1/4
+  term_points_max: 3.0    # shared rare terms (English titles, actor names), idf-weighted
+  term_df_full: 3         # a term in <= this many events counts fully ...
+  term_df_zero: 0.04      # ... and in >= this share of events not at all
+  name_term: 1.5          # a shared *name* (capitalised mid-sentence: Merkury, Crimean Bridge)
+  generic_term: 0.35      # any other shared word
+  sensor_ref_points: 2.0  # both events cite the same sensor detection
+  gap_penalty: 3.0        # minus gap_penalty * gap / max_gap_h
+  anchor_min: 1.0         # place or term points needed besides the cosine (no topic-only links)
+  far_km: 300             # a kinetic event this far from every located member, naming none of
+                          # their places, is another incident (drone attack on a ship in the
+                          # Gulf of Finland vs the one in Benghazi)
+  # categories that can belong to one thread (a reaction to an attack is "political")
+  compatible_categories:
+    - [armed_conflict, maritime_security, air_activity, infrastructure, political, cyber_outage]
+    - [disaster, infrastructure, political, economic, cyber_outage]
+    - [civil_unrest, political, armed_conflict, infrastructure]
+    - [economic, infrastructure, maritime_security, political]
+
+sensor:                   # sensor-derived events (pipeline.sensor_events) join a thread ...
+  detectors: [seismic, hazard_wildfire, hazard_flood, hazard_tropical_cyclone, outage, gnss_jam]
+  max_span_h: 168         # ... only when they are short-lived (not a two-year drought),
+  near_km: 40.0           # ... close to a member,
+  before_h: 24            # ... and observed from this long before to
+  after_h: 72             # ... this long after it (never alone: no sensor-only threads)
+
+min_members: 2            # threads of one event are not storylines
