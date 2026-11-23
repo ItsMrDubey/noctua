@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -35,6 +36,20 @@ DAY_US = 86_400_000_000
 RETRY_S = 1800.0  # a failed download is retried after this long
 UCDP_REFRESH = timedelta(hours=24)
 STATUS_KEY = "status"
+# headlines that report the ABSENCE of an attack ("Contrary to reports, there are no missile
+# launches ...") are not conflict evidence, even before extraction has verified them
+DENIAL_RE = re.compile(
+    r"\b(?:contrary to (?:the )?reports?|false alarm|hoax|"
+    r"no (?:missile |drone |rocket |air ?)?(?:strikes?|attacks?|launch(?:es)?|explosions?)"
+    r" (?:were |was |have been |has been )?(?:identified|reported|confirmed|detected|recorded))\b",
+    re.IGNORECASE)
+
+
+def conflict_evidence(event: dict, verdict: str | None) -> bool:
+    """A news event counts as conflict evidence near a hotspot unless extraction found the
+    article reports no concrete event, or its headline is a denial."""
+    return verdict != "unsupported" and not DENIAL_RE.search(event.get("title") or "")
+
 
 
 def _mtime(path: Path) -> float | None:
@@ -176,8 +191,11 @@ class FireScoreJob:
         news = self.store.list_events(
             since=now - timedelta(hours=c.news_hours), category=",".join(c.news_categories),
             origin="news", include_unlocated=False, limit=20000)
-        pts = [(e["lat"], e["lon"], (e["id"], e.get("title") or "", e.get("precision")))
-               for e in news if e.get("precision") in c.news_precisions]
+        news = [e for e in news if e.get("precision") in c.news_precisions]
+        verdicts = self.store.verifications([e["id"] for e in news]) if news else {}
+        kept = [e for e in news if conflict_evidence(e, (verdicts.get(e["id"]) or {}).get("verdict"))]
+        ctx.meta["news_excluded"] = len(news) - len(kept)
+        pts = [(e["lat"], e["lon"], (e["id"], e.get("title") or "", e.get("precision"))) for e in kept]
         ctx.news = PointIndex(pts) if pts else None
         ctx.meta["news"] = len(pts)
 
