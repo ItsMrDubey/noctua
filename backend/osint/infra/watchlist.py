@@ -91,7 +91,8 @@ class Entry:
 
     @property
     def risk_labels(self) -> list[str]:
-        return [RISK[t][1] for t in self.topics if t in RISK]
+        known = sorted((t for t in self.topics if t in RISK), key=lambda t: SEV_ORDER[RISK[t][0]])
+        return [RISK[t][1] for t in known]  # most severe first (it labels the globe ring)
 
     def public(self) -> dict:
         d = {k: v for k, v in self.__dict__.items() if v not in (None, [], "") and k != "severity_override"}

@@ -35,6 +35,8 @@ def test_index_merges_and_filters_topics(index):
     e = index.by_imo["9319703"]
     assert e.severity == "high" and "Shadow fleet" in e.risk_labels and e.programs == ["EU-RUS", "GB-RUS"]
     assert e.flag == "km"
+    e.topics = ["mare.detained", "poi", "sanction"]  # most severe label first (globe ring tag)
+    assert e.risk_labels == ["Sanctioned", "Person/vessel of interest", "Port-state detention"]
     assert index.by_mmsi["518998562"].name == "CONRAD"
     assert index.by_reg["RA85041"].programs == ["US-RUSHAR"]
 
