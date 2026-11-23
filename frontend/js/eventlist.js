@@ -1,8 +1,12 @@
-// Right-panel EVENTS tab: virtualised list (updated_at desc), filter box, click to select + fly.
+// Right-panel EVENTS tab: virtualised list (latest report desc), filter box, click to select + fly.
 import { $, esc, evTitle, trPending, TR_TAG } from "/static/js/ui.js";
 import { uiGlyph, threatColor, eventCat, EVENT_STATUS } from "/static/js/symbology.js";
 
 const ROW_H = 42, OVERSCAN = 6;
+// when the event last had activity (its latest report), not when the pipeline last touched
+// the row: a backlog catch-up or a re-score must not make a day-old event look live
+const activeAt = (it) => it.t_end || it.t_start || it.updated_at || "";
+
 export const relTime = (ts) => {
   const t = typeof ts === "number" ? ts : Date.parse(ts);
   if (isNaN(t)) return "";
@@ -49,7 +53,7 @@ export class EventList {
     const q = this.q;
     let rows = this.layer.visibleItems();
     if (q) rows = rows.filter((it) => [it.title_en, it.title, it.category, it.status, it.precision, it.place_name].some((v) => v != null && String(v).toLowerCase().includes(q)));
-    rows.sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0));
+    rows.sort((a, b) => { const x = activeAt(a), y = activeAt(b); return x < y ? 1 : x > y ? -1 : 0; });
     this.rows = rows;
     this.space.style.height = rows.length * ROW_H + "px";
     const n = $("ev-count"), txt = rows.length.toLocaleString() + " events";
@@ -69,7 +73,9 @@ export class EventList {
       const c = threatColor("events", it);
       html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + 'px;--c:' + c + '" title="' + esc(eventCat(it.category)[0]) + '">' +
         '<div class="g" style="color:' + c + '">' + uiGlyph("events", it) + '</div><div class="t">' + esc(evTitle(it) || it.id) + (trPending(it) ? " " + TR_TAG : "") + "</div>" +
-        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + "</span><time>" + relTime(it.updated_at) + "</time></div></div>";
+        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc("First report " + (it.t_start || "?") + "
+Latest report " + (it.t_end || "?") + "
+Processed " + (it.updated_at || "?")) + '">' + relTime(activeAt(it)) + "</time></div></div>";
     }
     if (html !== this._painted) { this._painted = html; this.space.innerHTML = html; }
   }
