@@ -194,6 +194,7 @@ export function setupImagery(viewer) {
       const l = layers.addImageryProvider(makeImagery(name, dateIn.value || today));
       l.alpha = name === "night" ? 0.8 : name === "labels" ? 0.85 : 1;
       if (name === "viirs") { l.brightness = 0.8; l.saturation = 0.7; }
+      l._overlay = name; // weather.js keeps its layers just below the labels overlay
       overlay[name] = l;
       if (name !== "labels" && overlay.labels) layers.raiseToTop(overlay.labels);
     }

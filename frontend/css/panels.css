@@ -179,3 +179,13 @@
 .fs-why b { grid-row: span 2; text-align: right; font: 500 11px var(--f-mono); color: #ff3d7f; }
 .fs-why b.neg { color: var(--dim); }
 .fs-why em { grid-column: 2; font: normal 10.5px/1.35 var(--f-mono); color: var(--dim); overflow-wrap: anywhere; }
+/* ---- weather status lines: per-satellite frame times, IR legend, radar coverage hint ---- */
+.wx-note { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.wx-src { font-weight: 500; color: var(--fg-2, #b9c6d2); white-space: nowrap; }
+.wx-src.warn { color: var(--amber); }
+.wx-src.bad { color: var(--red); }
+.wx-err { color: var(--amber); }
+.wx-scale { display: inline-block; width: 46px; height: 6px; margin-right: 2px; border-radius: 1px; vertical-align: 1px;
+  background: linear-gradient(90deg, rgba(223, 231, 238, .15), #eef5fa 30%, #9fe2ff 45%, #3fb8ff 58%, #4f73ff 68%, #a24dff 78%, #ff4fd8 90%, #ffd9f3); }
+.wx-hatch { display: inline-block; width: 10px; height: 8px; margin-right: 1px; vertical-align: -1px; border: 1px solid rgba(150, 170, 190, .35);
+  background: repeating-linear-gradient(135deg, rgba(150, 170, 190, .55) 0 1px, transparent 1px 4px); }

@@ -1,13 +1,16 @@
-"""Weather routes: cloud cover grid for the 3D cloud layer."""
+"""Weather routes: cloud cover grid for the 3D cloud layer; latest geostationary IR frames."""
 
 from fastapi import FastAPI, HTTPException
 
 from osint.api.layers import parse_bbox
 from osint.weather import CloudService
+from osint.weather.ir import IRFrames
 
 
-def mount_weather(app: FastAPI, service: CloudService | None = None) -> CloudService:
+def mount_weather(app: FastAPI, service: CloudService | None = None,
+                  ir: IRFrames | None = None) -> CloudService:
     svc = service or CloudService()
+    irf = ir or IRFrames()
 
     @app.get("/api/weather/clouds")
     async def clouds(bbox: str) -> dict:
@@ -17,5 +20,10 @@ def mount_weather(app: FastAPI, service: CloudService | None = None) -> CloudSer
         if (box[3] - box[1]) > 40 or ((box[2] - box[0]) % 360) > 60:
             raise HTTPException(422, "bbox too large for 3D clouds (zoom in)")
         return await svc.clouds(box)
+
+    @app.get("/api/weather/ir")
+    async def ir_frames() -> dict:
+        """Per-satellite latest IR frame time + longitude sector for the seamless cloud layer."""
+        return await irf.frames()
 
     return svc
