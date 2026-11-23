@@ -6,7 +6,12 @@ import httpx
 import pytest
 import respx
 
-from osint.collectors.adsb import AdsbCollector, parse_aircraft
+from osint.collectors.adsb import (
+    AdsbCollector,
+    opensky_to_readsb,
+    pacing_delay,
+    parse_aircraft,
+)
 from osint.enrich.military import MilDb
 
 NOW_MS = 1763726400000  # 2025-11-21T12:00:00Z
@@ -126,3 +131,161 @@ async def test_mildb_loaded_in_thread(tmp_path, monkeypatch):
     async with httpx.AsyncClient() as http:
         await c.poll(SimpleNamespace(http=http, settings=ctx_settings))
     assert seen and seen[0] is not threading.main_thread()
+
+
+# ------------------------------------------------------- failover, backoff, rate limits
+
+
+class Clock:
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def _collector(endpoints, **cfg):
+    c = AdsbCollector({"endpoints": endpoints, **cfg})
+    c._mil_db = MilDb({"ae0001": {"icao_type": "C17"}})
+    c._clock = Clock()
+    return c
+
+
+AC = {"now": NOW_MS, "ac": [{"hex": "ae1234", "lat": 1.0, "lon": 2.0, "seen_pos": 1.0}]}
+T = NOW_MS // 1000
+# trimmed from a live OpenSky /api/states/all response (2026-11-23); first hex swapped for
+# one in the test military DB
+OPENSKY = {"time": T, "states": [
+    ["ae0001", "RCH123  ", "United States", T - 4, T - 1, 9.0295, 45.8385, 11574.78, False,
+     247.3, 3.1, 0, None, 11483.34, "1000", False, 0],
+    ["3c4b32", "DLH573  ", "Germany", T, T, 9.0, 45.0, 11000.0, False, 240.0, 3.0, 0, None,
+     11000.0, "1000", False, 0]]}
+
+
+def test_opensky_state_converted_to_readsb_shape():
+    ac = opensky_to_readsb(OPENSKY["states"][0], float(T))
+    assert ac["hex"] == "ae0001" and ac["lat"] == 45.8385 and ac["lon"] == 9.0295
+    assert ac["alt_baro"] == 37975 and ac["gs"] == 480.7 and ac["seen_pos"] == 4
+    ground = ["x", None, None, None, None, None, None, None, True, None, None]
+    assert opensky_to_readsb(ground, 0)["alt_baro"] == "ground"
+    assert opensky_to_readsb([], 0) is None
+
+
+def test_pacing_delay_spreads_budget_until_reset():
+    h = httpx.Headers({"x-ratelimit-remaining": "460", "x-ratelimit-reset": "72577"})
+    assert pacing_delay(h) == pytest.approx(157.78, rel=1e-3)
+    h = httpx.Headers({"x-ratelimit-remaining": "0", "x-ratelimit-reset": "60"})
+    assert pacing_delay(h) == 60
+    assert pacing_delay(httpx.Headers({})) == 0
+
+
+@respx.mock
+async def test_forbidden_endpoint_backs_off_and_warns_once(caplog):
+    ok = respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(200, json=AC))
+    denied = respx.get("https://b.test/v2/mil").mock(return_value=httpx.Response(
+        403, json={"error": "Please contact us"}))
+    c = _collector({"a": "https://a.test/v2", "b": "https://b.test/v2"})
+    async with httpx.AsyncClient() as http:
+        with caplog.at_level(logging.WARNING, logger="osint.collectors.adsb"):
+            for _ in range(5):
+                batch = await c.poll(SimpleNamespace(http=http))
+                c._clock.t += 30
+    assert len(batch.positions) == 1
+    assert ok.call_count == 5 and denied.call_count == 1  # 6 h backoff after the 403
+    warns = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warns) == 1 and "b:" in warns[0] and "403" in warns[0]
+    assert c.status()["b"]["backoff_s"] > 3600
+
+
+@respx.mock
+async def test_transient_failure_backoff_then_recovery_logged(caplog):
+    respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(200, json=AC))
+    flaky = respx.get("https://b.test/v2/mil").mock(side_effect=[
+        httpx.Response(503), httpx.Response(200, json=AC)])
+    c = _collector({"a": "https://a.test/v2", "b": "https://b.test/v2"})
+    async with httpx.AsyncClient() as http:
+        with caplog.at_level(logging.INFO, logger="osint.collectors.adsb"):
+            await c.poll(SimpleNamespace(http=http))
+            c._clock.t += 10  # still inside the 30 s backoff
+            await c.poll(SimpleNamespace(http=http))
+            assert flaky.call_count == 1
+            c._clock.t += 30
+            await c.poll(SimpleNamespace(http=http))
+    assert flaky.call_count == 2
+    assert any("recovered" in r.getMessage() for r in caplog.records)
+
+
+@respx.mock
+async def test_rate_limit_headers_pace_the_endpoint():
+    paced = respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(
+        200, json=AC, headers={"x-ratelimit-remaining": "10", "x-ratelimit-reset": "1000"}))
+    respx.get("https://b.test/v2/mil").mock(return_value=httpx.Response(200, json=AC))
+    c = _collector({"a": "https://a.test/v2", "b": "https://b.test/v2"})
+    async with httpx.AsyncClient() as http:
+        for _ in range(5):  # 30 s apart; a may only be called every 100 s
+            await c.poll(SimpleNamespace(http=http))
+            c._clock.t += 30
+    assert paced.call_count == 2
+
+
+@respx.mock
+async def test_429_honours_retry_after():
+    limited = respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(
+        429, headers={"Retry-After": "120"}))
+    respx.get("https://b.test/v2/mil").mock(return_value=httpx.Response(200, json=AC))
+    c = _collector({"a": "https://a.test/v2", "b": "https://b.test/v2"})
+    async with httpx.AsyncClient() as http:
+        await c.poll(SimpleNamespace(http=http))
+        c._clock.t += 100
+        await c.poll(SimpleNamespace(http=http))
+        c._clock.t += 30
+        await c.poll(SimpleNamespace(http=http))
+    assert limited.call_count == 2
+
+
+@respx.mock
+async def test_opensky_fallback_only_when_primaries_fail_and_rate_limited():
+    primary = respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(500))
+    sky = respx.get("https://sky.test/api/states/all").mock(
+        return_value=httpx.Response(200, json=OPENSKY))
+    c = _collector({"a": "https://a.test/v2",
+                    "sky": {"url": "https://sky.test/api", "kind": "opensky",
+                            "fallback": True, "min_interval_s": 900}})
+    async with httpx.AsyncClient() as http:
+        batch = await c.poll(SimpleNamespace(http=http))
+        # only the military-DB hex survives the filter
+        assert [p.track_id for p in batch.positions] == ["air:ae0001"]
+        assert batch.positions[0].source == "adsb:sky" and batch.tracks[0].is_mil
+        c._clock.t += 20  # primary still backing off, fallback inside its 15 min interval
+        with pytest.raises(RuntimeError, match="all ADS-B endpoints failed"):
+            await c.poll(SimpleNamespace(http=http))
+    assert primary.call_count == 1 and sky.call_count == 1
+
+
+@respx.mock
+async def test_fallback_not_polled_while_a_primary_works():
+    respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(200, json=AC))
+    sky = respx.get("https://sky.test/api/states/all").mock(
+        return_value=httpx.Response(200, json=OPENSKY))
+    c = _collector({"a": "https://a.test/v2",
+                    "sky": {"url": "https://sky.test/api", "kind": "opensky",
+                            "fallback": True}})
+    async with httpx.AsyncClient() as http:
+        await c.poll(SimpleNamespace(http=http))
+    assert sky.call_count == 0
+
+
+@respx.mock
+async def test_requests_carry_project_user_agent():
+    route = respx.get("https://a.test/v2/mil").mock(return_value=httpx.Response(200, json=AC))
+    c = _collector({"a": "https://a.test/v2"})
+    async with httpx.AsyncClient() as http:
+        await c.poll(SimpleNamespace(http=http))
+    assert route.calls[0].request.headers["User-Agent"].startswith("osint-poc/")
+
+
+def test_disabled_endpoint_dropped_and_defaults_exclude_airplanes_live():
+    c = AdsbCollector({"endpoints": {"a": "https://a.test/v2",
+                                     "b": {"url": "https://b.test/v2", "enabled": False}}})
+    assert [e.name for e in c.endpoints] == ["a"]
+    assert "airplanes.live" not in {e.name for e in AdsbCollector({}).endpoints}

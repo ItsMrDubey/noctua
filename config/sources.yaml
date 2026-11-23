@@ -2,10 +2,17 @@
 adsb:
   enabled: true
   interval_s: 30
+  # Verified 2026-11-23: adsb.lol + adsb.fi /v2/mil 200 (merged, deduped by hex); OpenSky
+  # anonymous /states/all 200 (fallback only, filtered to the plane-alert mil DB, <= 1 call
+  # per 15 min = 96 of the 400 daily anonymous credits). airplanes.live answers 403 unless
+  # the project is approved (contact@airplanes.live); re-add it here once it is.
   endpoints:
     adsb.lol: https://api.adsb.lol/v2
-    airplanes.live: https://api.airplanes.live/v2
     adsb.fi: https://opendata.adsb.fi/api/v2
+    opensky: {url: "https://opensky-network.org/api", kind: opensky, fallback: true,
+              min_interval_s: 900}
+  max_backoff_s: 1800       # per-endpoint exponential backoff cap
+  denied_backoff_s: 21600   # 401/403: retry every 6 h, warn once
 ais:
   enabled: true
   batch_seconds: 5
