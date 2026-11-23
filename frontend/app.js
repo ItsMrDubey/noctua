@@ -7,10 +7,12 @@ import { Timeline, RANGES } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
 import { $, esc, evTitle } from "/static/js/ui.js";
+import { fmtDateTime } from "/static/js/timefmt.js";
 import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
 import { BASE_URL } from "/static/js/layers.js";
 import { StatusBar, startClock } from "/static/js/panels/topbar.js";
 import { LayerTree } from "/static/js/panels/layertree.js";
+import { installSettings } from "/static/js/panels/settings.js";
 import { setupHud, setupFps } from "/static/js/panels/hud.js";
 import { Inspector } from "/static/js/panels/inspector.js";
 import { AlertCenter } from "/static/js/panels/alerts.js";
@@ -46,7 +48,8 @@ async function loadConfig() {
 async function main() {
   initLicences();
   startClock();
-  if (typeof Cesium === "undefined") { $("sources").textContent = "CesiumJS failed to load"; return; }
+  installSettings();
+  if (typeof Cesium === "undefined") { new StatusBar().fatal("CesiumJS failed to load"); return; }
   // base imagery first: warm level 0-2 tiles, build the viewer + base layer before anything
   // else, and let /api/config (ion terrain) arrive whenever it does
   preloadBaseTiles(BASE_URL);
@@ -364,7 +367,9 @@ async function main() {
     const c = $("alerts-count");
     const n = alerts.unread ? String(Math.min(99, alerts.unread)) : "";
     if (c.textContent !== n) c.textContent = n;
-    c.classList.toggle("hot", alerts.unread > 0 && alerts.list.slice(0, alerts.unread).some((a) => a.sev === "high"));
+    const hot = alerts.unread > 0 && alerts.list.slice(0, alerts.unread).some((a) => a.sev === "high");
+    c.classList.toggle("hot", hot);
+    statusBar.setAlerts(alerts.unread, hot);
     if (tracklist && tracklist.pane === "alerts") $("alerts-pane").innerHTML = alerts.html();
   };
   alerts.onChange = renderAlerts;
@@ -509,7 +514,7 @@ async function main() {
   const wcCount = () => {
     const n = wcAll.filter((s) => wcOn.has(s.id)).reduce((a, s) => a + (s.count || 0), 0);
     $("c-webcams").textContent = wcAll.length ? n.toLocaleString() : "";
-    $("g-sensors-n").textContent = $("s-webcams").checked ? n.toLocaleString() : "–";
+    tree.setExtra("webcams", wcAll.length ? n : null); // Sensors group total
   };
   const loadWcSources = () => fetchJson("/api/webcams/sources", 15000).then((j) => {
     wcAll = (j && j.items) || [];
@@ -798,7 +803,7 @@ async function main() {
     if (selected.kind === "events") return open({ type: "intel", kind: "event", id: selected.id, label: evTitle(it) || it.title || selected.id });
     if (it.lat == null) return;
     return open({ type: "intel", kind: OBS_KIND[selected.kind] || "point", id: selected.id, lat: it.lat, lon: it.lon, t: typeof it.ts === "string" ? it.ts : null,
-      label: it.name || it.place || (selected.kind === "fires" ? "FIRMS hotspot " + String(it.ts || "").slice(0, 16).replace("T", " ") + "Z" : selected.id) });
+      label: it.name || it.place || (selected.kind === "fires" ? "FIRMS hotspot " + fmtDateTime(it.ts, { zone: true }) : selected.id) });
   }
   // a related event that is not in the loaded layer (filtered / older): fly there, open intel
   async function selectUnlisted(id) {
@@ -858,9 +863,13 @@ async function main() {
   ctx.watch = new WatchOverlay(viewer, { byKind, alerts });
   inspector.trackExtra = (kind, it) => watchHtml(it.id, ctx.watch);
   ctx.watch.start();
+  // "Watchlist matches" toggle (Infrastructure & watchlists group)
+  $("w-watch").addEventListener("change", (e) => ctx.watch.setOn(e.target.checked));
+  ctx.watch.onChange = (w) => { const el = $("c-watch"); const t = w.active.size ? w.active.size.toLocaleString() : ""; if (el.textContent !== t) el.textContent = t; };
   ctx.palette = new Palette(ctx);
   window.__osint = ctx;
+  tree.refresh(); // header "on" counts + preset state now that every module has mounted its rows
   return ctx;
 }
 
-main().catch((e) => { console.error(e); const s = document.getElementById("sources"); if (s) s.textContent = "UI error: " + e.message; });
+main().catch((e) => { console.error(e); new StatusBar().fatal("UI error: " + e.message); });

@@ -5,6 +5,7 @@
 // inspector's fire dossier. Filter "All" with "Mark war-likely" off is the plain FRP rendering.
 import { fetchJson } from "/static/js/api.js";
 import { $, esc, nf } from "/static/js/ui.js";
+import { fmtDateTime } from "/static/js/timefmt.js";
 
 const C = Cesium;
 const STORE_KEY = "noctua.fires.score";
@@ -103,7 +104,9 @@ export function installFireScore({ viewer, fires, inspector }) {
   fRow.className = "row";
   fRow.title = "Ukraine front line derived from DeepStateMap.live occupied / grey-zone areas (refreshed by the worker every 6 h)";
   fRow.innerHTML = '<input type="checkbox" id="r-frontline"><span class="sw ln" style="--c:#ff3b3b"></span>Front line <small>DeepStateMap</small>';
-  $("r-maritime").closest("label").after(fRow);
+  // reserved slot at the top of the Reference group; older markup: after "Maritime lines"
+  const slot = $("slot-frontline");
+  if (slot) slot.replaceWith(fRow); else $("r-maritime").closest("label").after(fRow);
   const ensureFront = () => front.p || (front.p = fetchJson("/api/reference/frontline", 30000).then((gj) => {
     const inst = [];
     for (const f of gj.features || []) {
@@ -112,7 +115,7 @@ export function installFireScore({ viewer, fires, inspector }) {
         if (line.length < 2) continue;
         inst.push(new C.GeometryInstance({
           geometry: new C.PolylineGeometry({ positions: C.Cartesian3.fromDegreesArray(line.flat()), width: 2.4, vertexFormat: C.PolylineMaterialAppearance.VERTEX_FORMAT }),
-          id: { ref: true, kind: "boundary", item: { lat: line[0][1], lon: line[0][0], name: "Front line · DeepStateMap", layer: "DeepStateMap map of " + (props.source_datetime || "?") + " · fetched " + String(props.fetched_at || "").replace("T", " ").slice(0, 16) } },
+          id: { ref: true, kind: "boundary", item: { lat: line[0][1], lon: line[0][0], name: "Front line · DeepStateMap", layer: "DeepStateMap map of " + (props.source_datetime || "?") + " · fetched " + fmtDateTime(props.fetched_at, { zone: true }) } },
         }));
       }
     }
