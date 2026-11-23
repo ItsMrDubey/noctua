@@ -7,6 +7,11 @@ then one ``sqk`` query per emergency code (worldwide), ``spacing_s`` apart (adsb
 GNSS aggregator (``osint.signals.gnss``); emergency codes feed the squawk tracker
 (``osint.signals.aviation``).
 
+Naval capture (``naval_capture``, default on): region aircraft of carrier-associated /
+maritime-patrol types or listed callsigns that are NOT flagged military (so the ``adsb``
+collector misses them) are also written as lake positions (source ``adsb_signals:naval``)
+for the carrier model - no extra requests (``osint.naval.capture``).
+
 Writes ``signals/gnss.json`` (live cells) and ``signals/squawks.json`` every poll. Lake
 observations: ``gnss`` (one per H3 cell and closed hour: value = % degraded, attrs n / bad)
 and ``squawk`` (one per episode, re-versioned every 10 min while it lasts).
@@ -119,6 +124,47 @@ class AdsbSignalsCollector(PollCollector):
         self._loaded = False
         self.sleep = asyncio.sleep  # injectable for tests
         self.region_status: dict[str, dict] = {}
+        self.naval_capture = bool(cfg.get("naval_capture", True))
+        self._capture = None
+        self._mil_db = None
+
+    async def _init_capture(self, ctx: CollectorContext) -> None:
+        """Load the naval capture filter once (disabled when settings lack the dirs)."""
+        cfg_dir = getattr(ctx.settings, "config_dir", None)
+        ref_dir = getattr(ctx.settings, "reference_dir", None)
+        if not self.naval_capture or cfg_dir is None or ref_dir is None:
+            self.naval_capture = False
+            return
+        from osint.enrich.military import MilDb
+        from osint.naval.capture import NavalCapture
+        try:
+            self._capture = await asyncio.to_thread(NavalCapture.from_config_dir, cfg_dir)
+            self._mil_db = await asyncio.to_thread(MilDb.from_csv,
+                                                   ref_dir / "plane-alert-mil.csv")
+        except Exception:  # optional side feature; never break GNSS / squawks
+            log.warning("adsb_signals: naval capture disabled", exc_info=True)
+            self.naval_capture = False
+
+    def _naval(self, batch: Batch, captured: list[tuple[float, dict]]) -> None:
+        from osint.collectors.adsb import parse_aircraft
+        seen: set[str] = set()
+        for now_s, ac in captured:
+            why = self._capture.reason(ac) if self._capture else None
+            hx = str(ac.get("hex") or "").lower()
+            if why is None or hx in seen:
+                continue
+            seen.add(hx)
+            try:
+                parsed = parse_aircraft(ac, now_s, self._mil_db, "adsb_signals:naval")
+            except (ValueError, TypeError, KeyError):
+                continue
+            if parsed is None:
+                continue
+            pos, track = parsed
+            track.extra = {**track.extra, "naval_capture": why}
+            batch.tracks.append(track)
+            if pos is not None:
+                batch.positions.append(pos)
 
     async def _get(self, ctx: CollectorContext, url: str) -> dict:
         r = await ctx.http.get(url, timeout=20)
@@ -130,7 +176,9 @@ class AdsbSignalsCollector(PollCollector):
     async def poll(self, ctx: CollectorContext) -> Batch:
         if not self._loaded:
             self.squawks.load_cursor(ctx.get_cursor(self.name))
+            await self._init_capture(ctx)
             self._loaded = True
+        captured: list[tuple[float, dict]] = []
         requests: list[tuple[str, str]] = [
             ("region:" + str(r.get("name") or f"{r['lat']},{r['lon']}"),
              self.base + self.point_path.format(lat=r["lat"], lon=r["lon"],
@@ -159,6 +207,8 @@ class AdsbSignalsCollector(PollCollector):
                     self.region_status[label[7:]] = {"ok": False, "error": str(exc)[:200]}
                 continue
             ok += 1
+            if self.naval_capture and label.startswith("region:"):
+                captured += [(now_s, a) for a in aircraft]
             for ac in aircraft:
                 s = nav_sample(ac, now_s, self.gnss.cfg)
                 if s is not None:
@@ -176,6 +226,8 @@ class AdsbSignalsCollector(PollCollector):
         started = self.squawks.update(emergencies, now_s, source=self.base)
         self.squawks.prune(now_s)
         batch = Batch(source=self.name)
+        if self.naval_capture and captured:
+            self._naval(batch, captured)
         res = self.gnss.res
         for hour, cell, n, bad in self.gnss.pop_closed_hours(now_s):
             batch.observations.append(gnss_observation(hour, cell, n, bad, res))
