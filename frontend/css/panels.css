@@ -172,3 +172,9 @@
 .dz-sec.orig .orig-t { font-size: 12px; color: var(--fg-2); }
 .evsum.orig-s { margin-top: 6px; color: var(--fg-2); font-style: italic; }
 .src-snip { margin-top: 2px; font: 10.5px/1.35 var(--f-body); color: var(--fg-2); }
+/* ---- fire conflict score (js/firescore.js) ---- */
+.fs-why { list-style: none; margin: 6px 0 0; padding: 0; }
+.fs-why li { display: grid; grid-template-columns: 30px 1fr; column-gap: 6px; padding: 2px 0; font: 11.5px/1.35 var(--f-body); color: var(--fg); }
+.fs-why b { grid-row: span 2; text-align: right; font: 500 11px var(--f-mono); color: #ff3d7f; }
+.fs-why b.neg { color: var(--dim); }
+.fs-why em { grid-column: 2; font: normal 10.5px/1.35 var(--f-mono); color: var(--dim); overflow-wrap: anywhere; }
