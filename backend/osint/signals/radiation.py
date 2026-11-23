@@ -12,7 +12,8 @@ reading for an hour or two, so the defaults ask for more than that), and above `
 an elevated reading at or above ``alert`` is an ``alert``. Absolute levels alone never flag a
 station: some sit in contaminated areas (Safecast devices in the Chornobyl and Fukushima
 zones read 1-3 µSv/h every day), so a station without ``min_samples`` of history is
-``unknown``.
+``unknown`` for alerting; ``assess_detail`` still rates its reading against the short
+history it has (``provisional``) so the UI can show normal / elevated instead of nothing.
 """
 
 from __future__ import annotations
@@ -90,3 +91,16 @@ def assess(value: float, baseline: list | tuple | None, cfg: dict | None = None)
             and value >= float(c["floor"])):
         return "alert" if value >= float(c["alert"]) else "elevated"
     return "normal"
+
+
+def assess_detail(value: float, baseline: list | tuple | None,
+                  cfg: dict | None = None) -> tuple[str, bool]:
+    """(status, provisional): like ``assess``, but a station with some history (fewer than
+    ``min_samples`` readings) is rated against it and flagged provisional; 'unknown' only
+    without any history."""
+    c = {**DEFAULTS, **(cfg or {})}
+    if not baseline or not baseline[1]:
+        return "unknown", False
+    if baseline[1] >= int(c["min_samples"]):
+        return assess(value, baseline, c), False
+    return assess(value, [baseline[0], int(c["min_samples"])], c), True

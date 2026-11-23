@@ -105,6 +105,12 @@ export class AlertCenter {
     if (!/^7[567]00$/.test(sq || "")) return;
     const k = it.id + sq;
     if (this.seen.hp.has(k)) return;
+    // one report is not an emergency (crews dial through 7x00, transponders get mis-set):
+    // alert only when the code is still set on an update at least 20 s later
+    const pend = (this.sqPending = this.sqPending || new Map()), t0 = pend.get(k), now = Date.now();
+    if (t0 == null || now - t0 > 15 * 60e3) { pend.set(k, now); return; }
+    if (now - t0 < 20e3) return;
+    pend.delete(k);
     this.seen.hp.add(k);
     this.push({ sev: "high", title: "Squawk " + sq + " · " + (it.name || it.id), sub: { 7500: "Unlawful interference", 7600: "Radio failure", 7700: "General emergency" }[sq], target: { kind: "aircraft", id: it.id, lat: it.lat, lon: it.lon } });
   }

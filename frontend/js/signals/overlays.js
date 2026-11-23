@@ -124,7 +124,7 @@ export class RadiationLayer extends Timed {
     this.networks = d.networks || {};
     this.pts.removeAll();
     this.items.forEach((s, i) => {
-      const hot = s.status === "elevated" || s.status === "alert";
+      const hot = (s.status === "elevated" || s.status === "alert") && !s.provisional;
       this.pts.add({ position: C.Cartesian3.fromDegrees(s.lon, s.lat), pixelSize: hot ? 10 : s.source === "safecast" ? 5 : 4, color: C.Color.fromCssColorString(radColor(s.value)).withAlpha(0.9),
         outlineColor: hot ? C.Color.fromCssColorString("#ff4b55") : C.Color.BLACK.withAlpha(0.5), outlineWidth: hot ? 3 : 1, scaleByDistance: RAD_SCALE, distanceDisplayCondition: hot ? undefined : RAD_NORMAL_DDC, id: { signal: "rad", i } });
     });
@@ -132,7 +132,7 @@ export class RadiationLayer extends Timed {
     if (this.onData) this.onData(this);
   }
   _show() { this.pts.show = this.on; this.req(); }
-  get elevated() { return this.items.filter((s) => s.status === "elevated" || s.status === "alert").length; }
+  get elevated() { return this.items.filter((s) => (s.status === "elevated" || s.status === "alert") && !s.provisional).length; }
 }
 
 // ---- aurora (OVATION nowcast, 1-degree probability grid) ----

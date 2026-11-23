@@ -82,7 +82,7 @@ def squawk_observation(ep: dict) -> Observation | None:
         value=float(ep["code"]) if ep["code"].isdigit() else None,
         attrs={k: ep.get(k) for k in (
             "hex", "code", "label", "flight", "reg", "type", "desc", "squawk", "emergency",
-            "alt_ft", "gs", "first_seen", "last_seen", "first_lat", "first_lon", "mil",
+            "alt_ft", "gs", "first_seen", "last_seen", "first_lat", "first_lon", "mil", "reports",
             "source")} | {"severity": SEVERITY.get(ep["code"], "warn")})
 
 
