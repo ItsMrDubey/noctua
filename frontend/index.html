@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="/static/css/signals.css">
 <link rel="stylesheet" href="/static/css/dossier.css">
 <link rel="stylesheet" href="/static/css/asset-profile.css">
+<link rel="stylesheet" href="/static/css/terror.css">
 <script>window.CESIUM_BASE_URL = "/static/vendor/cesium/";</script>
 <script src="/static/vendor/cesium/Cesium.js"></script>
 </head>
@@ -70,6 +71,7 @@
 <nav id="rail" class="glass" aria-label="Layer groups">
   <button class="rail-btn" data-g="live" title="Tracks"><svg viewBox="0 0 20 20"><path d="M10 2.5l1.2 5.3 5.8 3.2-5.8 1-1.2 5.5-1.2-5.5-5.8-1 5.8-3.2z" /></svg><i class="rail-dot"></i></button>
   <button class="rail-btn" data-g="events" title="Events &amp; stories"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.2" /><circle cx="10" cy="10" r="6" /><path d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3" /></svg></button>
+  <button class="rail-btn" data-g="terror" title="Terror Watch: incidents, groups, threat levels"><svg viewBox="0 0 20 20"><path d="M10 2.5l7.5 13.5h-15z" /><path d="M10 7.5v4.2M10 13.6v.3" /></svg></button>
   <button class="rail-btn" data-g="sensors" title="Sensors: fires, quakes, webcams"><svg viewBox="0 0 20 20"><path d="M10 2.5c3 3.2 4.5 5.8 4.5 8.2a4.5 4.5 0 0 1-9 0c0-1.6.7-3 1.8-4.3.2 1.4.9 2.3 1.9 2.6C9 7 9.3 4.6 10 2.5z" /></svg></button>
   <button class="rail-btn" data-g="signals" title="Signals &amp; space"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="1.6" /><path d="M6.2 6.2a5.4 5.4 0 0 0 0 7.6M13.8 6.2a5.4 5.4 0 0 1 0 7.6M3.6 3.6a9 9 0 0 0 0 12.8M16.4 3.6a9 9 0 0 1 0 12.8" /></svg><i class="rail-dot" id="sig-rail-dot"></i></button>
   <button class="rail-btn" data-g="infra" title="Infrastructure &amp; watchlists"><svg viewBox="0 0 20 20"><path d="M2 15c3-4 5-4 8 0s5 4 8 0" /><path d="M6 3v6M14 3v6M4 6h4M12 6h4" /></svg></button>
@@ -113,6 +115,15 @@
     <label class="row" title="Storylines: threads of linked events (right panel, Stories tab)"><input type="checkbox" id="t-stories" checked><span class="sw ln" style="--c:#f2ad3d"></span>Storyline overlay</label>
     <label class="row" title="UCDP Georeferenced Event Dataset: curated, historical armed-conflict events within the timeline range"><input type="checkbox" id="t-historical"><span class="sw" style="--c:#8f86c9"></span>Historical conflict (UCDP)<b id="c-historical" class="num"></b></label>
     <div id="hist-note" class="row-note"></div>
+  </section>
+
+  <section class="grp" data-g="terror">
+    <header><h3>Terror watch</h3><b id="g-terror-n" class="num">–</b></header>
+    <label class="row" title="Terrorism incidents (GTD-aligned definition) located at site / city / province precision; colour = status, ring = attribution level"><input type="checkbox" id="tw-incidents" checked><span class="sw dm" style="--c:#ff3b4e"></span>Incidents<b id="c-terror" class="num"></b></label>
+    <div id="tw-chips" class="chips"></div>
+    <label class="row field sub">Window <select id="tw-days-l" class="mini"><option value="7">7 d</option><option value="30" selected>30 d</option><option value="90">90 d</option><option value="365">1 y</option></select></label>
+    <div class="row-note">Confirmed = &ge;2 independent outlets. Reported = single origin, unconfirmed. Ring: white claimed · cyan authorities · grey suspected.</div>
+    <button id="tw-open" class="ghost tw-open" type="button">Open Terror Watch board</button>
   </section>
 
   <section class="grp" data-g="sensors">
@@ -230,6 +241,7 @@
       <button class="ptab" data-p="stories" role="tab" title="Storylines: linked events of one thread">Stories<sup id="stories-count"></sup></button>
       <button class="ptab" data-p="moves" role="tab">Moves<sup id="moves-count"></sup></button>
       <button class="ptab" data-p="alerts" role="tab">Alerts<sup id="alerts-count"></sup></button>
+      <button class="ptab" data-p="terror" role="tab" title="Terror Watch feed: incidents, designations, threat levels, justice">Terror<sup id="terror-count"></sup></button>
       <span class="grow"></span>
       <button id="tl-collapse" class="ghost" title="Collapse">–</button>
     </div>
@@ -247,6 +259,8 @@
     <div class="tk-body hidden" data-pane="stories" id="stories-pane"></div>
     <div class="tk-body hidden" data-pane="alerts" id="alerts-pane"></div>
     <div class="tk-body hidden" data-pane="moves" id="moves-pane"></div>
+    <div class="tk-tools hidden tw-tools" data-pane="terror"></div>
+    <div class="tk-body hidden" data-pane="terror" id="terror-pane"></div>
   </aside>
 </div>
 
