@@ -1,23 +1,43 @@
-// INTEL pane (dossier browser pane type "intel"): an all-source buildup around a selection
-// from GET /api/intel. Two requests run in parallel so the pane fills progressively:
-// core (assessment, timeline, sources, entities, imagery) and surroundings (related events,
-// historical record, sensors, traffic, reference assets). Wikidata / Wikipedia is one
-// "Background" card, not the pane. Entities, places and related events pivot the pane
-// (Back / Forward work as in any dossier pane; Shift+click opens a new pane).
+// INTEL console (dossier browser pane type "intel"): an all-source fusion picture around a
+// selection from GET /api/intel. Three requests run in parallel so the console fills
+// progressively: core (assessment, timeline, sources, entities, imagery, storyline),
+// surroundings (related events, historical record, sensors, traffic, reference assets) and
+// site context (track / fire, environment, overhead passes, signals, exposure, 24 h activity,
+// country, attention); only the sections the subject's tiles need are requested.
+// Contextual: MANIFEST lists the tiles (and METRICS the strip cells) per subject kind, e.g. an
+// aircraft leads with the asset profile and its 24 h flight, a fire with its conflict score.
+// notes() rates each tile: notable findings (watchlist, war-likely, emergency squawk, AIS dark,
+// outage, jamming) float to the top in alert style and into the NOTABLE bar; tiles with
+// nothing to show collapse to a one-line summary. Wikidata / Wikipedia is one "Background" tile; its English article also feeds
+// the Wikipedia pageviews in the Attention tile (GET /api/intel/pageviews, cached).
+//
+// Layout: a persistent header (classification bar, subject, position, a metrics strip of
+// real numbers) over a responsive grid of tiles (container query on the pane: 1 column in
+// a narrow dock, up to 4 when maximised). Tiles fold, go double-width or fill the console;
+// fold / wide state is remembered per viewer. Tile bodies render when they scroll into view
+// (data is fetched up front; long lists render 12 rows and a "show all" button).
+// Keys while the console is focused: 1-9 jump to a tile, P pivot (entities), C copy a
+// plain-text brief, M toggle console (maximised) / docked. Every number shown comes from a
+// section payload; estimates say so in their tooltip.
 import { esc, nf } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
 import { eventCat, EVENT_STATUS } from "/static/js/symbology.js";
-import { fmtUtc, since, kmText, mgrs, latLonText, sec, wireSections, chip, gauge, bars, copyBtn, wireCopy } from "/static/js/panels/dossier-kit.js";
+import { fmtUtc, since, kmText, mgrs, latLonText, chip, gauge, bars, copyBtn, wireCopy, copyText, toast } from "/static/js/panels/dossier-kit.js";
 import { renderTimeline, wireTimeline } from "/static/js/panels/timeline-view.js";
 import { imageryHtml, wireImagery } from "/static/js/imagery.js";
 import { storylineHtml } from "/static/js/storylines.js";
+import { FIRE_REASONS, reasonLabel } from "/static/js/firescore.js";
 
 const CORE = "assessment,timeline,sources,entities,imagery,storyline";
 const AROUND = "related,history,sensors,traffic,assets";
+const CONTEXT = "track,fire,environment,overhead,signals,exposure,activity,country,attention";
 const KIND_LABEL = { event: "Event", fire: "Thermal anomaly", quake: "Seismic event", hazard: "Hazard", aircraft: "Aircraft", ship: "Vessel", place: "Place", facility: "Facility", point: "Point", actor: "Actor" };
 const LEVEL = { known: ["KNOWN", "ok"], corroborated: ["CORROB", "cor"], unconfirmed: ["UNCONF", "unc"], caveat: ["CAVEAT", "cav"] };
 const ASSET = { base: "Base", airport: "Airfield", port: "Port", nuclear: "Nuclear", chokepoint: "Chokepoint" };
 const pivot = (spec) => " data-pivot=\"" + esc(JSON.stringify(spec)) + "\"";
+const LAYOUT_KEY = "noctua.intel.layout.v1";
+const CONSOLE_KEY = "noctua.intel.console";
+const LIST_ROWS = 12;
 
 export const intelKey = (s) => "i:" + [s.kind, s.id || "", s.q || "", s.lat != null ? (+s.lat).toFixed(3) : "", s.lon != null ? (+s.lon).toFixed(3) : ""].join("|");
 
@@ -27,166 +47,869 @@ function query(spec, sections) {
   return "/api/intel?" + p.toString();
 }
 
-const evRow = (e, extra = "") => "<li" + pivot({ type: "intel", kind: "event", id: e.id, label: e.title }) + ' data-sel="' + esc(e.id) + '" title="Pivot to this event (Shift: new pane)">' +
-  '<i class="at">' + esc(eventCat(e.category)[0].split(" ")[0]) + "</i><b>" + esc(e.title || e.id) + "</b><span>" + (e.distance_km != null ? esc(kmText(e.distance_km)) + " " + esc(e.compass || "") + " · " : "") +
-  esc(since(e.t_end || e.t_start)) + " ago" + extra + "</span></li>";
+// ---- small formatters ----
+const empty = (t) => '<div class="dz-empty">' + esc(t) + "</div>";
+const errBox = (x) => (x && x.error ? empty(x.error) : null);
+const pct = (v) => (v == null ? "–" : Math.round(v) + "%");
+const ts = (iso) => (iso == null ? NaN : typeof iso === "number" ? iso * 1000 : Date.parse(/Z|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z"));
+// "in 3 h 12 min" / "2 h ago" relative to now
+function rel(iso) {
+  const t = ts(iso);
+  if (isNaN(t)) return "–";
+  const m = Math.round((t - Date.now()) / 60000), a = Math.abs(m);
+  const txt = a < 60 ? a + " min" : a < 2880 ? Math.floor(a / 60) + " h" + (a % 60 ? " " + (a % 60) + " min" : "") : Math.round(a / 1440) + " d";
+  return m >= 0 ? "in " + txt : txt + " ago";
+}
+// "1h 07m" / "-3h 10m" / "2d 4h" (metrics strip)
+function relShort(iso) {
+  const t = ts(iso);
+  if (isNaN(t)) return "–";
+  const m = Math.round((t - Date.now()) / 60000), a = Math.abs(m), sg = m < 0 ? "−" : "";
+  return sg + (a < 60 ? a + "m" : a < 2880 ? Math.floor(a / 60) + "h " + String(a % 60).padStart(2, "0") + "m" : Math.floor(a / 1440) + "d " + Math.floor((a % 1440) / 60) + "h");
+}
+const isAir = (k) => k === "aircraft" || k === "air";
+// "show all" for long lists: first LIST_ROWS rows, the rest behind a button
+function list(rows, cls = "cx-l") {
+  if (rows.length <= LIST_ROWS) return '<ul class="' + cls + '">' + rows.join("") + "</ul>";
+  return '<ul class="' + cls + '">' + rows.slice(0, LIST_ROWS).join("") + '</ul><ul class="' + cls + ' ic-more" hidden>' + rows.slice(LIST_ROWS).join("") + '</ul><button type="button" class="ic-showall" data-more="1">Show all ' + rows.length + "</button>";
+}
+
+// ---- tiny charts (SVG strings; viewBox scaled by CSS) ----
+function area(vals, { w = 300, h = 40, max = null, cls = "" } = {}) {
+  const v = vals.map((x) => (x == null ? 0 : +x));
+  if (!v.length) return "";
+  const M = max ?? Math.max(1, ...v), dx = w / Math.max(1, v.length - 1);
+  const pts = v.map((x, i) => (i * dx).toFixed(1) + "," + (h - (x / M) * (h - 2)).toFixed(1)).join(" ");
+  return '<svg class="ic-area ' + cls + '" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,' + h + " " + pts + " " + w + "," + h + '"/><polyline points="' + pts + '"/></svg>';
+}
+const spark = (vals) => (vals && vals.length ? bars(vals, { w: 60, h: 14 }) : "");
+
+// ------------------------------------------------------------------ section renderers
 
 function assessment(A) {
-  if (!A) return '<div class="dz-empty">Assessment applies to events</div>';
-  if (A.error) return '<div class="dz-empty">' + esc(A.error) + "</div>";
-  return '<ul class="as">' + A.items.map((x) => '<li class="lv-' + (LEVEL[x.level] || ["", ""])[1] + '"><i>' + esc((LEVEL[x.level] || [x.level])[0]) + "</i><span>" + esc(x.text) + "</span><small>" + esc(x.basis) + "</small></li>").join("") + "</ul>";
+  if (!A) return empty("Assessment applies to events");
+  return errBox(A) || '<ul class="as">' + A.items.map((x) => '<li class="lv-' + (LEVEL[x.level] || ["", ""])[1] + '"><i>' + esc((LEVEL[x.level] || [x.level])[0]) + "</i><span>" + esc(x.text) + "</span><small>" + esc(x.basis) + "</small></li>").join("") + "</ul>";
 }
+
+const evRow = (e, extra = "") => "<li" + pivot({ type: "intel", kind: "event", id: e.id, label: e.title }) + ' data-sel="' + esc(e.id) + '" title="Pivot to this event (Shift: new pane)">' +
+  '<i class="at" style="color:' + eventCat(e.category)[1] + '">' + esc(eventCat(e.category)[0].split(" ")[0]) + "</i><b>" + esc(e.title || e.id) + "</b><span>" + (e.distance_km != null ? esc(kmText(e.distance_km)) + " " + esc(e.compass || "") + " · " : "") +
+  esc(since(e.t_end || e.t_start)) + " ago" + extra + "</span></li>";
 
 function related(R) {
   if (!R) return "";
-  if (R.error) return '<div class="dz-empty">' + esc(R.error) + "</div>";
+  if (R.error) return empty(R.error);
   const c = R.counts || {};
   let h = '<div class="ip-stats"><div><b>' + nf(c["24h"]) + "</b><span>24 h</span></div><div><b>" + nf(c["7d"]) + "</b><span>7 d</span></div><div><b>" + nf(c["30d"]) + "</b><span>30 d</span></div>" +
     '<div class="ip-spark" title="Events per day, last 30 days">' + bars(R.sparkline.days, { w: 150, h: 26 }) + "<span>30-day activity" + (R.radius_km ? " · " + nf(R.radius_km) + " km" : "") + "</span></div></div>";
-  const list = (title, xs, empty) => '<div class="cx-h">' + esc(title) + " <small>" + xs.length + "</small></div>" + (xs.length ? '<ul class="cx-l ev">' + xs.map((e) => evRow(e, e.actor ? " · " + esc(e.actor) : "")).join("") + "</ul>" : '<div class="dz-empty">' + esc(empty) + "</div>");
-  h += list("Nearest", R.nearest || [], "No other events in 30 days");
-  if ((R.same_place || []).length) h += list("Same place", R.same_place, "");
-  if ((R.thread || []).length) h += list("Same-category thread (±7 d)", R.thread, "");
-  if ((R.same_actors || []).length) h += list("Same actors", R.same_actors, "");
+  const sub = (title, xs, emptyText) => '<div class="cx-h">' + esc(title) + " <small>" + xs.length + "</small></div>" + (xs.length ? list(xs.map((e) => evRow(e, e.actor ? " · " + esc(e.actor) : "")), "cx-l ev") : empty(emptyText));
+  h += sub("Nearest", R.nearest || [], "No other events in 30 days");
+  if ((R.same_place || []).length) h += sub("Same place", R.same_place, "");
+  if ((R.thread || []).length) h += sub("Same-category thread (±7 d)", R.thread, "");
+  if ((R.same_actors || []).length) h += sub("Same actors", R.same_actors, "");
   return h;
 }
 
 function history(H) {
   if (!H) return "";
-  if (H.error) return '<div class="dz-empty">' + esc(H.error) + "</div>";
-  if (!H.total) return '<div class="dz-empty">No curated historical events within ' + nf(H.radius_km) + " km</div>";
+  if (H.error) return empty(H.error);
+  if (!H.total) return empty("No curated historical events within " + nf(H.radius_km) + " km");
   const years = Object.entries(H.by_year);
   const max = Math.max(1, ...years.map(([, v]) => v.events));
   return '<div class="ip-hist">' + nf(H.total) + " events · " + nf(H.fatalities_best) + " fatalities (best estimate) within " + nf(H.radius_km) + " km · " + esc((H.datasets || []).join(", ")) + "</div>" +
     '<div class="ip-years">' + years.map(([y, v]) => '<div title="' + esc(y + ": " + v.events + " events, " + v.fatalities + " fatalities") + '"><i style="height:' + Math.max(4, (v.events / max) * 100) + '%"></i><span>' + esc(y.slice(2)) + "</span></div>").join("") + "</div>" +
     '<div class="ip-types">' + Object.entries(H.by_type).map(([k, n]) => chip(k.replace(/_/g, " ") + " " + n, "src")).join("") + "</div>" +
-    '<ul class="cx-l">' + (H.recent || []).map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(String(x.t_start).slice(0, 4)) + "</i><b>" + esc(x.title) + "</b><span>" + esc(kmText(x.distance_km)) + " " + esc(x.compass) + "</span></li>").join("") + "</ul>";
+    list((H.recent || []).map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(String(x.t_start).slice(0, 4)) + "</i><b>" + esc(x.title) + "</b><span>" + esc(kmText(x.distance_km)) + " " + esc(x.compass) + "</span></li>"));
 }
 
 function sensors(S) {
   if (!S) return "";
-  if (S.error) return '<div class="dz-empty">' + esc(S.error) + "</div>";
+  if (S.error) return empty(S.error);
   const f = S.fires || { items: [] }, q = S.quakes || { items: [] }, hz = S.hazards || { items: [] };
   let h = '<div class="ip-win">Window ' + esc(fmtUtc(S.window.from)) + " → " + esc(fmtUtc(S.window.to)) + " · " + nf(S.radius_km) + " km</div>";
-  h += '<div class="cx-h">FIRMS hotspots <small>' + f.count + (f.max_conflict_score != null ? " · max conflict score " + f.max_conflict_score : "") + "</small></div>";
-  h += f.items.length ? '<table class="ip-t"><thead><tr><th>Time</th><th>Dist</th><th>FRP</th><th>Sat</th><th title="Fire conflict score 0-100">Conflict</th></tr></thead><tbody>' + f.items.slice(0, 25).map((x) =>
+  h += '<div class="cx-h">FIRMS hotspots <small>' + f.count + (f.max_conflict_score != null ? " · max conflict score " + f.max_conflict_score : "") + (f.max_frp_mw != null ? " · max FRP " + nf(f.max_frp_mw, 1) + " MW" : "") + "</small></div>";
+  h += f.items.length ? '<div class="ic-scroll"><table class="ip-t"><thead><tr><th>Time</th><th>Dist</th><th>FRP</th><th>Sat</th><th title="Fire conflict score 0-100">Conflict</th></tr></thead><tbody>' + f.items.slice(0, 40).map((x) =>
     '<tr data-fly="' + x.lat + "," + x.lon + '" title="' + esc((x.conflict_reasons || []).join(", ")) + '"><td>' + esc(fmtUtc(x.ts)) + "</td><td>" + esc(kmText(x.distance_km)) + " " + esc(x.compass) + "</td><td>" + nf(x.frp_mw, 1) + "</td><td>" + esc(x.satellite || "") + "</td><td>" +
-    (x.conflict_score != null ? '<span class="cs" style="--v:' + Math.min(100, x.conflict_score) + '">' + x.conflict_score + "</span>" : "–") + "</td></tr>").join("") + "</tbody></table>" : '<div class="dz-empty">None</div>';
-  h += '<div class="cx-h">Quakes <small>' + q.count + "</small></div>" + (q.items.length ? '<ul class="cx-l">' + q.items.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">M' + nf(x.mag, 1) + "</i><b>" + esc(x.place || x.event_type || "") + "</b><span>" + esc(kmText(x.distance_km)) + " · " + esc(fmtUtc(x.ts)) + "</span></li>").join("") + "</ul>" : '<div class="dz-empty">None</div>');
-  h += '<div class="cx-h">Hazard alerts (GDACS / EONET) <small>' + hz.count + "</small></div>" + (hz.items.length ? '<ul class="cx-l">' + hz.items.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(x.alert_level || x.source || "") + "</i><b>" + esc(x.name || x.hazard || "") + "</b><span>" + esc(kmText(x.distance_km)) + " · " + esc(fmtUtc(x.ts)) + "</span></li>").join("") + "</ul>" : '<div class="dz-empty">None</div>');
+    (x.conflict_score != null ? '<span class="cs" style="--v:' + Math.min(100, x.conflict_score) + '">' + x.conflict_score + "</span>" : "–") + "</td></tr>").join("") + "</tbody></table></div>" : empty("None");
+  h += '<div class="cx-h">Quakes <small>' + q.count + "</small></div>" + (q.items.length ? list(q.items.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">M' + nf(x.mag, 1) + "</i><b>" + esc(x.place || x.event_type || "") + "</b><span>" + esc(kmText(x.distance_km)) + " · " + esc(fmtUtc(x.ts)) + "</span></li>")) : empty("None"));
+  h += '<div class="cx-h">Hazard alerts (GDACS / EONET) <small>' + hz.count + "</small></div>" + (hz.items.length ? list(hz.items.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(x.alert_level || x.source || "") + "</i><b>" + esc(x.name || x.hazard || "") + "</b><span>" + esc(kmText(x.distance_km)) + " · " + esc(fmtUtc(x.ts)) + "</span></li>")) : empty("None"));
   return h;
 }
 
-function trafficRow(x, passed) {
-  const flags = (x.flags || []).map((f) => chip(f.label || f.kind, "warn", f.source || "")).join("");
-  return "<li" + (x.lat != null ? ' data-fly="' + x.lat + "," + x.lon + '"' : "") + ' class="' + (x.is_mil ? "mil" : "") + '"><i class="at">' + (x.kind === "aircraft" ? "AIR" : "SEA") + "</i><b>" + esc(x.name || x.id) + " " +
-    esc(x.type_code || "") + (x.is_mil ? " " + chip("MIL", "mil") : "") + flags + "</b><span>" + (passed ? "closest " + esc(kmText(x.closest_km)) + " at " + esc(fmtUtc(x.ts, { time: true })) : esc(kmText(x.distance_km)) + " " + esc(x.compass || "")) + "</span></li>";
+function trackRow(x, how) {
+  const flags = (x.flags || []).map((f) => chip(f.label || f.kind, f.severity === "info" ? "src" : "warn", f.source || "")).join("");
+  const right = how === "passed" ? "closest " + esc(kmText(x.closest_km)) + " at " + esc(fmtUtc(x.ts, { time: true }))
+    : how === "day" ? "closest " + esc(kmText(x.closest_km)) + " · " + esc(fmtUtc(x.last, { time: true })) + (x.max_gap_min >= 60 ? " · gap " + x.max_gap_min + " min" : "")
+      : esc(kmText(x.distance_km)) + " " + esc(x.compass || "");
+  return "<li" + (x.lat != null ? ' data-fly="' + x.lat + "," + x.lon + '"' : "") + ' class="' + (x.is_mil ? "mil" : "") + '"><i class="at">' + (isAir(x.kind) ? "AIR" : "SEA") + "</i><b>" + esc(x.name || x.id) + " " +
+    esc(x.type_code || "") + (x.is_mil ? " " + chip("MIL", "mil") : "") + flags + "</b><span>" + right + "</span></li>";
 }
-function traffic(T) {
-  if (!T) return "";
-  if (T.error) return '<div class="dz-empty">' + esc(T.error) + "</div>";
-  const n = T.now, p = T.passed;
-  let h = '<div class="cx-h">Now within ' + nf(T.radius_km) + " km <small>" + n.aircraft + " aircraft · " + n.ships + " ships · " + n.military + " military</small></div>";
-  h += n.items.length ? '<ul class="cx-l">' + n.items.map((x) => trafficRow(x, false)).join("") + "</ul>" : '<div class="dz-empty">No live tracks</div>';
-  if (p && p.window) {
-    h += '<div class="cx-h">Passed near the event <small>' + esc(fmtUtc(p.window.from, { time: true })) + "–" + esc(fmtUtc(p.window.to, { time: true })) + " · " + p.items.length + " tracks · " + p.military + " military</small></div>";
-    h += p.items.length ? '<ul class="cx-l">' + p.items.map((x) => trafficRow(x, true)).join("") + "</ul>" : '<div class="dz-empty">No recorded tracks in that window</div>';
-  }
-  return h;
+function traffic(T, A) {
+  let h = "";
+  if (A && !A.error) {
+    const s = A.series || {};
+    h += '<div class="ic-kv"><div><b>' + nf(A.aircraft) + "</b><span>aircraft 24 h</span></div><div><b>" + nf(A.ships) + "</b><span>ships 24 h</span></div><div class=\"" + (A.military ? "hot" : "") + '"><b>' + nf(A.military) + "</b><span>military</span></div><div class=\"" + (A.flagged ? "hot" : "") + '"><b>' + nf(A.flagged) + "</b><span>watchlisted</span></div></div>" +
+      '<div class="ic-chart" title="Distinct tracks per hour within ' + nf(A.radius_km) + ' km, last 24 h (aircraft cyan, ships blue)">' + area(s.aircraft || [], { cls: "air" }) + area(s.ship || [], { cls: "sea" }) + "<span>" + esc(fmtUtc(s.start, { time: true })) + "</span><span>now</span></div>";
+    if ((A.notable || []).length) h += '<div class="cx-h">Notable, last 24 h <small>' + A.notable.length + "</small></div>" + list(A.notable.map((x) => trackRow(x, "day")));
+    if ((A.gaps || []).length) h += '<div class="cx-h" title="' + esc(A.basis) + '">AIS reporting gaps ≥ 60 min <small>' + A.gaps.length + "</small></div>" + list(A.gaps.map((x) => trackRow(x, "day")));
+    if ((A.watch_alerts || []).length) h += '<div class="cx-h">Watch alerts in the area <small>' + A.watch_alerts.length + "</small></div>" + list(A.watch_alerts.map((a) => '<li data-fly="' + a.lat + "," + a.lon + '"><i class="at">' + esc(a.kind) + "</i><b>" + esc(a.title) + "</b><span>" + esc(fmtUtc(a.ts, { time: true })) + "</span></li>"));
+  } else if (A && A.error) h += empty("24 h history: " + A.error);
+  if (T && !T.error) {
+    const n = T.now, p = T.passed;
+    h += '<div class="cx-h">Now within ' + nf(T.radius_km) + " km <small>" + n.aircraft + " aircraft · " + n.ships + " ships · " + n.military + " military</small></div>";
+    h += n.items.length ? list(n.items.map((x) => trackRow(x, "now"))) : empty("No live tracks");
+    if (p && p.window) {
+      h += '<div class="cx-h">Passed near the event <small>' + esc(fmtUtc(p.window.from, { time: true })) + "–" + esc(fmtUtc(p.window.to, { time: true })) + " · " + p.items.length + " tracks · " + p.military + " military</small></div>";
+      h += p.items.length ? list(p.items.map((x) => trackRow(x, "passed"))) : empty("No recorded tracks in that window");
+    }
+  } else if (T && T.error) h += empty(T.error);
+  return h || empty("Loading…");
 }
 
 function assets(A) {
   if (!A) return "";
-  if (A.error) return '<div class="dz-empty">' + esc(A.error) + "</div>";
+  if (A.error) return empty(A.error);
   let h = "";
-  if (A.frontline) h += '<div class="cx-fl" data-fly="' + A.frontline.lat + "," + A.frontline.lon + '"><span>FRONT LINE</span><b>' + esc(kmText(A.frontline.distance_km)) + " " + esc(A.frontline.compass) + "</b><small>" + esc(A.frontline.source) + "</small></div>";
-  h += (A.items || []).length ? '<ul class="cx-l">' + A.items.map((a) => '<li data-fly="' + a.lat + "," + a.lon + '"' + pivot({ type: "intel", kind: "facility", lat: a.lat, lon: a.lon, label: a.name }) + '><i class="at at-' + esc(a.type) + '">' + esc(ASSET[a.type] || a.type) + "</i><b>" + esc(a.name || "–") +
-    "</b><span>" + esc(kmText(a.distance_km)) + " " + esc(a.compass || "") + "</span></li>").join("") + "</ul>" : '<div class="dz-empty">No reference assets within ' + nf(A.radius_km) + " km</div>";
+  if (A.frontline) h += '<div class="cx-fl" data-fly="' + A.frontline.lat + "," + A.frontline.lon + '"><span>FRONT LINE</span><b>' + esc(kmText(A.frontline.distance_km)) + " " + esc(A.frontline.compass) + "</b><small>" + esc(A.frontline.source) + (A.frontline.source_datetime ? " · " + esc(fmtUtc(A.frontline.source_datetime)) : "") + "</small></div>";
+  h += (A.items || []).length ? list(A.items.map((a) => '<li data-fly="' + a.lat + "," + a.lon + '"' + pivot({ type: "intel", kind: "facility", lat: a.lat, lon: a.lon, label: a.name }) + '><i class="at at-' + esc(a.type) + '">' + esc(ASSET[a.type] || a.type) + "</i><b>" + esc(a.name || "–") +
+    (a.is_military ? " " + chip("MIL", "mil") : "") + "</b><span>" + esc(kmText(a.distance_km)) + " " + esc(a.compass || "") + "</span></li>")) : empty("No reference assets within " + nf(A.radius_km) + " km");
   const w = A.webcams || { items: [] };
-  if (w.items.length) h += '<div class="cx-h">Webcams <small>' + w.count + "</small></div><ul class=\"cx-l\">" + w.items.map((c) => '<li data-fly="' + c.lat + "," + c.lon + '"><i class="at">CAM</i><b>' + esc(c.name) + "</b><span>" + esc(kmText(c.distance_km)) + "</span></li>").join("") + "</ul>";
+  if (w.items.length) h += '<div class="cx-h">Webcams <small>' + w.count + "</small></div>" + list(w.items.map((c) => '<li data-fly="' + c.lat + "," + c.lon + '"><i class="at">CAM</i><b>' + esc(c.name) + "</b><span>" + esc(kmText(c.distance_km)) + "</span></li>"));
   return h;
 }
 
-function sources(S, ev) {
+function sources(S) {
   if (!S) return "";
-  if (S.error) return '<div class="dz-empty">' + esc(S.error) + "</div>";
-  return '<div class="ip-hist">' + S.count + " reports · " + S.outlets + " outlets · " + (S.groups || []).length + " independent texts · languages " + esc((S.languages || []).join(", ") || "–") + "</div>" +
+  if (S.error) return empty(S.error);
+  const langs = Object.entries(S.by_lang || {}), max = Math.max(1, ...langs.map(([, n]) => n));
+  return '<div class="ic-kv"><div><b>' + nf(S.count) + "</b><span>reports</span></div><div><b>" + nf(S.outlets) + "</b><span>outlets</span></div><div><b>" + nf((S.groups || []).length) + '</b><span>independent texts</span></div><div><b>' + nf((S.languages || []).length) + "</b><span>languages</span></div></div>" +
+    (S.hourly && S.hourly.length > 1 ? '<div class="ic-chart" title="Reports per hour since the first report">' + area(S.hourly, { cls: "src" }) + "<span>" + esc(fmtUtc(S.first_at)) + "</span><span>" + esc(fmtUtc(S.last_at)) + "</span></div>" : "") +
+    '<div class="ic-bars">' + langs.map(([k, n]) => '<div title="' + esc(k + ": " + n + " reports") + '"><span>' + esc(k.toUpperCase()) + '</span><i style="width:' + ((n / max) * 100).toFixed(1) + '%"></i><b>' + n + "</b></div>").join("") + "</div>" +
     '<div class="ip-types">' + Object.entries(S.by_kind || {}).map(([k, n]) => chip(k + " " + n, "src")).join("") + "</div>";
 }
 
-function entities(E, spec) {
+function entities(E) {
   if (!E) return "";
-  if (E.error) return '<div class="dz-empty">' + esc(E.error) + "</div>";
-  if (!E.items.length) return '<div class="dz-empty">No named actors or places</div>';
+  if (E.error) return empty(E.error);
+  if (!E.items.length) return empty("No named actors or places");
   return '<div class="ip-ents">' + E.items.map((e) => {
     const target = e.type === "actor" ? { type: "intel", kind: "actor", q: e.name, label: e.name } : e.lat != null ? { type: "intel", kind: e.type === "site" ? "facility" : "place", lat: e.lat, lon: e.lon, label: e.name } : { type: "intel", kind: "actor", q: e.name, label: e.name };
     return '<button type="button" class="ip-ent t-' + esc(e.type) + '"' + pivot(target) + ' title="Pivot to ' + esc(e.name) + (e.basis ? " (" + esc(e.basis) + ")" : "") + '"><i>' + esc(e.type.toUpperCase()) + "</i>" + esc(e.name) + (e.count > 1 ? " <small>×" + e.count + "</small>" : "") + "</button>";
   }).join("") + "</div>";
 }
 
-// observations / points have no name of their own: use the most frequent nearby place
+// ---- local conditions ----
+function lightCard(title, L) {
+  if (!L) return "";
+  const m = L.moon || {};
+  return '<div class="ic-light ph-' + esc(L.phase.replace(/ .*/, "")) + '"><span>' + esc(title) + " · " + esc(fmtUtc(L.t)) + "</span><b>" + esc(L.phase.toUpperCase()) + "</b>" +
+    "<small>sun " + nf(L.sun_elev_deg, 1) + "° el · az " + nf(L.sun_az_deg) + "°</small><small>moon " + Math.round((m.illumination || 0) * 100) + "% lit (" + esc(m.phase || "") + "), " + (m.up ? "up " + nf(m.elev_deg) + "°" : "below horizon") + "</small></div>";
+}
+function environment(E) {
+  if (!E) return "";
+  if (E.error) return empty(E.error);
+  const sn = E.sun_next || {}, W = E.weather || {};
+  let h = '<div class="ic-lights">' + lightCard("At event", E.light.event) + lightCard("Now", E.light.now) + "</div>";
+  h += '<div class="ic-sun">' + [["sunrise", "Sunrise"], ["sunset", "Sunset"], ["civil_dawn", "Civil dawn"], ["civil_dusk", "Civil dusk"]].map(([k, l]) => "<div><span>" + l + "</span><b>" + esc(sn[k] ? fmtUtc(sn[k], { time: true }) : "–") + "</b><small>" + esc(sn[k] ? rel(sn[k]) : "") + "</small></div>").join("") + "</div>";
+  if (W.error) return h + empty(W.error);
+  const c = W.current || {}, ae = W.at_event;
+  h += '<div class="ic-wx"><div class="ic-wx-now"><span>NOW · ' + esc(c.label || "") + "</span><b>" + nf(c.temperature_2m, 1) + "°C</b><small>cloud " + pct(c.cloud_cover) + " · wind " + nf(c.wind_speed_10m, 1) + " kn from " + nf(c.wind_direction_10m) + "° (gust " + nf(c.wind_gusts_10m, 1) + ")" +
+    " · vis " + (c.visibility != null ? nf(c.visibility / 1000, 1) + " km" : "–") + " · RH " + pct(c.relative_humidity_2m) + "</small>" +
+    (W.downwind ? '<small class="ic-dw" title="Smoke / fire / plume drift direction from the current 10 m wind">drift toward ' + esc(W.downwind) + ' <i style="transform:rotate(' + W.downwind_deg + 'deg)">↑</i></small>' : "") + "</div>" +
+    (ae ? '<div class="ic-wx-ev"><span>AT EVENT HOUR · ' + esc(fmtUtc(ae.time)) + "</span><small>cloud " + pct(ae.cloud_cover) + " (low " + pct(ae.cloud_cover_low) + ") · wind " + nf(ae.wind_speed_10m, 1) + " kn from " + nf(ae.wind_direction_10m) + "° · precip " + nf(ae.precipitation, 1) + " mm · vis " + (ae.visibility != null ? nf(ae.visibility / 1000, 1) + " km" : "–") + "</small></div>" : "") + "</div>";
+  const s = W.series || { time: [] };
+  if (s.time.length > 2) {
+    const nowI = s.time.findIndex((t) => ts(t) > Date.now());
+    h += '<div class="ic-chart tall" title="Cloud cover % (area) and wind kn (line), past 24 h → next 48 h">' + area(s.cloud_cover, { max: 100, cls: "cloud" }) + area(s.wind_speed_10m, { cls: "wind" }) +
+      (nowI > 0 ? '<i class="ic-now" style="left:' + ((nowI / (s.time.length - 1)) * 100).toFixed(1) + '%"></i>' : "") + "<span>" + esc(fmtUtc(s.time[0])) + "</span><span>" + esc(fmtUtc(s.time[s.time.length - 1])) + "</span></div>";
+    const n = W.next48 || {};
+    h += '<div class="ip-hist">Next 48 h: cloud ' + pct(n.cloud_min) + "–" + pct(n.cloud_max) + " (mean " + pct(n.cloud_mean) + ") · precip " + nf(n.precip_mm, 1) + " mm · max wind " + nf(n.wind_max_kn, 1) + " kn</div>";
+  }
+  return h + '<div class="ic-basis">' + esc(W.source || "") + " · fetched " + esc(fmtUtc(W.fetched_at, { time: true })) + " · grid " + esc((W.grid || []).join(", ")) + " · " + esc(E.basis) + "</div>";
+}
+
+// ---- overhead passes ----
+function passRow(p) {
+  const geom = p.kind === "optical" ? "off-nadir " + nf(p.off_nadir_deg, 1) + "°" : "incidence " + nf(p.incidence_deg, 1) + "° (right)";
+  return '<tr class="k-' + p.kind + (ts(p.t) < Date.now() ? " past" : "") + '" title="' + esc(p.mission + " " + p.sensor + " · " + p.res + " · " + p.node + " · " + nf(p.cross_km, 1) + " km from ground track · sun " + nf(p.sun_elev_deg, 1) + "° · elements " + nf(p.element_age_h, 1) + " h old · archive: " + p.archive) + '">' +
+    "<td>" + esc(fmtUtc(p.t)) + '<small> ±' + (p.time_unc_s || 1) + " s</small></td><td>" + esc(p.satellite) + "</td><td>" + (p.kind === "optical" ? "OPT" : "SAR") + "</td><td>" + esc(geom) + "</td><td>" + (p.kind === "optical" ? pct(p.cloud_pct) : "n/a") + "</td><td>" + esc(rel(p.t)) + "</td></tr>";
+}
+function passCard(label, p, note = "") {
+  if (!p) return '<div class="ic-pass none"><span>' + esc(label) + "</span><b>none in window</b></div>";
+  return '<div class="ic-pass k-' + p.kind + '"><span>' + esc(label) + "</span><b>" + esc(fmtUtc(p.t)) + "</b><small>" + esc(p.satellite) + " · " + esc(rel(p.t)) + (p.kind === "optical" ? " · cloud " + pct(p.cloud_pct) : "") + note + "</small></div>";
+}
+function overhead(O) {
+  if (!O) return "";
+  if (O.error) return empty(O.error);
+  const op = O.by_kind.optical || {}, sar = O.by_kind.sar || {};
+  const t0 = ts(O.window.from), t1 = ts(O.window.to), X = (t) => (((ts(t) - t0) / (t1 - t0)) * 100).toFixed(2) + "%";
+  let h = '<div class="ic-passes">' + passCard("Next optical", op.next) + passCard("Next clear optical (<30% cloud)", op.next_clear) + passCard("Next SAR", sar.next);
+  if (O.event_t) h += passCard("First optical after event", op.after_event) + passCard("First SAR after event", sar.after_event) + passCard("Last optical before", op.before_event);
+  h += "</div>";
+  h += '<div class="ic-strip" title="Passes over the site: optical (top), SAR (bottom); opacity = forecast clear sky">' +
+    O.passes.map((p) => '<i class="k-' + p.kind + '" style="left:' + X(p.t) + ";opacity:" + (p.kind === "optical" && p.cloud_pct != null ? (1 - p.cloud_pct / 130).toFixed(2) : 1) + '" title="' + esc(fmtUtc(p.t) + " " + p.satellite + (p.kind === "optical" ? " · cloud " + pct(p.cloud_pct) : "")) + '"></i>').join("") +
+    '<b class="now" style="left:' + X(new Date().toISOString()) + '"><em>NOW</em></b>' + (O.event_t ? '<b class="ev" style="left:' + X(O.event_t) + '"><em>EVENT</em></b>' : "") +
+    "<span>" + esc(fmtUtc(O.window.from)) + "</span><span>" + esc(fmtUtc(O.window.to)) + "</span></div>";
+  h += O.passes.length ? '<div class="ic-scroll"><table class="ip-t ic-pt"><thead><tr><th>Time (UTC)</th><th>Satellite</th><th>Type</th><th>Geometry</th><th>Cloud</th><th></th></tr></thead><tbody>' + O.passes.map(passRow).join("") + "</tbody></table></div>" : empty("No covering passes in the window");
+  return h + '<div class="ic-basis">' + esc(O.basis) + " Elements up to " + nf(O.max_element_age_h, 1) + " h old.</div>";
+}
+
+// ---- signals at the site ----
+function signals(G) {
+  if (!G) return "";
+  if (G.error) return empty(G.error);
+  const g = G.gnss || {}, o = G.outage, r = G.radiation || {}, s = G.space || {};
+  const cell = g.site, worst = g.worst_150km;
+  let h = '<div class="ic-sig">';
+  h += '<div class="' + (cell && cell.level !== "low" ? "lv-" + cell.level : "") + '" title="' + esc(g.basis || "") + '"><span>GNSS AT SITE</span><b>' + (cell ? pct(cell.pct) + " degraded" : "no data") + "</b><small>" + (cell ? esc(cell.level) + " · " + cell.bad + "/" + cell.n + " aircraft · cell " + esc(kmText(cell.distance_km)) + " " + esc(cell.compass) : "no ADS-B integrity reports within 120 km in the last " + nf(g.window_min) + " min") + "</small></div>";
+  h += '<div class="' + (worst && worst.level !== "low" ? "lv-" + worst.level : "") + '"><span>WORST ≤150 KM</span><b>' + (worst ? pct(worst.pct) : "–") + "</b><small>" + (worst ? esc(worst.level) + " · " + esc(kmText(worst.distance_km)) + " " + esc(worst.compass) + " · " + worst.n + " aircraft" : "no cells") + "</small></div>";
+  if (o) {
+    const c = o.country;
+    h += '<div class="' + (c && c.ongoing ? "lv-" + (c.level || "medium") : "") + '" title="' + esc(o.basis) + '"><span>INTERNET · ' + esc(o.cc) + "</span><b>" + (c ? (c.ongoing ? "OUTAGE " : "recent ") + esc((c.level || "").toUpperCase()) : "no outage") + "</b><small>" + (c ? esc((c.datasources || []).join(", ")) + " · score " + nf(c.score) + " · since " + esc(fmtUtc(c.from)) : "IODA, last " + nf(o.window_h) + " h") + "</small></div>";
+  }
+  const kp = s.kp_now ? s.kp_now[1] : null, sc = s.scales || {};
+  h += '<div class="' + (kp >= 5 ? "lv-high" : kp >= 4 ? "lv-medium" : "") + '" title="NOAA SWPC; Kp ≥ 5 = geomagnetic storm (GNSS / HF degradation at high latitudes)"><span>SPACE WEATHER</span><b>Kp ' + nf(kp, 1) + "</b><small>G" + (sc.G ?? "–") + " S" + (sc.S ?? "–") + " R" + (sc.R ?? "–") + (s.solar_wind ? " · wind " + nf(s.solar_wind.speed_kms) + " km/s · Bz " + nf(s.solar_wind.bz_nt) + " nT" : "") + "</small></div>";
+  h += "</div>";
+  h += '<div class="cx-h" title="' + esc(r.basis || "") + '">Radiation probes ≤250 km <small>' + nf(r.count_250km) + "</small></div>" + ((r.stations || []).length ? list(r.stations.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(x.status || "") + "</i><b>" + esc(x.name || x.id) + "</b><span>" + nf(x.value, 3) + " " + esc(x.unit || "") + (x.baseline != null ? " (median " + nf(x.baseline, 3) + ")" : "") + " · " + esc(kmText(x.distance_km)) + "</span></li>")) : empty("No public probes nearby (BfS covers Germany; Safecast is sparse)"));
+  const sq = (G.squawks || {}).items || [];
+  if (sq.length) h += '<div class="cx-h">Emergency squawks ≤300 km, 24 h <small>' + sq.length + "</small></div>" + list(sq.map((x) => '<li data-fly="' + x.lat + "," + x.lon + '"><i class="at">' + esc(x.code) + "</i><b>" + esc((x.flight || x.reg || "") + " " + (x.type || "")) + "</b><span>" + esc(x.label) + " · " + esc(kmText(x.distance_km)) + "</span></li>"));
+  if ((g.cells || []).length) h += '<div class="cx-h">GNSS cells ≤300 km <small>' + g.cells.length + "</small></div>" + list(g.cells.map((c) => '<li data-fly="' + c.lat + "," + c.lon + '" class="' + (c.level === "high" ? "mil" : "") + '"><i class="at">' + esc(c.level) + "</i><b>" + pct(c.pct) + " degraded · " + c.bad + "/" + c.n + " aircraft</b><span>" + esc(kmText(c.distance_km)) + " " + esc(c.compass) + "</span></li>"));
+  return h;
+}
+
+// ---- infrastructure + population ----
+const FUEL_C = { nuclear: "#ffd24a", coal: "#9a8f86", gas: "#5ee3ea", oil: "#d9b27c", hydro: "#7fa8ff", wind: "#9ff3ff", solar: "#f2ad3d", other: "#a99bff" };
+function exposure(X) {
+  if (!X) return "";
+  if (X.error) return empty(X.error);
+  const P = X.power || { items: [] }, pop = X.population;
+  let h = "";
+  if (pop) {
+    const r = pop.rings || {};
+    h += '<div class="ic-kv" title="' + esc(pop.basis) + '">' + ["10", "25", "50"].map((k) => "<div><b>" + nf(r[k]) + "</b><span>people ≤" + k + " km</span></div>").join("") + "<div><b>" + nf(pop.places) + "</b><span>settlements" + (pop.folded_districts ? " (+" + pop.folded_districts + " districts)" : "") + "</span></div></div>";
+  }
+  const fuels = Object.entries(P.mw_by_fuel || {}), tot = Math.max(1, P.mw_total || 0);
+  h += '<div class="cx-h">Power ≤' + nf(X.radius_km) + " km <small>" + nf(P.count) + " plants · " + nf(P.mw_total) + " MW</small></div>" +
+    (fuels.length ? '<div class="ic-stack">' + fuels.map(([f, mw]) => '<i style="flex:' + (mw / tot).toFixed(3) + ";background:" + (FUEL_C[f] || FUEL_C.other) + '" title="' + esc(f + ": " + nf(mw) + " MW") + '"></i>').join("") + "</div>" : "") +
+    (P.items.length ? list(P.items.map((p) => '<li data-fly="' + p.lat + "," + p.lon + '"><i class="at" style="color:' + (FUEL_C[p.group] || FUEL_C.other) + '">' + esc(p.fuel) + "</i><b>" + esc(p.name) + "</b><span>" + nf(p.mw) + " MW · " + esc(kmText(p.distance_km)) + " " + esc(p.compass) + "</span></li>")) : "");
+  const pts = [["refineries", "Refinery"], ["lng", "LNG"], ["dams", "Dam"], ["ground_stations", "Ground stn"], ["landings", "Cable landing"]];
+  const rows = [];
+  for (const [k, l] of pts) for (const it of (X[k] || {}).items || []) rows.push('<li data-fly="' + it.lat + "," + it.lon + '"><i class="at">' + esc(l) + "</i><b>" + esc(it.name || "–") + "</b><span>" + esc(kmText(it.distance_km)) + " " + esc(it.compass) + "</span></li>");
+  for (const p of (X.pipelines || {}).items || []) rows.push("<li><i class=\"at\">Pipeline</i><b>" + esc(p.name || "unnamed " + (p.substance || "")) + (p.offshore ? " " + chip("offshore", "src") : "") + "</b><span>" + esc(p.substance || "") + " · " + esc(kmText(p.distance_km)) + "</span></li>");
+  for (const c of (X.cables || {}).items || []) rows.push("<li><i class=\"at\">Cable</i><b>" + esc(c.name) + "</b><span>" + esc(kmText(c.distance_km)) + "</span></li>");
+  for (const a of (X.airfields || {}).items || []) rows.push('<li data-fly="' + a.lat + "," + a.lon + '" class="' + (a.is_military ? "mil" : "") + '"><i class="at">' + esc(a.type.replace(/_/g, " ")) + "</i><b>" + esc(a.name) + (a.is_military ? " " + chip("MIL", "mil") : "") + "</b><span>" + esc(kmText(a.distance_km)) + " " + esc(a.compass) + "</span></li>");
+  const cnt = (k) => ((X[k] || {}).count || 0);
+  h += '<div class="cx-h">Critical infrastructure ≤' + nf(X.radius_km) + " km <small>" + [["refineries", "ref"], ["lng", "LNG"], ["dams", "dam"], ["pipelines", "pipe"], ["cables", "cable"], ["landings", "landing"], ["airfields", "airfield"]].map(([k, l]) => cnt(k) + " " + l).join(" · ") + "</small></div>" +
+    (rows.length ? list(rows) : empty("None in the loaded datasets"));
+  if (pop && pop.items.length) h += '<div class="cx-h">Largest settlements <small>GeoNames</small></div>' + list(pop.items.map((p) => '<li data-fly="' + p.lat + "," + p.lon + '"' + pivot({ type: "intel", kind: "place", lat: p.lat, lon: p.lon, label: p.name }) + '><i class="at">' + nf(p.pop) + "</i><b>" + esc(p.name) + "</b><span>" + esc(kmText(p.distance_km)) + " " + esc(p.compass) + "</span></li>"));
+  return h + (pop ? '<div class="ic-basis">' + esc(pop.basis) + "</div>" : "");
+}
+
+// ---- country context ----
+function country(C) {
+  if (!C) return "";
+  if (C.error) return empty(C.error);
+  const H = C.history || {}, T = C.tempo || {};
+  const months = Object.entries(H.months || {}), max = Math.max(1, ...months.map(([, v]) => v.events));
+  let h = '<div class="ic-kv"><div><b>' + nf(T.last7) + "</b><span>events, last 7 d</span></div><div class=\"" + (T.ratio >= 2 ? "hot" : "") + '" title="' + esc(T.basis || "") + '"><b>' + (T.ratio != null ? "×" + nf(T.ratio, 2) : "–") + "</b><span>vs baseline" + (T.ratio == null ? " (platform data since " + esc(T.first_day || "–") + ")" : "") + "</span></div><div><b>" + nf(H.total) + "</b><span>UCDP events " + esc(months.length ? months[0][0].slice(0, 4) : "") + "</span></div><div><b>" + nf(H.fatalities_best) + "</b><span>UCDP fatalities</span></div></div>";
+  h += '<div class="ic-chart" title="Platform events in ' + esc(C.name || C.cc) + ' per day, last 37 days">' + area(T.days || [], { cls: "tempo" }) + "<span>−37 d</span><span>today</span></div>";
+  const cats = Object.entries(T.categories_7d || {});
+  if (cats.length) h += '<div class="ip-types">' + cats.map(([k, n]) => chip(eventCat(k)[0] + " " + n, "src")).join("") + "</div>";
+  if (months.length) {
+    h += '<div class="cx-h" title="' + esc(H.basis || "") + '">UCDP GED by month <small>' + esc((H.names || []).join(" / ")) + "</small></div>" +
+      '<div class="ip-years">' + months.map(([m, v]) => '<div title="' + esc(m + ": " + v.events + " events, " + v.fatalities + " fatalities (best)") + '"><i style="height:' + Math.max(4, (v.events / max) * 100) + '%"></i><span>' + esc(m.slice(5)) + "</span></div>").join("") + "</div>" +
+      '<div class="ip-types">' + Object.entries(H.by_type || {}).map(([k, n]) => chip(k + " " + n, "src")).join("") + "</div>";
+  } else h += empty("No curated UCDP events for " + (C.name || C.cc));
+  if ((C.storylines || []).length) h += '<div class="cx-h">Active storylines in the theatre (≤400 km, 7 d) <small>' + C.storylines.length + "</small></div>" +
+    list(C.storylines.map((s) => "<li" + pivot({ type: "story", id: s.id, label: s.title }) + ' title="Open the storyline"><i class="at">' + s.n_events + "</i><b>" + esc(s.title) + "</b><span>" + esc((s.theatre_label || "") + " · " + since(s.t_last) + " ago") + "</span></li>"));
+  return h;
+}
+
+// ---- attention ----
+function attention(N, PV) {
+  let h = "";
+  if (N && !N.error) {
+    h += '<div class="ic-kv"><div><b>' + nf(N.last3_per_day, 1) + "</b><span>reports/day, last 3 d</span></div><div><b>" + nf(N.documents.reduce((a, b) => a + b, 0)) + "</b><span>reports, 30 d ≤" + nf(N.radius_km) + " km</span></div></div>" +
+      '<div class="ic-chart" title="' + esc(N.basis) + '">' + area(N.documents, { cls: "src" }) + "<span>" + esc(N.days[0]) + "</span><span>" + esc(N.days[N.days.length - 1]) + "</span></div>";
+  } else if (N && N.error) h += empty(N.error);
+  if (PV === undefined) h += '<div class="cx-h">Wikipedia pageviews</div>' + empty("Waiting for the Background article…");
+  else if (PV && PV.error) h += '<div class="cx-h">Wikipedia pageviews</div>' + empty(PV.error);
+  else if (PV && PV.missing) h += '<div class="cx-h">Wikipedia pageviews</div>' + empty("No pageview data for " + PV.title);
+  else if (PV) {
+    h += '<div class="cx-h">Wikipedia pageviews · ' + esc(PV.title) + ' <small>' + esc(PV.project) + "</small></div>" +
+      '<div class="ic-kv"><div class="' + (PV.ratio >= 2 ? "hot" : "") + '"><b>' + (PV.ratio != null ? "×" + nf(PV.ratio, 2) : "–") + "</b><span>last 3 d vs 60-d median</span></div><div><b>" + nf(PV.last3_per_day) + "</b><span>views/day, last 3 d</span></div><div><b>" + nf(PV.baseline_median) + "</b><span>median/day</span></div><div><b>" + nf(PV.peak) + "</b><span>peak day</span></div></div>" +
+      '<div class="ic-chart" title="Daily user pageviews (Wikimedia REST; one-day lag)">' + area(PV.views, { cls: "pv" }) + "<span>" + esc(PV.days[0]) + "</span><span>" + esc(PV.days[PV.days.length - 1]) + "</span></div>" +
+      '<div class="ic-basis">' + esc(PV.source) + " · fetched " + esc(fmtUtc(PV.fetched_at, { time: true })) + "</div>";
+  } else if (PV === null) h += '<div class="cx-h">Wikipedia pageviews</div>' + empty("No English Wikipedia article for this subject");
+  return h;
+}
+
+// ---- locator: local azimuthal-equidistant plot of everything with a position ----
+const LOC_KM = 50;
+function locator(subj, D) {
+  if (!subj || subj.lat == null) return empty("No position");
+  const W = 320, R = 150, k = Math.cos((subj.lat * Math.PI) / 180);
+  const P = (la, lo) => { const x = ((lo - subj.lon) * 111.32 * k) / LOC_KM, y = ((la - subj.lat) * 110.57) / LOC_KM; return [W / 2 + x * R, W / 2 - y * R, Math.hypot(x, y)]; };
+  const g = [];
+  const dot = (la, lo, cls, title, extra = "", r = 3) => { if (la == null) return; const [x, y, d] = P(la, lo); if (d > 1.02) return; g.push('<circle class="' + cls + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r + '" data-fly="' + la + "," + lo + '"' + extra + "><title>" + esc(title) + "</title></circle>"); };
+  for (const kmr of [10, 25, 50]) g.push('<circle class="ring" cx="' + W / 2 + '" cy="' + W / 2 + '" r="' + ((kmr / LOC_KM) * R).toFixed(1) + '"/><text class="rl" x="' + (W / 2 + 3) + '" y="' + (W / 2 - (kmr / LOC_KM) * R + 9).toFixed(1) + '">' + kmr + " km</text>");
+  g.push('<path class="ax" d="M' + W / 2 + " 6V" + (W - 6) + "M6 " + W / 2 + "H" + (W - 6) + '"/><text class="rl n" x="' + (W / 2 + 3) + '" y="12">N</text>');
+  const pop = (D.exposure || {}).population;
+  const boxes = []; // placed town labels (largest first): a label that would overlap one is dropped
+  for (const p of (pop && pop.items) || []) {
+    const [x, y, d] = P(p.lat, p.lon);
+    if (d > 1) continue;
+    g.push('<circle class="town" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + Math.min(9, 1.5 + Math.sqrt(p.pop) / 120).toFixed(1) + '"><title>' + esc(p.name + " · pop " + nf(p.pop)) + "</title></circle>");
+    const bx = [x + 5, y - 6, x + 5 + p.name.length * 4.6, y + 4];
+    if (boxes.some((b) => bx[0] < b[2] && bx[2] > b[0] && bx[1] < b[3] && bx[3] > b[1])) continue;
+    boxes.push(bx);
+    g.push('<text class="tl" x="' + (x + 5).toFixed(1) + '" y="' + (y + 3).toFixed(1) + '">' + esc(p.name) + "</text>");
+  }
+  for (const a of (D.assets || {}).items || []) dot(a.lat, a.lon, "as as-" + a.type, (ASSET[a.type] || a.type) + ": " + a.name, "", 3.5);
+  const X = D.exposure || {};
+  for (const p of (X.power || {}).items || []) dot(p.lat, p.lon, "inf pw", "Power " + p.fuel + " " + nf(p.mw) + " MW: " + p.name, ' style="fill:' + (FUEL_C[p.group] || FUEL_C.other) + '"', 2.6 + Math.min(4, Math.sqrt(p.mw || 0) / 12));
+  for (const key of ["refineries", "lng", "dams", "landings", "ground_stations"]) for (const p of (X[key] || {}).items || []) dot(p.lat, p.lon, "inf", key + ": " + (p.name || ""), "", 2.6);
+  for (const f of ((D.sensors || {}).fires || {}).items || []) dot(f.lat, f.lon, "fire", "FIRMS " + fmtUtc(f.ts) + " FRP " + nf(f.frp_mw, 1) + " MW", "", 2.2);
+  for (const e of (D.related || {}).nearest || []) dot(e.lat, e.lon, "ev", e.title, ' style="fill:' + eventCat(e.category)[1] + '"', 3);
+  for (const c of ((D.signals || {}).gnss || {}).cells || []) dot(c.lat, c.lon, "gn lv-" + c.level, "GNSS cell " + c.level + " " + pct(c.pct), "", 5);
+  const fl = (D.assets || {}).frontline;
+  if (fl) {
+    const [x, y, d] = P(fl.lat, fl.lon);
+    if (d <= 1) g.push('<circle class="fl" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="4" data-fly="' + fl.lat + "," + fl.lon + '"><title>Nearest front line point ' + esc(kmText(fl.distance_km)) + "</title></circle>");
+    else { const a = Math.atan2(y - W / 2, x - W / 2); g.push('<path class="fl" d="M' + (W / 2 + Math.cos(a) * (R + 2)).toFixed(1) + " " + (W / 2 + Math.sin(a) * (R + 2)).toFixed(1) + "l" + (Math.cos(a + 2.6) * 8).toFixed(1) + " " + (Math.sin(a + 2.6) * 8).toFixed(1) + "M" + (W / 2 + Math.cos(a) * (R + 2)).toFixed(1) + " " + (W / 2 + Math.sin(a) * (R + 2)).toFixed(1) + "l" + (Math.cos(a - 2.6) * 8).toFixed(1) + " " + (Math.sin(a - 2.6) * 8).toFixed(1) + '"><title>Front line ' + esc(kmText(fl.distance_km)) + " " + esc(fl.compass) + "</title></path>"); }
+  }
+  const wx = ((D.environment || {}).weather || {});
+  if (wx.downwind_deg != null) { const a = ((wx.downwind_deg - 90) * Math.PI) / 180, L = 26; g.push('<g class="wind"><path d="M' + W / 2 + " " + W / 2 + "l" + (Math.cos(a) * L).toFixed(1) + " " + (Math.sin(a) * L).toFixed(1) + '"/><title>Wind drift toward ' + esc(wx.downwind) + " (" + nf((wx.current || {}).wind_speed_10m, 1) + " kn)</title></g>"); }
+  g.push('<path class="me" d="M' + W / 2 + " " + (W / 2 - 7) + "L" + (W / 2 + 6) + " " + (W / 2 + 5) + "L" + (W / 2 - 6) + " " + (W / 2 + 5) + 'Z"><title>Subject</title></path>');
+  return '<svg class="ic-loc" viewBox="0 0 ' + W + " " + W + '" role="img" aria-label="Locator">' + g.join("") + "</svg>" +
+    '<div class="ic-legend"><i class="ev"></i>events <i class="fire"></i>FIRMS <i class="as"></i>assets <i class="inf"></i>infrastructure <i class="town"></i>settlements <i class="fl"></i>front line <i class="gn"></i>GNSS cell</div>';
+}
+
+// ---- aircraft / ship: live state + last 24 h of the track ----
+function trackMap(T) {
+  const P = T.path || [];
+  if (P.length < 2) return "";
+  const W = 420, H = 200, pad = 10;
+  let la0 = Infinity, la1 = -Infinity, lo0 = Infinity, lo1 = -Infinity;
+  for (const [la, lo] of P) { la0 = Math.min(la0, la); la1 = Math.max(la1, la); lo0 = Math.min(lo0, lo); lo1 = Math.max(lo1, lo); }
+  const k = Math.cos((((la0 + la1) / 2) * Math.PI) / 180);
+  const sx = (lo1 - lo0) * k || 0.01, sy = la1 - la0 || 0.01, sc = Math.min((W - 2 * pad) / sx, (H - 2 * pad) / sy);
+  const X = (lo) => pad + (lo - lo0) * k * sc + ((W - 2 * pad) - sx * sc) / 2, Y = (la) => H - pad - (la - la0) * sc - ((H - 2 * pad) - sy * sc) / 2;
+  const g = ['<polyline class="tp" points="' + P.map(([la, lo]) => X(lo).toFixed(1) + "," + Y(la).toFixed(1)).join(" ") + '"/>'];
+  for (const gp of T.gaps || []) g.push('<line class="gap" x1="' + X(gp.lon).toFixed(1) + '" y1="' + Y(gp.lat).toFixed(1) + '" x2="' + X(gp.lon2).toFixed(1) + '" y2="' + Y(gp.lat2).toFixed(1) + '"><title>' + esc("Gap " + gp.minutes + " min · " + gp.jump_km + " km") + "</title></line>");
+  for (const c of T.gnss_crossed || []) g.push('<circle class="gn lv-' + esc(c.level) + '" cx="' + X(c.lon).toFixed(1) + '" cy="' + Y(c.lat).toFixed(1) + '" r="6"><title>' + esc("GNSS " + c.level + " " + pct(c.pct) + " at " + fmtUtc(c.at)) + "</title></circle>");
+  for (const l of T.loiters || []) g.push('<circle class="lo' + (l.port ? " port" : "") + '" cx="' + X(l.lon).toFixed(1) + '" cy="' + Y(l.lat).toFixed(1) + '" r="4" data-fly="' + l.lat + "," + l.lon + '"><title>' + esc((l.port ? "Port call " + l.port.name : "Loiter") + " " + l.minutes + " min") + "</title></circle>");
+  for (const e of T.events_near || []) g.push('<circle class="ev" cx="' + X(e.lon).toFixed(1) + '" cy="' + Y(e.lat).toFixed(1) + '" r="3" style="fill:' + eventCat(e.category)[1] + '" data-fly="' + e.lat + "," + e.lon + '"><title>' + esc(e.title + " · " + e.distance_km + " km from the path") + "</title></circle>");
+  const a = P[0], b = P[P.length - 1];
+  g.push('<circle class="t0" cx="' + X(a[1]).toFixed(1) + '" cy="' + Y(a[0]).toFixed(1) + '" r="3"><title>' + esc("24 h ago · " + fmtUtc(new Date(a[2] * 1000).toISOString())) + '</title></circle><circle class="t1" cx="' + X(b[1]).toFixed(1) + '" cy="' + Y(b[0]).toFixed(1) + '" r="4.5"><title>Latest fix</title></circle>');
+  return '<svg class="ic-tmap" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Track, last 24 h">' + g.join("") + "</svg>";
+}
+function alertList(xs) {
+  return (xs || []).length ? '<ul class="ic-alerts">' + xs.map((a) => '<li class="' + esc(a.level) + '"><b>' + esc(a.text) + "</b><small>" + esc(a.basis || "") + "</small></li>").join("") + "</ul>" : "";
+}
+function trackTile(T) {
+  if (!T) return "";
+  if (T.error) return empty(T.error);
+  const m = T.meta || {}, x = T.extra || {}, L = T.live, S = T.summary, ship = T.kind === "ship";
+  let h = alertList(T.alerts);
+  h += '<div class="ic-kv">' +
+    (ship ? "<div><b>" + esc(x.destination || "–") + "</b><span>destination (AIS)</span></div><div><b>" + esc(m.category || m.type_code || "–") + "</b><span>type</span></div>"
+      : "<div><b>" + esc(m.name || x.callsign || "–") + "</b><span>callsign</span></div><div><b>" + esc(m.type_code || "–") + "</b><span>" + esc(x.desc || "type") + "</span></div>") +
+    (L ? (ship ? "" : "<div><b>" + nf(L.alt_ft) + " ft</b><span>altitude</span></div>") + "<div><b>" + nf(L.speed_kts, 1) + " kn</b><span>speed · hdg " + nf(L.heading_deg) + "°</span></div><div><b>" + esc(since(L.ts)) + "</b><span>last fix · " + esc(L.source || "") + "</span></div>" : "<div><b>not live</b><span>no fix in the live store</span></div>") +
+    (!ship ? '<div class="' + (["7500", "7600", "7700"].includes(String(x.squawk)) ? "hot" : "") + '"><b>' + esc(x.squawk || "–") + "</b><span>squawk</span></div>" : "<div><b>" + esc(x.imo || "–") + "</b><span>IMO · " + esc(x.callsign || "") + "</span></div>") + "</div>";
+  if (!S) return h + empty(T.error_history ? "No 24 h history: " + T.error_history : "No recorded positions in the last 24 h");
+  h += '<div class="ip-hist">24 h: ' + nf(T.fixes) + " fixes · " + nf(S.distance_km) + " km · " + esc(fmtUtc(S.first, { time: true })) + " → " + esc(fmtUtc(S.last, { time: true })) +
+    (S.alt_max_ft != null && !ship ? " · alt " + nf(S.alt_min_ft) + "–" + nf(S.alt_max_ft) + " ft" : "") + (S.speed_max_kts != null ? " · max " + nf(S.speed_max_kts, 1) + " kn" : "") + "</div>";
+  h += trackMap(T) + '<div class="ic-legend"><i class="tp"></i>path <i class="gap"></i>gap <i class="gn"></i>GNSS degraded cell <i class="lo"></i>loiter <i class="port"></i>port call <i class="ev"></i>event ≤25 km</div>';
+  if ((T.regions || []).length) h += '<div class="cx-h">Regions along the track <small>nearest settlement ≤60 km</small></div><div class="ic-route">' + T.regions.map((r) => "<span title=\"" + esc("from " + fmtUtc(r.from)) + '">' + esc(r.name) + "</span>").join("<i>→</i>") + "</div>";
+  if ((T.gnss_crossed || []).length) h += '<div class="cx-h">GNSS interference crossed <small>24 h cell values</small></div>' + list(T.gnss_crossed.map((c) => '<li data-fly="' + c.lat + "," + c.lon + '" class="' + (c.level === "high" ? "mil" : "") + '"><i class="at">' + esc(c.level) + "</i><b>" + pct(c.pct) + " of " + nf(c.n) + " aircraft degraded</b><span>" + esc(fmtUtc(c.at, { time: true })) + "</span></li>"));
+  if ((T.gaps || []).length) h += '<div class="cx-h" title="A gap is coverage or a transponder off; the record cannot tell which">' + (ship ? "AIS dark periods" : "Reporting gaps") + " <small>" + T.gaps.length + "</small></div>" + list(T.gaps.map((g) => '<li data-fly="' + g.lat + "," + g.lon + '"><i class="at">' + g.minutes + " min</i><b>" + esc(fmtUtc(g.from, { time: true }) + " → " + fmtUtc(g.to, { time: true })) + "</b><span>" + nf(g.jump_km, 1) + " km apart</span></li>"));
+  if (ship) {
+    if ((T.loiters || []).length) h += '<div class="cx-h">Loitering ≤1 kn ≥60 min <small>' + T.loiters.length + "</small></div>" + list(T.loiters.map((l) => '<li data-fly="' + l.lat + "," + l.lon + '" class="' + (l.near_lines.length && !l.port ? "mil" : "") + '"><i class="at">' + l.minutes + " min</i><b>" + esc(l.port ? "Port call · " + l.port.name : l.near_lines.length ? "near " + l.near_lines.map((n) => n.name + " (" + n.distance_km + " km)").join(", ") : "at sea / anchorage") + "</b><span>" + esc(fmtUtc(l.from, { time: true })) + "</span></li>"));
+    if ((T.lines_crossed || []).length) h += '<div class="cx-h">Cables / pipelines passed ≤5 km <small>' + T.lines_crossed.length + "</small></div>" + list(T.lines_crossed.map((c) => "<li><i class=\"at\">LINE</i><b>" + esc(c.name) + "</b><span>" + nf(c.distance_km, 2) + " km</span></li>"));
+  }
+  if (T.frontline_min) h += '<div class="cx-fl" data-fly="' + T.frontline_min.lat + "," + T.frontline_min.lon + '"><span>FRONT LINE (MIN)</span><b>' + esc(kmText(T.frontline_min.distance_km)) + "</b><small>" + esc(T.frontline_min.source) + "</small></div>";
+  if ((T.events_near || []).length) h += '<div class="cx-h">Events within 25 km of the path, 24 h <small>' + T.events_near.length + "</small></div>" + list(T.events_near.map((e) => evRow(e, " · " + nf(e.distance_km, 1) + " km off track")));
+  if ((T.watch_alerts || []).length) h += '<div class="cx-h">Watch alerts (7 d) <small>' + T.watch_alerts.length + "</small></div>" + list(T.watch_alerts.map((a) => '<li data-fly="' + a.lat + "," + a.lon + '"><i class="at">' + esc(a.kind) + "</i><b>" + esc(a.title) + "</b><span>" + esc(fmtUtc(a.ts)) + "</span></li>"));
+  return h;
+}
+
+// ---- fire: the conflict score with its reasons ----
+function fireTile(F) {
+  if (!F) return "";
+  if (F.error) return empty(F.error);
+  const d = F.detection || {}, f = F.features || {};
+  let h = '<div class="ic-score ' + (F.war_likely ? "hot" : F.score == null ? "" : "cool") + '"><b>' + (F.score == null ? "–" : F.score) + "</b><span>conflict score / 100</span><em>" +
+    (F.score == null ? "not scored yet" : F.war_likely ? "WAR-LIKELY (≥ " + F.threshold + ")" : "below the war-likely cut (" + F.threshold + ")") + "</em></div>";
+  if ((F.reasons || []).length) {
+    const pts = f.points || {};
+    h += '<ul class="ic-reasons">' + F.reasons.map((r) => { const R = FIRE_REASONS[r], det = R && R[1] ? R[1](f) : ""; const p = pts[r]; return '<li class="' + (p < 0 || /flare|volcano|static|burn_region|large_cluster/.test(r) ? "neg" : "") + '"><b>' + esc(reasonLabel(r)) + "</b>" + (p != null ? "<i>" + (p > 0 ? "+" : "") + nf(p, 1) + "</i>" : "") + (det ? "<small>" + det + "</small>" : "") + "</li>"; }).join("") + "</ul>";
+  }
+  const checks = [["Gas flare (EOG)", (F.reasons || []).includes("gas_flare")], ["Volcano (GVP)", (F.reasons || []).includes("volcano")], ["Recurring static site", (F.reasons || []).includes("static_site")], ["Large contiguous fire", (F.reasons || []).includes("large_cluster")]];
+  h += '<div class="ip-types">' + checks.map(([l, on]) => chip(l + (on ? ": yes" : ": no"), on ? "warn" : "ok")).join("") + "</div>";
+  if (d.ts) h += '<div class="ip-hist">FIRMS ' + esc(d.satellite || "") + " " + esc(d.instrument || "") + " · " + esc(fmtUtc(d.ts)) + " · FRP " + nf(d.frp_mw, 1) + " MW · confidence " + esc(d.confidence || "–") + " · " + esc(d.daynight === "N" ? "night" : d.daynight === "D" ? "day" : "") + "</div>";
+  return h + '<div class="ic-basis">Score computed by the fire-score job' + (F.computed_at ? " at " + esc(fmtUtc(F.computed_at)) : "") + "; points per reason as tooltips in the fire layer.</div>";
+}
+
+// ---- background (Wikidata) ----
 const OBS = new Set(["fire", "quake", "hazard", "point"]);
-async function background(el, spec, subj, hooks, ents) {
+async function background(spec, subj, hooks, ents) {
   const place = ((ents && ents.items) || []).find((e) => e.type === "place");
   const q = spec.kind === "event" ? subj.place_name : spec.kind === "actor" ? spec.q : OBS.has(spec.kind) ? place && place.name : spec.label;
-  try {
-    let qid = spec.wikidata && /^Q\d+$/.test(spec.wikidata) ? spec.wikidata : null;
-    if (!qid && q) qid = (await hooks.wdResolve({ q, lat: subj.lat ?? null, lon: subj.lon ?? null, icao: spec.icao || null, maxKm: spec.kind === "actor" ? 30 : 60 })).qid;
-    if (!qid) { el.innerHTML = '<div class="dz-empty">No Wikidata match for “' + esc(q || "") + "”</div>"; return; }
-    const e = await hooks.wdEntity(qid);
-    const sum = e.summary && e.summary.extract;
-    el.innerHTML = '<div class="ip-bg">' + (e.summary && e.summary.thumb ? '<img alt="" decoding="async" src="' + esc(e.summary.thumb) + '">' : "") + "<div><b>" + esc(e.label) + "</b><small>" + esc(e.description || "") + " · " + esc(qid) + "</small>" +
-      (sum ? "<p>" + esc(sum.length > 420 ? sum.slice(0, 420) + "…" : sum) + "</p>" : "") + '<button type="button" data-qid="' + esc(qid) + '">Open Wikidata dossier</button></div></div>';
-  } catch (err) {
-    el.innerHTML = '<div class="dz-empty">Background unavailable: ' + esc(err.message || err) + "</div>";
+  let qid = spec.wikidata && /^Q\d+$/.test(spec.wikidata) ? spec.wikidata : null;
+  if (!qid && q) qid = (await hooks.wdResolve({ q, lat: subj.lat ?? null, lon: subj.lon ?? null, icao: spec.icao || null, maxKm: spec.kind === "actor" ? 30 : 60 })).qid;
+  if (!qid) return { html: empty("No Wikidata match for “" + (q || "") + "”"), enwiki: null };
+  const e = await hooks.wdEntity(qid);
+  const sum = e.summary && e.summary.extract;
+  return { enwiki: e.enwiki || null, html: '<div class="ip-bg">' + (e.summary && e.summary.thumb ? '<img alt="" decoding="async" src="' + esc(e.summary.thumb) + '">' : "") + "<div><b>" + esc(e.label) + "</b><small>" + esc(e.description || "") + " · " + esc(qid) + "</small>" +
+    (sum ? "<p>" + esc(sum.length > 520 ? sum.slice(0, 520) + "…" : sum) + "</p>" : "") + '<button type="button" data-qid="' + esc(qid) + '">Open Wikidata dossier</button></div></div>' };
+}
+
+// ------------------------------------------------------------------ metrics strip
+
+// which cells the strip shows, per subject kind (in order)
+const METRICS = {
+  event: ["rep", "first", "sens", "front", "mil", "traf", "watch", "gnss", "net", "opt", "sar", "light", "pop", "pow", "tempo", "kp"],
+  aircraft: ["call", "alt", "squawk", "dist", "regions", "gnssx", "evnear", "frontmin", "watchT", "gaps", "gnss", "net", "mil", "kp"],
+  ship: ["call", "dest", "spd", "dist", "aisdark", "loiter", "ports", "lines", "watchT", "evnear", "frontmin", "pow", "net"],
+  fire: ["score", "verdict", "frp", "front", "sens", "evnear24", "mil", "opt", "light", "wind", "pop", "pow", "net", "gnss"],
+  quake: ["sens", "pop", "pow", "evnear24", "opt", "sar", "light", "net", "tempo", "mil"],
+  place: ["evnear24", "pop", "pow", "front", "mil", "traf", "watch", "gnss", "net", "opt", "sar", "light", "tempo", "kp"],
+};
+METRICS.hazard = METRICS.quake;
+METRICS.facility = METRICS.point = METRICS.place;
+
+function metrics(spec, subj, D) {
+  const S = D.sources, se = D.sensors, as = D.assets, A = D.activity, G = D.signals, O = D.overhead, E = D.environment, X = D.exposure, C = D.country, T = D.track, F = D.fire, R = D.related;
+  const cells = {};
+  const m = (key, label, val, sub, title, tone = "") => { cells[key] = '<div class="ic-m ' + tone + '" data-m="' + key + '" title="' + esc(title) + '"><span>' + esc(label) + "</span><b>" + val + "</b><small>" + sub + "</small></div>"; };
+  const wait = (x) => x === undefined;
+  const nd = '<i class="ld">…</i>';
+  m("rep", "Reports", S ? nf(S.count) : nd, S ? nf(S.outlets) + " outlets · " + nf((S.languages || []).length) + " lang" : "", "Documents attached to the event (sources section)");
+  m("first", "First report", S && S.first_at ? esc(since(S.first_at)) : subj.t_start ? esc(since(subj.t_start)) : nd, "ago · " + esc(fmtUtc((S && S.first_at) || subj.t_start, { time: true })), "Earliest publication time among the reports");
+  const f = (se && se.fires) || {}, q = (se && se.quakes) || {}, hz = (se && se.hazards) || {};
+  m("sens", "Sensor hits", wait(se) ? nd : se && !se.error ? nf((f.count || 0) + (q.count || 0) + (hz.count || 0)) : "–", se && !se.error ? "FIRMS " + nf(f.count) + " · quake " + nf(q.count) + " · hazard " + nf(hz.count) : "", "FIRMS / quake / hazard observations in the sensor window and radius", f.max_conflict_score >= 50 ? "hot" : f.count ? "warm" : "");
+  const fl = as && as.frontline;
+  // the loaded line is DeepStateMap's (Ukraine): beyond 500 km it says nothing about the site
+  m("front", "Front line", wait(as) ? nd : fl ? (fl.distance_km > 500 ? "> 500 km" : esc(kmText(fl.distance_km))) : "–", fl ? esc(kmText(fl.distance_km)) + " " + esc(fl.compass) + " · " + esc(fl.source) : as ? "no line loaded" : "", "Distance to the nearest point of the loaded front line", fl && fl.distance_km < 30 ? "hot" : fl && fl.distance_km < 100 ? "warm" : "");
+  const milA = as && !as.error ? (as.items || []).filter((a) => a.type === "base" || a.is_military).length : null;
+  const milF = X && !X.error && X.airfields ? X.airfields.military : 0;
+  m("mil", "Mil. sites ≤100 km", wait(as) ? nd : nf((milA || 0) + (milF || 0)), "bases / mil. airfields", "Military bases (reference) plus military-flagged airfields (OurAirports) near the position", milA ? "warm" : "");
+  m("traf", "Air / sea 24 h", wait(A) ? nd : A && !A.error ? nf(A.aircraft) + " / " + nf(A.ships) : "–", A && !A.error ? nf(A.military) + " military" : "", "Distinct tracks recorded within the radius in the last 24 h (platform collectors)");
+  m("watch", "Watchlisted", wait(A) ? nd : A && !A.error ? nf(A.flagged + (A.watch_alerts || []).length) : "–", A && !A.error ? nf(A.flagged) + " tracks · " + nf((A.watch_alerts || []).length) + " alerts" : "", "Tracks matching OpenSanctions / user watchlists and watch alerts in the area, 24 h", A && (A.flagged || (A.watch_alerts || []).length) ? "hot" : "");
+  const cell = G && G.gnss && G.gnss.site;
+  m("gnss", "GNSS degraded", wait(G) ? nd : cell ? pct(cell.pct) : "no data", cell ? esc(cell.level) + " · " + cell.n + " aircraft" : "no ADS-B reports", "Share of aircraft in the position's H3 cell reporting degraded navigation integrity (last hour)", cell && cell.level === "high" ? "hot" : cell && cell.level === "medium" ? "warm" : "");
+  const oc = G && G.outage;
+  m("net", "Internet", wait(G) ? nd : oc ? (oc.country ? (oc.country.ongoing ? "OUTAGE" : "recent") : "normal") : "–", oc ? esc(oc.cc) + (oc.country ? " · " + esc(oc.country.level) : " · IODA 24 h") : "", "IODA country outage status, last 24 h", oc && oc.country && oc.country.ongoing && oc.country.level !== "low" ? "hot" : "");
+  const op = O && O.by_kind && O.by_kind.optical && O.by_kind.optical.next, sar = O && O.by_kind && O.by_kind.sar && O.by_kind.sar.next;
+  m("opt", "Next optical pass", wait(O) ? nd : op ? esc(relShort(op.t)) : "–", op ? esc(op.satellite) + " · cloud " + pct(op.cloud_pct) : O && O.error ? "unavailable" : "none in 4 d", "Next Sentinel-2 / Landsat pass whose swath covers the site in daylight (geometry; acquisition depends on the mission plan)");
+  m("sar", "Next SAR pass", wait(O) ? nd : sar ? esc(relShort(sar.t)) : "–", sar ? esc(sar.satellite) + " · " + nf(sar.incidence_deg, 0) + "° inc." : "", "Next Sentinel-1 IW pass with the site in the right-looking swath");
+  const L = E && E.light && (E.light.event || E.light.now);
+  m("light", E && E.light && E.light.event ? "Light at event" : "Light now", wait(E) ? nd : L ? esc(L.phase) : "–", L ? "sun " + nf(L.sun_elev_deg, 0) + "° · moon " + Math.round(L.moon.illumination * 100) + "%" : "", "Computed sun elevation / twilight phase and moon illumination");
+  const W = E && E.weather && E.weather.current;
+  m("wind", "Wind now", wait(E) ? nd : W ? nf(W.wind_speed_10m, 1) + " kn" : "–", W ? "drift toward " + esc(E.weather.downwind || "–") + " · gust " + nf(W.wind_gusts_10m, 1) : "", "Open-Meteo 10 m wind at the site (fire / smoke spread direction)");
+  const pop = X && X.population;
+  m("pop", "Pop. ≤25 km", wait(X) ? nd : pop ? nf(pop.rings["25"]) : "–", pop ? nf(pop.places) + " settlements" : "", pop ? pop.basis : "");
+  m("pow", "Power ≤50 km", wait(X) ? nd : X && X.power ? nf(X.power.mw_total) + " MW" : "–", X && X.power ? nf(X.power.count) + " plants" : "", "Installed capacity of power plants within 50 km (Global Power Plant Database)");
+  const Tm = C && C.tempo;
+  m("tempo", "Country tempo 7 d", wait(C) ? nd : Tm ? nf(Tm.last7) : "–", Tm ? (Tm.ratio != null ? "×" + nf(Tm.ratio, 2) + " vs baseline" : esc(C.cc) + " · no baseline yet") : "", Tm ? Tm.basis : "", Tm && Tm.ratio >= 2 ? "hot" : "");
+  const sw = G && G.space;
+  m("kp", "Kp index", wait(G) ? nd : sw && sw.kp_now ? nf(sw.kp_now[1], 1) : "–", sw && sw.scales ? "G" + sw.scales.G + " S" + sw.scales.S + " R" + sw.scales.R : "", "Planetary K-index now (NOAA SWPC)", sw && sw.kp_now && sw.kp_now[1] >= 5 ? "hot" : "");
+  m("evnear24", "Events ≤" + (R && R.radius_km ? nf(R.radius_km) : "–") + " km", wait(R) ? nd : R && R.counts ? nf(R.counts["24h"]) + " / " + nf(R.counts["7d"]) : "–", "24 h / 7 d", "Platform events around the position", R && R.counts && R.counts["24h"] ? "warm" : "");
+  // track (aircraft / ship)
+  const tm = (T && T.meta) || {}, tx = (T && T.extra) || {}, TL = T && T.live, TS = T && T.summary;
+  m("call", T && T.kind === "ship" ? "Vessel" : "Callsign", wait(T) ? nd : esc(tm.name || tx.callsign || spec.label || "–"), esc([tm.type_code, tm.operator || tm.category].filter(Boolean).join(" · ")), "Track metadata (ADS-B / AIS static data)", tm.is_mil ? "warm" : "");
+  m("alt", "Alt / speed", wait(T) ? nd : TL ? nf(TL.alt_ft) + " ft" : "not live", TL ? nf(TL.speed_kts) + " kn · hdg " + nf(TL.heading_deg) + "°" : "", "Live position (newest fix)");
+  const emer = ["7500", "7600", "7700"].includes(String(tx.squawk));
+  m("squawk", "Squawk", wait(T) ? nd : esc(tx.squawk || "–"), emer ? "EMERGENCY" : "transponder code", "Mode A code from ADS-B", emer ? "hot" : "");
+  m("dist", "24 h track", wait(T) ? nd : TS ? nf(TS.distance_km) + " km" : "–", T ? nf(T.fixes) + " fixes" : "", "Distance along the recorded positions, last 24 h");
+  m("regions", "Regions crossed", wait(T) ? nd : T && T.regions ? nf(T.regions.filter((r) => r.cc !== "-").length) : "–", T && T.regions ? esc(T.regions.slice(-3).map((r) => r.cc).join(" → ")) : "", "Countries along the track by nearest settlement");
+  const gx = T && T.gnss_crossed;
+  m("gnssx", "GNSS crossed", wait(T) ? nd : gx && gx.length ? pct(gx[0].pct) : "none", gx && gx.length ? gx.length + " degraded cells" : "no degraded cells", "Degraded ADS-B navigation-integrity cells the track crossed, 24 h", gx && gx.some((c) => c.level === "high") ? "hot" : gx && gx.length ? "warm" : "");
+  m("evnear", "Events near path", wait(T) ? nd : T && T.events_near ? nf(T.events_near.length) : "–", "≤25 km, 24 h", "Platform events within 25 km of the 24 h path", T && T.events_near && T.events_near.length ? "warm" : "");
+  const fm = T && T.frontline_min;
+  m("frontmin", "Front line (min)", wait(T) ? nd : fm ? (fm.distance_km > 500 ? "> 500 km" : esc(kmText(fm.distance_km))) : "–", fm ? esc(fm.source) : "", "Closest approach of the 24 h path to the loaded front line", fm && fm.distance_km < 30 ? "hot" : "");
+  const fl2 = (T && T.flags) || [];
+  m("watchT", "Watchlist", wait(T) ? nd : fl2.length ? esc(fl2[0].label) : "no hit", fl2.length ? esc(fl2[0].source) : nf((T && T.watch_alerts || []).length) + " watch alerts (7 d)", "OpenSanctions / user watchlist matches for this track", fl2.length ? "hot" : T && (T.watch_alerts || []).length ? "warm" : "");
+  m("gaps", "Reporting gaps", wait(T) ? nd : T && T.gaps ? nf(T.gaps.length) : "–", T && T.gaps && T.gaps.length ? "longest " + T.gaps[0].minutes + " min" : "≥30 min", "Gaps between consecutive fixes (coverage or transponder off)");
+  m("dest", "Destination", wait(T) ? nd : esc(tx.destination || "–"), "AIS (crew-entered)", "AIS voyage data: free text entered by the crew");
+  m("spd", "Speed / course", wait(T) ? nd : TL ? nf(TL.speed_kts, 1) + " kn" : "not live", TL ? "course " + nf(TL.heading_deg) + "° · " + esc(since(TL.ts)) + " ago" : "", "Live AIS position");
+  const dark = T && T.gaps && T.gaps[0];
+  m("aisdark", "AIS dark (max)", wait(T) ? nd : dark ? Math.floor(dark.minutes / 60) + "h " + String(dark.minutes % 60).padStart(2, "0") + "m" : "none", dark ? nf(dark.jump_km, 1) + " km apart" : "no gap ≥60 min", "Longest gap between AIS fixes, last 24 h (coverage looks the same)", dark && dark.minutes >= 180 ? "hot" : dark ? "warm" : "");
+  const lo = (T && T.loiters) || [];
+  m("loiter", "Loitering", wait(T) ? nd : nf(lo.length), lo.length ? nf(lo.filter((l) => l.near_lines.length && !l.port).length) + " near cables / pipes" : "≤1 kn ≥60 min", "Slow spells, last 24 h", lo.some((l) => l.near_lines.length && !l.port) ? "hot" : "");
+  m("ports", "Port calls", wait(T) ? nd : nf((T && T.port_calls || []).length), esc(((T && T.port_calls) || []).map((p) => p.port.name).slice(0, 2).join(", ")), "Loiters within 5 km of a World Port Index port, 24 h");
+  m("lines", "Cables / pipes passed", wait(T) ? nd : nf((T && T.lines_crossed || []).length), "≤5 km of the path", "Submarine cables / pipelines the 24 h path passed within 5 km of");
+  // fire
+  m("score", "Conflict score", wait(F) ? nd : F && F.score != null ? F.score + "/100" : "–", F ? "cut " + F.threshold : "", "Fire conflict score (front line, UCDP history, conflict news, pattern; static sites demoted)", F && F.war_likely ? "hot" : "");
+  m("verdict", "Verdict", wait(F) ? nd : F && F.score != null ? (F.war_likely ? "WAR-LIKELY" : "below cut") : "not scored", F && F.reasons ? esc(F.reasons.slice(0, 2).map(reasonLabel).join(", ")) : "", "Score at or above the configured threshold", F && F.war_likely ? "hot" : "");
+  const dt = F && F.detection;
+  m("frp", "FRP", wait(F) ? nd : dt ? nf(dt.frp_mw, 1) + " MW" : "–", dt ? esc((dt.satellite || "") + " · " + fmtUtc(dt.ts, { time: true })) : "", "Fire radiative power of the FIRMS detection");
+  const keys = METRICS[spec.kind] || METRICS.place;
+  return keys.map((k) => cells[k] || "").join("");
+}
+
+// plain-text brief from whatever has loaded (C key / button)
+function briefText(spec, subj, D) {
+  const L = [], S = D.sources, se = D.sensors, O = D.overhead, E = D.environment, G = D.signals, X = D.exposure, A = D.activity, C = D.country, T = D.track, F = D.fire;
+  L.push("INTEL BRIEF // " + (KIND_LABEL[spec.kind] || spec.kind).toUpperCase() + " // built " + new Date().toISOString().slice(0, 16).replace("T", " ") + "Z");
+  L.push((subj.label || spec.label || "") + (subj.place_name ? " — " + subj.place_name + (subj.country ? ", " + subj.country : "") : ""));
+  if (subj.lat != null) L.push("Position " + latLonText(subj.lat, subj.lon) + (mgrs(subj.lat, subj.lon) ? " (MGRS " + mgrs(subj.lat, subj.lon) + ")" : ""));
+  if (subj.status) L.push("Status " + subj.status + ", confidence " + (+subj.confidence || 0).toFixed(2));
+  for (const x of ((D.assessment || {}).items || [])) L.push("  [" + (LEVEL[x.level] || [x.level])[0] + "] " + x.text + " (" + x.basis + ")");
+  if (T && !T.error) {
+    const m = T.meta || {}, x = T.extra || {};
+    L.push("Track " + T.id + ": " + [m.name, m.reg, m.type_code, m.operator || m.category].filter(Boolean).join(" · ") + (x.destination ? " · dest " + x.destination : "") + (x.squawk ? " · squawk " + x.squawk : ""));
+    if (T.summary) L.push("24 h: " + T.fixes + " fixes, " + T.summary.distance_km + " km; regions " + (T.regions || []).map((r) => r.name).join(" → "));
+    for (const a of T.alerts || []) L.push("  [" + a.level.toUpperCase() + "] " + a.text + " (" + a.basis + ")");
+  }
+  if (F && !F.error && F.score != null) L.push("Fire conflict score " + F.score + "/100 (" + (F.war_likely ? "war-likely" : "below cut " + F.threshold) + "): " + (F.reasons || []).map(reasonLabel).join(", "));
+  if (S && !S.error) L.push("Reporting: " + S.count + " reports, " + S.outlets + " outlets, " + (S.groups || []).length + " independent texts, languages " + (S.languages || []).join("/") + "; first " + fmtUtc(S.first_at));
+  if (se && !se.error) L.push("Sensors (" + fmtUtc(se.window.from) + " → " + fmtUtc(se.window.to) + "): " + se.fires.count + " FIRMS hotspots, " + se.quakes.count + " quakes, " + se.hazards.count + " hazard alerts within " + se.radius_km + " km");
+  if (E && !E.error) {
+    const l = E.light.event || E.light.now;
+    L.push("Light " + (E.light.event ? "at event" : "now") + ": " + l.phase + ", sun " + l.sun_elev_deg + "°, moon " + Math.round(l.moon.illumination * 100) + "% " + (l.moon.up ? "up" : "down"));
+    const c = (E.weather || {}).current;
+    if (c) L.push("Weather now (Open-Meteo): " + (c.label || "") + ", " + c.temperature_2m + "°C, cloud " + c.cloud_cover + "%, wind " + c.wind_speed_10m + " kn from " + c.wind_direction_10m + "°");
+  }
+  if (O && !O.error) {
+    const b = O.by_kind;
+    const f = (p) => (p ? fmtUtc(p.t) + " " + p.satellite + (p.kind === "optical" ? " (cloud " + pct(p.cloud_pct) + ")" : "") : "none");
+    L.push("Overhead (geometry, SGP4): next optical " + f(b.optical.next) + "; next SAR " + f(b.sar.next) + (O.event_t ? "; first optical after event " + f(b.optical.after_event) + "; first SAR after event " + f(b.sar.after_event) : ""));
+  }
+  if (G && !G.error) {
+    const c = G.gnss && G.gnss.site;
+    L.push("Signals: GNSS " + (c ? c.pct + "% degraded (" + c.level + ")" : "no data") + "; internet " + (G.outage ? (G.outage.country ? G.outage.country.level + (G.outage.country.ongoing ? " outage ongoing" : "") : "no outage") : "–") + "; Kp " + (G.space && G.space.kp_now ? G.space.kp_now[1] : "–"));
+  }
+  if (A && !A.error) L.push("Traffic 24 h ≤" + A.radius_km + " km: " + A.aircraft + " aircraft, " + A.ships + " ships, " + A.military + " military, " + A.flagged + " watchlisted");
+  if (D.assets && D.assets.frontline) L.push("Front line " + kmText(D.assets.frontline.distance_km) + " " + D.assets.frontline.compass + " (" + D.assets.frontline.source + ")");
+  if (X && !X.error) L.push("Exposure ≤50 km: " + (X.power ? X.power.mw_total + " MW power (" + X.power.count + " plants)" : "") + (X.population ? "; ~" + nf(X.population.rings["25"]) + " people ≤25 km (settlement-based)" : ""));
+  if (C && !C.error) L.push("Country " + (C.name || C.cc) + ": " + C.tempo.last7 + " platform events last 7 d" + (C.tempo.ratio != null ? " (×" + C.tempo.ratio + " vs baseline)" : "") + "; UCDP " + C.history.total + " events / " + C.history.fatalities_best + " fatalities");
+  return L.join("\n");
+}
+
+// ------------------------------------------------------------------ tiles: registry + per-kind manifest
+
+// id -> [title, sections that fill it, double width by default]
+const TILE = {
+  prof: ["Asset profile", [], true],
+  trk: ["Track · last 24 h", ["track"], true],
+  fire: ["Conflict score", ["fire"], false],
+  assess: ["Assessment", ["assessment"], false],
+  loc: ["Locator", ["related", "assets", "exposure", "sensors", "environment", "signals"], false],
+  time: ["Timeline", ["timeline"], true],
+  over: ["Overhead imaging passes", ["overhead"], true],
+  img: ["Satellite imagery", ["imagery"], true],
+  env: ["Local conditions", ["environment"], false],
+  sens: ["Sensor evidence", ["sensors"], false],
+  story: ["Storyline", ["storyline"], false],
+  rel: ["Related events", ["related"], false],
+  src: ["Sources & languages", ["sources"], false],
+  traf: ["Air & maritime around", ["traffic", "activity"], false],
+  sig: ["Signals", ["signals"], false],
+  assets: ["Military & reference assets", ["assets"], false],
+  expo: ["Infrastructure & population", ["exposure"], false],
+  ctry: ["Country context", ["country"], false],
+  attn: ["Attention", ["attention"], false],
+  ents: ["Entities · pivot", ["entities"], false],
+  hist: ["Historical record (local)", ["history"], false],
+  bg: ["Background (Wikidata / Wikipedia)", ["entities"], false],
+};
+// what applies to each kind of subject, most relevant first; tiles with nothing notable
+// collapse to a one-line summary and notable findings float to the top (see notes())
+const MANIFEST = {
+  event: ["assess", "loc", "time", "over", "img", "env", "sens", "story", "rel", "src", "traf", "sig", "assets", "expo", "ctry", "attn", "ents", "hist", "bg"],
+  aircraft: ["prof", "trk", "sig", "loc", "assets", "rel", "traf", "ctry"],
+  ship: ["prof", "trk", "loc", "expo", "traf", "assets", "rel", "sig", "ctry"],
+  fire: ["fire", "loc", "rel", "sens", "over", "env", "assets", "expo", "sig", "hist", "ctry"],
+  quake: ["sens", "loc", "rel", "expo", "env", "over", "assets", "sig", "ctry", "hist", "bg"],
+  place: ["loc", "env", "expo", "over", "rel", "story", "sig", "traf", "assets", "ctry", "attn", "hist", "sens", "ents", "bg"],
+  actor: ["rel", "story", "ents", "bg"],
+};
+MANIFEST.hazard = MANIFEST.quake;
+MANIFEST.facility = MANIFEST.point = MANIFEST.place;
+const TITLE_BY_KIND = {
+  aircraft: { trk: "Flight · last 24 h", rel: "Events near current position", sig: "Signals at current position", loc: "Locator · current position", traf: "Traffic around the aircraft" },
+  ship: { trk: "Voyage · last 24 h", rel: "Events near current position", expo: "Infrastructure near current position", loc: "Locator · current position", traf: "Traffic around the vessel" },
+  actor: { rel: "Events mentioning", story: "Storylines" },
+};
+function tilesFor(kind) {
+  return (MANIFEST[kind] || MANIFEST.place).map((id) => [id, (TITLE_BY_KIND[kind] || {})[id] || (id === "story" && kind !== "event" ? "Storylines" : TILE[id][0]), TILE[id][1], null, TILE[id][2]]);
+}
+
+// relevance per tile: {level: "alert" | "warn", text} promotes the tile (alert style, top of the
+// grid, listed in the alert bar); {quiet: text} collapses it to a one-line summary; null = normal
+function notes(id, D, PV) {
+  const A = D.activity, G = D.signals, se = D.sensors, X = D.exposure, as = D.assets, R = D.related, H = D.history, C = D.country, T = D.track, F = D.fire, O = D.overhead, S = D.storyline;
+  switch (id) {
+    case "trk": {
+      if (!T || T.error) return null;
+      const a = (T.alerts || []).find((x) => x.level === "alert") || (T.alerts || [])[0];
+      return a ? { level: a.level === "alert" ? "alert" : "warn", text: a.text } : null;
+    }
+    case "fire": return F && F.war_likely ? { level: "alert", text: "War-likely fire (score " + F.score + ")" } : null;
+    case "sig": {
+      if (!G || G.error) return null;
+      const c = G.gnss && G.gnss.site, oc = G.outage && G.outage.country, sq = (G.squawks || {}).items || [];
+      if (sq.length) return { level: "alert", text: "Emergency squawk " + sq[0].code + " nearby (" + (sq[0].flight || sq[0].reg || "") + ")" };
+      if (c && c.level === "high") return { level: "alert", text: "GNSS jamming at the position: " + pct(c.pct) + " degraded" };
+      if (oc && oc.ongoing && oc.level !== "low") return { level: "alert", text: "Internet outage in " + oc.name + " (" + oc.level + ")" };
+      if (c && c.level === "medium") return { level: "warn", text: "GNSS interference " + pct(c.pct) };
+      if (!c && !oc && !sq.length) return { quiet: "no GNSS data · internet normal · Kp " + (G.space && G.space.kp_now ? nf(G.space.kp_now[1], 1) : "–") };
+      return null;
+    }
+    case "traf": {
+      if (!A || A.error) return null;
+      if (A.flagged || (A.watch_alerts || []).length) return { level: "alert", text: nf(A.flagged) + " watchlisted track(s) / " + nf((A.watch_alerts || []).length) + " watch alert(s) nearby" };
+      if ((A.gaps || []).length && A.gaps[0].max_gap_min >= 180) return { level: "warn", text: "AIS gap " + A.gaps[0].max_gap_min + " min nearby (" + (A.gaps[0].name || A.gaps[0].id) + ")" };
+      const now = D.traffic && D.traffic.now;
+      if (!A.aircraft && !A.ships && !(now && now.items.length)) return { quiet: "no aircraft or ships recorded within " + nf(A.radius_km) + " km in 24 h" };
+      return null;
+    }
+    case "sens": {
+      if (!se || se.error) return null;
+      const n = se.fires.count + se.quakes.count + se.hazards.count;
+      if (se.fires.max_conflict_score >= 50) return { level: "alert", text: "War-likely hotspots (score " + se.fires.max_conflict_score + ")" };
+      return n ? null : { quiet: "no FIRMS / quake / hazard observations in the window" };
+    }
+    case "expo": {
+      if (!X || X.error) return null;
+      const n = ["power", "refineries", "lng", "dams", "ground_stations", "landings", "pipelines", "cables", "airfields"].reduce((s, k) => s + ((X[k] || {}).count || 0), 0);
+      return n || (X.population && X.population.places) ? null : { quiet: "no infrastructure or settlements within 50 km in the loaded datasets" };
+    }
+    case "assets": {
+      if (!as || as.error) return null;
+      const fl = as.frontline;
+      if (fl && fl.distance_km <= 25) return { level: "warn", text: "Front line " + kmText(fl.distance_km) + " " + fl.compass };
+      return (as.items || []).length || (fl && fl.distance_km <= 500) ? null : { quiet: "no reference assets within " + nf(as.radius_km) + " km" };
+    }
+    case "rel": return R && !R.error && !R.total ? { quiet: "no other events in 30 days" } : null;
+    case "hist": return H && !H.error && !H.total ? { quiet: "no curated historical events within " + nf(H.radius_km) + " km" } : null;
+    case "story": return S && !S.error && !S.member && !(S.nearby || []).length ? { quiet: "no storylines here in 30 days" } : null;
+    case "over": return O && !O.error && !O.passes.length ? { quiet: "no covering passes in the window" } : null;
+    case "ctry": return C && !C.error && C.tempo && C.tempo.ratio >= 2 ? { level: "warn", text: "Event tempo in " + (C.name || C.cc) + " ×" + nf(C.tempo.ratio, 2) + " vs baseline" } : null;
+    case "attn": return PV && PV.ratio >= 3 ? { level: "warn", text: "Wikipedia attention ×" + nf(PV.ratio, 1) + " (" + PV.title + ")" } : null;
+    default: return null;
   }
 }
 
-// render the pane; hooks: {head({title, sub, icon, coord}), stale(), wdResolve, wdEntity, highlight}
+let layout = { fold: {}, wide: {}, open: {} };
+try { layout = { fold: {}, wide: {}, open: {}, ...(JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") || {}) }; } catch (e) { /* storage disabled */ }
+const saveLayout = () => { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (e) { /* private mode */ } };
+const consolePref = () => { try { return localStorage.getItem(CONSOLE_KEY) !== "0"; } catch (e) { return true; } };
+const setConsolePref = (on) => { try { localStorage.setItem(CONSOLE_KEY, on ? "1" : "0"); } catch (e) { /* private mode */ } };
+
+function tileShell(t, i) {
+  const [id, title, , , wideDef] = t;
+  const wide = layout.wide[id] ?? wideDef, fold = !!layout.fold[id];
+  return '<section class="ic-tile' + (wide ? " w2" : "") + (fold ? " fold" : "") + (id === "prof" || id === "trk" || id === "fire" ? " lead" : "") + '" data-tile="' + id + '" tabindex="-1">' +
+    '<header class="ic-th"><b class="ic-n">' + (i < 9 ? i + 1 : "") + '</b><span class="ic-tt">' + esc(title) + '</span><em class="ic-badge"></em><span class="ic-q"></span><span class="ic-sp"></span>' +
+    '<span class="ic-tb"><button type="button" data-t="wide" title="Double width">⇔</button><button type="button" data-t="max" title="Fill the console (Esc)">⤢</button><button type="button" data-t="fold" title="Fold / unfold">' + (fold ? "+" : "–") + "</button></span></header>" +
+    '<div class="ic-body"><div class="dz-empty">Loading…</div></div></section>';
+}
+
+// render the pane; hooks: {head, stale, wdResolve, wdEntity, highlight, console(on), consoleOn(), focused()}
 export async function renderIntel(spec, body, hooks) {
   const kl = KIND_LABEL[spec.kind] || spec.kind;
-  hooks.head({ title: spec.label || kl, sub: "INTEL // " + kl.toUpperCase(), icon: "intel", coord: spec.lat != null ? { lat: spec.lat, lon: spec.lon, alt: 6e4 } : null });
-  const slot = (n) => '<div data-slot="' + n + '"><div class="dz-empty">Loading…</div></div>';
   const isEv = spec.kind === "event";
-  body.innerHTML = '<div class="dk-root ip">' + '<div data-slot="head"><div class="dz-empty">Building intel picture…</div></div>' +
-    '<div class="ip-cols"><div class="ip-col">' +
-    sec("ip-story", isEv ? "Storyline" : "Storylines", slot("storyline"), { meta: "linked events · event time" }) +
-    (isEv ? sec("ip-assess", "Assessment", slot("assessment")) + sec("ip-imagery", "Satellite imagery", slot("imagery")) + sec("ip-timeline", "Timeline", slot("timeline"), { meta: "UTC · hover for local" }) : "") +
-    sec("ip-related", spec.kind === "actor" ? "Events mentioning" : "Related events", slot("related")) +
-    (isEv ? sec("ip-sources", "Sources & media", slot("sources")) : "") +
-    sec("ip-entities", "Entities · pivot", slot("entities")) +
-    '</div><div class="ip-col">' +
-    (spec.kind !== "actor" ? sec("ip-sensors", "Sensors", slot("sensors")) + sec("ip-traffic", "Traffic (ADS-B / AIS)", slot("traffic")) + sec("ip-assets", "Reference assets", slot("assets")) + sec("ip-history", "Historical record", slot("history")) : "") +
-    sec("ip-bg", "Background (Wikidata / Wikipedia)", slot("background"), { cls: "small" }) + "</div></div></div>";
+  hooks.head({ title: spec.label || kl, sub: "INTEL // " + kl.toUpperCase(), icon: "intel", coord: spec.lat != null ? { lat: spec.lat, lon: spec.lon, alt: 6e4 } : null });
+  if (hooks.console && consolePref()) hooks.console(true);
+  const tiles = tilesFor(spec.kind);
+  body.innerHTML = '<div class="dk-root ip ic">' + '<div class="ic-hd"><div data-slot="head"><div class="dz-empty">Building intel picture…</div></div><div class="ic-metrics"></div><div class="ic-alertbar" hidden></div></div>' +
+    '<div class="ic-grid">' + tiles.map((t, i) => tileShell(t, i)).join("") + "</div></div>";
   const root = body.firstElementChild;
-  wireSections(root); wireCopy(root);
-  const put = (n, h) => { const el = root.querySelector('[data-slot="' + n + '"]'); if (el) el.innerHTML = h; return el; };
-  let subj = null;
+  wireCopy(root);
+  const D = {};            // section name -> payload (undefined = not loaded yet)
+  let subj = null, PV, bgHtml = null;
+  const tileEl = (id) => root.querySelector('[data-tile="' + id + '"]');
+
+  // ---- tile rendering: lazy (when visible and unfolded), idempotent per data version ----
+  const RENDER = {
+    assess: () => assessment(D.assessment),
+    loc: () => locator(subj, D),
+    time: () => (D.timeline ? renderTimeline(D.timeline) : D.timeline === null ? empty("No timeline") : null),
+    over: () => overhead(D.overhead),
+    img: () => (D.imagery ? imageryHtml(D.imagery, subj, []) : D.imagery === null ? empty("No imagery") : null),
+    env: () => environment(D.environment),
+    sens: () => sensors(D.sensors),
+    story: () => (D.storyline !== undefined ? storylineHtml(D.storyline, spec.id) : null),
+    rel: () => related(D.related),
+    src: () => sources(D.sources),
+    traf: () => (D.traffic !== undefined || D.activity !== undefined ? traffic(D.traffic, D.activity) : null),
+    sig: () => signals(D.signals),
+    assets: () => assets(D.assets),
+    expo: () => exposure(D.exposure),
+    ctry: () => country(D.country),
+    attn: () => (D.attention !== undefined || PV !== undefined ? attention(D.attention, PV) : null),
+    ents: () => entities(D.entities),
+    hist: () => history(D.history),
+    bg: () => bgHtml,
+    prof: () => "",
+    trk: () => trackTile(D.track),
+    fire: () => fireTile(D.fire),
+  };
+  // asset profile (panels/asset-profile.js, its own branch). The bundler has no dynamic
+  // import(), so the module registers itself on load: window.__noctuaPanels.assetProfile =
+  // renderAssetProfile, then dispatches "noctua:panels". Until it is installed the tile shows a
+  // neutral state and picks the renderer up if it registers later.
+  const loadProfile = (b) => {
+    const kind = spec.kind === "ship" ? "vessel" : "aircraft";
+    const id = String(spec.id || "").replace(/^(air|sea|aircraft|ship):/, "");
+    if (!id) { b.innerHTML = empty("No track id for a profile"); return; }
+    const run = () => {
+      const fn = (window.__noctuaPanels || {}).assetProfile;
+      if (typeof fn !== "function") return false;
+      Promise.resolve().then(() => fn(b, kind, id, { trackId: spec.id, label: spec.label }))
+        .catch((err) => { if (!hooks.stale()) b.innerHTML = empty("Asset profile unavailable: " + (err.message || err)); });
+      return true;
+    };
+    if (run()) return;
+    b.innerHTML = '<div class="dz-empty">Asset profile module not installed (make / model / owner / sanctions profile for ' + esc(kind) + " " + esc(id) + ").</div>";
+    const later = () => { window.removeEventListener("noctua:panels", later); if (root.isConnected && !hooks.stale()) run(); };
+    window.addEventListener("noctua:panels", later);
+  };
+  const WIRE = {
+    time: (el) => D.timeline && wireTimeline(el, D.timeline, { onHover: (e) => hooks.highlight && hooks.highlight(e ? [{ lat: e.lat, lon: e.lon, label: e.label }] : null) }),
+    img: (el) => D.imagery && wireImagery(el),
+  };
+  // header badge + sparkline per tile from the data
+  const BADGE = {
+    assess: () => D.assessment && D.assessment.items && D.assessment.items.length,
+    over: () => D.overhead && D.overhead.passes && D.overhead.passes.length + " passes",
+    sens: () => D.sensors && D.sensors.fires && (D.sensors.fires.count + D.sensors.quakes.count + D.sensors.hazards.count),
+    rel: () => D.related && D.related.total,
+    src: () => D.sources && D.sources.count,
+    traf: () => D.activity && !D.activity.error && (D.activity.aircraft + D.activity.ships) + " / 24 h",
+    assets: () => D.assets && D.assets.items && D.assets.items.length,
+    expo: () => D.exposure && D.exposure.power && D.exposure.power.mw_total ? nf(D.exposure.power.mw_total) + " MW" : null,
+    ctry: () => D.country && D.country.name,
+    hist: () => D.history && D.history.total,
+    ents: () => D.entities && D.entities.items && D.entities.items.length,
+  };
+  const SPARK = {
+    rel: () => D.related && D.related.sparkline && spark(D.related.sparkline.days),
+    src: () => D.sources && D.sources.hourly && spark(D.sources.hourly.slice(-30)),
+    traf: () => D.activity && D.activity.series && spark(D.activity.series.aircraft.map((v, i) => v + (D.activity.series.ship[i] || 0))),
+    ctry: () => D.country && D.country.tempo && spark(D.country.tempo.days.slice(-30)),
+    attn: () => (PV && PV.views ? spark(PV.views.slice(-30)) : D.attention && D.attention.documents ? spark(D.attention.documents) : null),
+  };
+  const dirty = new Set(tiles.map((t) => t[0]));
+  const visible = new Set();
+  const draw = (id) => {
+    const el = tileEl(id);
+    if (!el || el.classList.contains("fold") || !visible.has(id) || !dirty.has(id)) return;
+    const h = RENDER[id]();
+    if (h == null) return;
+    dirty.delete(id);
+    const b = el.querySelector(".ic-body");
+    b.innerHTML = h;
+    if (WIRE[id]) WIRE[id](b);
+    if (id === "prof") loadProfile(b);
+  };
+  const io = new IntersectionObserver((ents) => {
+    for (const e of ents) { const id = e.target.dataset.tile; if (e.isIntersecting) { visible.add(id); draw(id); } else visible.delete(id); }
+  }, { root: null, rootMargin: "300px 0px" });
+  root.querySelectorAll(".ic-tile").forEach((t) => io.observe(t));
+  // masonry row spans (see .ic-grid in dossier.css); observer callbacks are batched per frame
+  const GAP = 8, ROW = 4;
+  const ro = new ResizeObserver((ents) => {
+    for (const e of ents) {
+      const span = "span " + Math.max(1, Math.ceil((e.target.offsetHeight + GAP) / (ROW + GAP)));
+      if (e.target.style.gridRowEnd !== span) e.target.style.gridRowEnd = span;
+    }
+  });
+  root.querySelectorAll(".ic-tile").forEach((t) => ro.observe(t));
+  let raf = 0;
+  const refreshHead = () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      if (!root.isConnected) return;
+      root.querySelector(".ic-metrics").innerHTML = metrics(spec, subj || {}, D);
+      const bar = [];
+      for (const [id, title] of tiles) {
+        const el = tileEl(id);
+        if (!el) continue;
+        // relevance: promote notable tiles, collapse empty ones to a one-line summary
+        const n = notes(id, D, PV);
+        const lvl = n && n.level, quiet = n && n.quiet && !layout.open[id];
+        el.classList.toggle("alert", lvl === "alert");
+        el.classList.toggle("warn", lvl === "warn");
+        el.classList.toggle("quiet", !!quiet);
+        el.style.order = el.classList.contains("lead") ? "-3" : lvl === "alert" ? "-2" : lvl === "warn" ? "-1" : "";
+        el.querySelector(".ic-q").textContent = quiet ? n.quiet : "";
+        if (lvl) bar.push('<button type="button" class="' + lvl + '" data-go="' + id + '" title="' + esc(title) + '"><i></i>' + esc(n.text) + "</button>");
+        const b = BADGE[id] && BADGE[id](), s = SPARK[id] && SPARK[id]();
+        el.querySelector(".ic-badge").textContent = b == null || b === false ? "" : b;
+        el.querySelector(".ic-sp").innerHTML = s || "";
+      }
+      const ab = root.querySelector(".ic-alertbar");
+      ab.hidden = !bar.length;
+      ab.innerHTML = bar.length ? "<span>NOTABLE</span>" + bar.join("") : "";
+    });
+  };
+  const touch = (names) => {
+    for (const [id, , needs] of tiles) if (needs.some((n) => names.includes(n))) { dirty.add(id); draw(id); }
+    refreshHead();
+  };
+
+  // ---- header ----
   const head = (s) => {
     const conf = s.confidence != null ? gauge(s.confidence) : "";
     const m = s.lat != null ? mgrs(s.lat, s.lon) : null;
-    put("head", '<div class="dk-class st-' + esc(String(s.status || "").replace(/[^a-z-]/g, "")) + '"><span>INTEL // ' + esc(kl.toUpperCase()) + "</span><b>" + esc((EVENT_STATUS[s.status] || s.status || "ALL-SOURCE").toUpperCase()) + '</b><span class="dk-r">BUILT ' + esc(fmtUtc(new Date().toISOString(), { time: true })) + "</span></div>" +
-      '<header class="dk-head"><div class="dk-ht"><div class="dz-eyebrow">' + esc(s.category ? eventCat(s.category)[0] : kl) + '</div><h2 class="dz-title">' + esc(s.label || spec.label || "") + '</h2><div class="dz-sub">' +
-      esc([s.place_name, s.country].filter(Boolean).join(", ") || (s.q ? "name match: " + s.q : "")) + "</div></div>" + conf + "</header>" +
-      (s.lat != null ? '<div class="dk-loc"><div><span>POS</span><b>' + esc(latLonText(s.lat, s.lon)) + "</b>" + copyBtn(s.lat.toFixed(5) + ", " + s.lon.toFixed(5)) + "</div>" + (m ? "<div><span>MGRS</span><b>" + esc(m) + "</b>" + copyBtn(m.replace(/ /g, "")) + "</div>" : "") +
-        "<div><span>RADIUS</span><b>" + nf(s.radius_km) + " km</b></div></div>" : "") +
-      (isEv ? '<div class="dk-tools"><button type="button" data-sel="' + esc(spec.id) + '">Select on globe</button>' + (s.lat != null ? '<button type="button" data-fly="' + s.lat + "," + s.lon + '">Fly to</button>' : "") + "</div>" : ""));
+    const on = hooks.consoleOn ? hooks.consoleOn() : false;
+    root.querySelector('[data-slot="head"]').innerHTML = '<div class="dk-class st-' + esc(String(s.status || "").replace(/[^a-z-]/g, "")) + '"><span>INTEL // ' + esc(kl.toUpperCase()) + "</span><b>" + esc((EVENT_STATUS[s.status] || s.status || "ALL-SOURCE").toUpperCase()) + "</b><span>FUSION CONSOLE · " + tiles.length + ' TILES</span><span class="dk-r">BUILT ' + esc(fmtUtc(new Date().toISOString(), { time: true })) + "</span></div>" +
+      '<header class="dk-head ic-head"><div class="dk-ht"><div class="dz-eyebrow">' + esc(s.category ? eventCat(s.category)[0] : kl) + '</div><h2 class="dz-title">' + esc(s.label || spec.label || "") + '</h2><div class="dz-sub">' +
+      esc([s.place_name, s.country || s.cc].filter(Boolean).join(", ") || (s.q ? "name match: " + s.q : "")) + (s.t_start ? " · first report " + esc(fmtUtc(s.t_start)) : "") + "</div></div>" +
+      (s.lat != null ? '<div class="dk-loc ic-loc-b"><div><span>POS</span><b>' + esc(latLonText(s.lat, s.lon)) + "</b>" + copyBtn(s.lat.toFixed(5) + ", " + s.lon.toFixed(5)) + "</div>" + (m ? "<div><span>MGRS</span><b>" + esc(m) + "</b>" + copyBtn(m.replace(/ /g, "")) + "</div>" : "") +
+        "<div><span>RADIUS</span><b>" + nf(s.radius_km) + " km</b></div></div>" : "") + conf + "</header>" +
+      '<div class="dk-tools ic-tools">' + (isEv ? '<button type="button" data-sel="' + esc(spec.id) + '">Select on globe</button>' : "") + (s.lat != null ? '<button type="button" data-fly="' + s.lat + "," + s.lon + '">Fly to</button>' : "") +
+      '<button type="button" data-ic="brief" title="Copy a plain-text brief of everything loaded">Copy brief <kbd>C</kbd></button><button type="button" data-ic="pivot" title="Jump to the pivot entities">Pivot <kbd>P</kbd></button>' +
+      (hooks.console ? '<button type="button" data-ic="console" title="Maximised console / docked pane">' + (on ? "Dock pane" : "Console") + " <kbd>M</kbd></button>" : "") +
+      '<span class="ic-keys"><kbd>1</kbd>–<kbd>9</kbd> tiles</span></div>';
   };
-  const fill = (S) => {
-    if ("assessment" in S) put("assessment", assessment(S.assessment));
-    if ("imagery" in S && S.imagery) { const el = put("imagery", imageryHtml(S.imagery, subj, [])); if (el) wireImagery(el); }
-    if ("timeline" in S && S.timeline) { const el = put("timeline", renderTimeline(S.timeline)); if (el) wireTimeline(el, S.timeline, { onHover: (e) => hooks.highlight && hooks.highlight(e ? [{ lat: e.lat, lon: e.lon, label: e.label }] : null) }); }
-    if ("related" in S) put("related", related(S.related));
-    if ("history" in S) put("history", history(S.history));
-    if ("sensors" in S) put("sensors", sensors(S.sensors));
-    if ("traffic" in S) put("traffic", traffic(S.traffic));
-    if ("assets" in S) put("assets", assets(S.assets));
-    if ("sources" in S) put("sources", sources(S.sources));
-    if ("entities" in S) put("entities", entities(S.entities, spec));
-    if ("storyline" in S) put("storyline", storylineHtml(S.storyline, spec.id));
+
+  // ---- tile chrome + console actions ----
+  const focusTile = (id) => { const el = tileEl(id); if (!el) return; el.scrollIntoView({ block: "nearest", behavior: "smooth" }); el.focus({ preventScroll: true }); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); };
+  const maxTile = (el) => {
+    const on = !el.classList.contains("max");
+    root.querySelectorAll(".ic-tile.max").forEach((x) => x.classList.remove("max"));
+    root.classList.toggle("has-max", on);
+    if (on) { el.classList.add("max"); visible.add(el.dataset.tile); draw(el.dataset.tile); }
   };
-  const fail = (names, err) => names.split(",").forEach((n) => put(n, '<div class="dz-empty">Unavailable: ' + esc(err.message || err) + "</div>"));
-  const core = fetchJson(query(spec, CORE), 20000), around = fetchJson(query(spec, AROUND), 30000);
+  const brief = async () => { const ok = await copyText(briefText(spec, subj || {}, D)); toast(root.querySelector(".ic-hd"), ok ? "Brief copied" : "Copy failed", !ok); };
+  const toggleConsole = () => { const on = !(hooks.consoleOn && hooks.consoleOn()); setConsolePref(on); hooks.console(on); if (subj) head(subj); };
+  root.addEventListener("click", (e) => {
+    const go = e.target.closest("[data-go]");
+    if (go) { focusTile(go.dataset.go); return; }
+    const more = e.target.closest("[data-more]");
+    if (more) { const h = more.previousElementSibling; if (h) h.hidden = false; more.remove(); return; }
+    const ic = e.target.closest("[data-ic]");
+    if (ic) { if (ic.dataset.ic === "brief") brief(); else if (ic.dataset.ic === "pivot") focusTile("ents"); else if (ic.dataset.ic === "console") toggleConsole(); return; }
+    const b = e.target.closest(".ic-tb button");
+    if (!b) return;
+    const el = b.closest(".ic-tile"), id = el.dataset.tile;
+    if (b.dataset.t === "fold" && el.classList.contains("quiet")) { el.classList.remove("quiet"); layout.open[id] = true; saveLayout(); visible.add(id); draw(id); return; }
+    if (b.dataset.t === "fold") { const f = el.classList.toggle("fold"); b.textContent = f ? "+" : "–"; layout.fold[id] = f || undefined; saveLayout(); if (!f) draw(id); }
+    else if (b.dataset.t === "wide") { const w = el.classList.toggle("w2"); layout.wide[id] = w; saveLayout(); }
+    else if (b.dataset.t === "max") maxTile(el);
+  });
+  root.addEventListener("dblclick", (e) => { const h = e.target.closest(".ic-th"); if (h && !e.target.closest("button")) maxTile(h.closest(".ic-tile")); });
+  const onKey = (e) => {
+    if (!root.isConnected) { document.removeEventListener("keydown", onKey, true); io.disconnect(); ro.disconnect(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "")) return;
+    if (!root.offsetParent || (hooks.focused && !hooks.focused())) return;
+    if (e.key === "Escape" && root.classList.contains("has-max")) { maxTile(root.querySelector(".ic-tile.max")); e.stopImmediatePropagation(); e.preventDefault(); return; }
+    let hit = true;
+    if (/^[1-9]$/.test(e.key) && tiles[+e.key - 1]) focusTile(tiles[+e.key - 1][0]);
+    else if (e.key === "p" || e.key === "P") focusTile("ents");
+    else if (e.key === "c" || e.key === "C") brief();
+    else if ((e.key === "m" || e.key === "M") && hooks.console) toggleConsole();
+    else hit = false;
+    if (hit) { e.stopPropagation(); e.preventDefault(); }
+  };
+  document.addEventListener("keydown", onKey, true);
+
+  // ---- data ----
+  const fail = (names, err) => { for (const n of names.split(",")) if (D[n] === undefined) D[n] = { error: "Unavailable: " + (err.message || err) }; touch(names.split(",")); };
   let first = true;
   const got = (j) => {
     if (hooks.stale()) return;
@@ -196,11 +919,27 @@ export async function renderIntel(spec, body, hooks) {
       hooks.head({ title: subj.label || spec.label || kl, sub: "INTEL // " + kl.toUpperCase() + (subj.place_name ? " · " + subj.place_name : ""), icon: "intel", coord: subj.lat != null ? { lat: subj.lat, lon: subj.lon, alt: 6e4 } : null });
     }
     const S = j.sections || {};
-    if ("entities" in S) background(root.querySelector('[data-slot="background"]'), spec, subj, hooks, S.entities);
-    fill(S);
+    Object.assign(D, S);
+    if ("entities" in S) {
+      background(spec, subj, hooks, S.entities).then((r) => {
+        if (hooks.stale()) return;
+        bgHtml = r.html; touch(["__bg"]); dirty.add("bg"); draw("bg");
+        if (!r.enwiki) { PV = null; dirty.add("attn"); draw("attn"); refreshHead(); return; }
+        fetchJson("/api/intel/pageviews?" + new URLSearchParams({ title: r.enwiki }), 15000)
+          .then((pv) => { PV = pv; }, (err) => { PV = { error: "Pageviews unavailable: " + (err.message || err) }; })
+          .then(() => { if (!hooks.stale()) { dirty.add("attn"); draw("attn"); refreshHead(); } });
+      }, (err) => { bgHtml = empty("Background unavailable: " + (err.message || err)); PV = null; dirty.add("bg"); dirty.add("attn"); draw("bg"); draw("attn"); });
+    }
+    touch(Object.keys(S));
   };
-  await Promise.all([
-    core.then(got, (e) => { if (!hooks.stale()) { fail(CORE + ",head", e); if (first) throw e; } }),
-    around.then(got, (e) => { if (!hooks.stale()) fail(AROUND, e); }),
-  ]);
+  const need = new Set(tiles.flatMap((t) => t[2]));
+  const reqs = [[CORE, 20000], [AROUND, 30000], [CONTEXT, 30000]]
+    .map(([g, ms]) => [g.split(",").filter((x) => need.has(x)).join(","), ms]).filter(([g]) => g);
+  const ps = reqs.map(([sec, ms]) => fetchJson(query(spec, sec), ms));
+  refreshHead();
+  await Promise.all(ps.map((p, i) => p.then(got, (e) => {
+    if (hooks.stale()) return;
+    fail(reqs[i][0], e);
+    if (i === 0 && first) throw e;
+  })));
 }

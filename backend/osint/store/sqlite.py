@@ -596,6 +596,51 @@ class SqliteStore:
                                                 "quote": q})
         return out
 
+    # ---- intel pane aggregates (country context, attention) ----
+
+    def country_history(self, names: list[str]) -> list[tuple]:
+        """Curated historical events (UCDP GED) whose country is one of ``names`` (or
+        ``name (former name)``, UCDP's convention): (month, type_of_violence, events,
+        fatalities_best) rows."""
+        if not names:
+            return []
+        conds = " OR ".join(["e.country = ? OR e.country LIKE ? ESCAPE '!'"] * len(names))
+        params: list[object] = []
+        for n in names:
+            params += [n, n.replace("!", "!!").replace("%", "!%").replace("_", "!_") + " (%"]
+        with self._lock:
+            return self._db.execute(
+                "SELECT substr(e.t_start, 1, 7), coalesce(tv.value, e.subcategory, 'unspecified'),"
+                " count(*), coalesce(sum(cast(fb.value AS REAL)), 0) FROM events e "
+                "LEFT JOIN event_fields tv ON tv.event_id = e.id AND tv.field = 'type_of_violence' "
+                "LEFT JOIN event_fields fb ON fb.event_id = e.id AND fb.field = 'fatalities_best' "
+                f"WHERE e.status = 'historical' AND ({conds}) GROUP BY 1, 2 ORDER BY 1",
+                params).fetchall()
+
+    def country_tempo(self, cc: str, since: datetime) -> list[tuple]:
+        """Non-historical events in country ``cc`` (ISO alpha-2) with t_start >= since:
+        (day, category, events) rows."""
+        with self._lock:
+            return self._db.execute(
+                "SELECT substr(t_start, 1, 10), category, count(*) FROM events "
+                "WHERE country = ? AND t_start >= ? AND origin != 'historical' GROUP BY 1, 2",
+                (cc, iso(since))).fetchall()
+
+    def document_volume(self, bbox: tuple[float, float, float, float], since: datetime
+                        ) -> list[tuple]:
+        """Reports attached to located non-historical events inside ``bbox`` published since
+        ``since``: (day, documents, outlets, languages, events) rows, one per UTC day."""
+        w, s, e, n = bbox
+        lon_sql = "e.lon BETWEEN ? AND ?" if w <= e else "(e.lon >= ? OR e.lon <= ?)"
+        with self._lock:
+            return self._db.execute(
+                "SELECT substr(d.published_at, 1, 10), count(DISTINCT d.doc_id), "
+                "count(DISTINCT d.source), count(DISTINCT nullif(d.language, '')), "
+                "count(DISTINCT e.id) FROM events e JOIN event_documents d ON d.event_id = e.id "
+                f"WHERE e.lat BETWEEN ? AND ? AND {lon_sql} AND e.origin != 'historical' "
+                "AND d.published_at >= ? GROUP BY 1 ORDER BY 1",
+                (s, n, w, e, iso(since))).fetchall()
+
     def events_fingerprint(self, since: datetime) -> dict:
         """Cheap change marker for jobs that derive from events: count and newest
         ``updated_at`` of non-historical events with t_end >= since, plus the newest merge."""

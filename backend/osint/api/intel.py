@@ -4,19 +4,22 @@ single-event export (GeoJSON / KML).
 GET /api/intel?kind=event&id=...            (or kind=fire|quake|aircraft|ship|place|
     facility|point&lat=&lon=[&t=&id=&label=], or kind=actor&q=...)
     [&radius_km=&sections=assessment,timeline,...]  -> {subject, sections: {name: ...}}
+GET /api/intel/pageviews?title=&project=en.wikipedia
+                                             -> daily Wikipedia pageviews, 60 days (cached)
 GET /api/events/{id}/timeline                -> osint.timeline.build.build_timeline
 GET /api/events/{id}/export?format=geojson|kml
 """
 
 import asyncio
 
+import httpx
 import msgspec
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import Response
 
 from osint.api import kml
 from osint.api.events import CATEGORY_COLORS, DEFAULT_COLOR, add_corroboration, impact_detail
-from osint.intel import aggregate
+from osint.intel import aggregate, context, hooks
 from osint.translate import english
 from osint.translate import job as translate_job
 
@@ -112,6 +115,9 @@ def event_kml(ev: dict) -> str:
 
 
 def mount_intel(app: FastAPI, runtime) -> None:
+    if context.watch_flags not in hooks.TRACK_FLAGGERS:
+        hooks.TRACK_FLAGGERS.append(context.watch_flags)
+
     @app.get("/api/intel")
     async def intel(kind: str = Query(..., pattern="^(" + "|".join(KINDS) + ")$"),
                     id: str | None = Query(None, max_length=200),
@@ -132,6 +138,8 @@ def mount_intel(app: FastAPI, runtime) -> None:
             if kind == "event":
                 subj["event"] = full_event(runtime, id or "")
                 subj["label"] = (subj["event"].get("title_en") or subj["event"].get("title"))
+            if kind != "actor":
+                subj["cc"] = context.resolve_cc(runtime, subj)
             return subj
 
         try:
@@ -161,6 +169,17 @@ def mount_intel(app: FastAPI, runtime) -> None:
                 "name", "ident", "reg", "type_code", "operator", "is_mil", "high_priority")}
         return _json({"subject": subject, "generated_at": now.isoformat(timespec="seconds"),
                       "sections": {s: ctx.get(s) for s in want}})
+
+    @app.get("/api/intel/pageviews")
+    async def intel_pageviews(title: str = Query(..., min_length=1, max_length=250),
+                              project: str = Query("en.wikipedia",
+                                                   pattern=r"^[a-z\-]{2,12}\.wikipedia$")
+                              ) -> Response:
+        try:
+            out = await asyncio.to_thread(context.pageviews, title, project)
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, f"Wikimedia pageviews: {type(exc).__name__}") from None
+        return _json(out)
 
     @app.get("/api/events/{event_id}/timeline")
     async def event_timeline(event_id: str) -> Response:

@@ -446,6 +446,13 @@ export class Dossier {
     const i = this.panes.indexOf(pane);
     if (i > 0) { this.panes.splice(i, 1); this.panes.unshift(pane); this._layout(); this._save(); }
   }
+  // intel console: the workspace expanded over the side panels with this pane alone
+  console(pane, on) {
+    if (!this.panes.includes(pane)) return;
+    this.max = on; this.el.classList.toggle("max", on);
+    if (on !== (this.zoomed === pane)) this.zoom(pane);
+    else this._layout();
+  }
   zoom(pane) {
     this.zoomed = this.zoomed === pane ? null : pane;
     this._layout();
@@ -548,7 +555,8 @@ export class Dossier {
       else if (spec.type === "nearby") await this._nearby(pane, body, stale);
       else if (spec.type === "search") await this._search(pane, body, stale);
       else if (spec.type === "resolve") await this._resolve(pane, body, stale);
-      else if (spec.type === "intel") await renderIntel(spec, body, { head: (h) => this._head(pane, h), stale, wdResolve, wdEntity, highlight: this.highlight });
+      else if (spec.type === "intel") await renderIntel(spec, body, { head: (h) => this._head(pane, h), stale, wdResolve, wdEntity, highlight: this.highlight,
+        console: (on) => this.console(pane, on), consoleOn: () => this.max && this.zoomed === pane, focused: () => this.focused === pane || this.panes.length === 1 });
       else if (spec.type === "story") {
         const st = this.story || {}, noop = () => {};
         await renderStoryline(spec, body, { head: (h) => this._head(pane, h), stale, highlight: this.highlight, flyTo: this.flyTo,
