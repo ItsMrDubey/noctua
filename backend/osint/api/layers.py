@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ import msgspec
 
 from osint.core.geo import utcnow
 from osint.runtime import LIVE_MAX_AGE, Runtime, is_current, live_cutoffs
+
+log = logging.getLogger(__name__)
 
 LAYER_KIND = {"aircraft": "air", "ships": "sea"}
 MAX_AGE = {layer: LIVE_MAX_AGE[kind] for layer, kind in LAYER_KIND.items()}
@@ -251,15 +254,31 @@ def _iso(us: int) -> str:
     return (_EPOCH + timedelta(microseconds=us)).isoformat()
 
 
+def fire_scores(runtime: Runtime, hours: int, until: datetime | None) -> dict[str, tuple]:
+    """id -> (conflict score, reasons) computed by the worker's FireScoreJob ({} if none)."""
+    from osint.fires.store import get_score_store
+
+    end = until or utcnow()
+    try:
+        return get_score_store(runtime).between(end - timedelta(hours=hours), end)
+    except Exception:
+        log.exception("fire scores unavailable")
+        return {}
+
+
 def fire_items(runtime: Runtime, hours: int = 24, until: datetime | None = None,
                limit: int = OBS_LIMIT) -> list[dict]:
     out = []
+    scores = fire_scores(runtime, hours, until)
     for id_, us, lat, lon, value, attrs in _obs_rows(runtime, "fire", hours, False, until, limit):
         a = _attrs(attrs)
+        sc = scores.get(id_)
         out.append({
             "id": id_, "lat": round(lat, 5), "lon": round(lon, 5), "ts": _iso(us), "frp": value,
             "confidence": a.get("confidence"), "satellite": a.get("satellite"),
             "daynight": a.get("daynight"),
+            "conflict_score": sc[0] if sc else None,
+            "conflict_reasons": [r for r in sc[1].split(",") if r] if sc else [],
         })
     return out
 

@@ -114,6 +114,7 @@ class Runtime:
 
             self._tasks.append(start_impact(self))  # sets self.impact_job
             __import__("osint.naval.job", fromlist=["start"]).start(self)  # sets self.naval_job
+            __import__("osint.fires.job", fromlist=["start"]).start(self)  # .fire_score_job
             __import__("osint.translate.job", fromlist=["start"]).start(self)  # .translate_job
             __import__("osint.benchmark.job", fromlist=["start"]).start(self)  # .benchmark
             log.info("runtime boot complete")
