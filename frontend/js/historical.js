@@ -115,6 +115,8 @@ export function historicalDetails(it, detail) {
   const body = kv([["Dates", span(it.t_start, it.t_end)], ["Place", esc([d.place_name, d.country].filter(Boolean).join(", "))], ["Precision", esc(it.precision)],
     ["Position", nf(it.lat, 3) + ", " + nf(it.lon, 3)], ...fields, ["ID", esc(it.id)]]) +
     (d.summary_en || d.summary ? '<div class="evsum" style="margin-top:8px">' + esc(d.summary_en || d.summary) + "</div>" : "") +
-    '<div class="prov" style="margin-top:8px"><div><i></i>Uppsala Conflict Data Program, Georeferenced Event Dataset (curated, historical)</div></div>';
+    '<div class="prov" style="margin-top:8px"><div><i></i>' + (String(it.id).startsWith("acled-")
+      ? "Armed Conflict Location &amp; Event Data (ACLED), curated"
+      : "Uppsala Conflict Data Program, Georeferenced Event Dataset (curated, historical)") + "</div></div>";
   return [(d.title_en || it.title_en || it.title || d.title) || "Historical conflict event", body];
 }

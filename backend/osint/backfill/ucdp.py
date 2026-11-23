@@ -73,6 +73,11 @@ def discover(html: str) -> list[str]:
     return out
 
 
+def candidate_urls(html: str) -> list[str]:
+    """The candidate (monthly) CSV URLs listed on the downloads page, in page order."""
+    return list(dict.fromkeys(_CANDIDATE.findall(html)))
+
+
 def _int(v: Any, default: int | None = None) -> int | None:
     try:
         return int(float(v))
