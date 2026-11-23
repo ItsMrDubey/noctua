@@ -23,10 +23,15 @@ CITIES = [
     (3089999, "Police", "Police", "", 53.55, 14.57, "PPL", "PL", "84", 33000),
     (999001, "Nice", "Nice", "", 43.70, 7.27, "PPLA2", "FR", "93", 342522),
     (999002, "Ipoh", "Ipoh", "Ipo", 4.58, 101.08, "PPLA", "MY", "08", 673318),
+    # a town that is also a common surname; a current name that is another city's old name
+    (1266999, "Kim", "Kim", "", 21.39, 72.85, "PPL", "IN", "09", 20000),
+    (704508, "Pokrovsk", "Pokrovsk", "Покровськ", 48.28, 37.18, "PPL", "UA", "05", 60127),
+    (563464, "Engels", "Engels", "Pokrovsk,Энгельс", 51.50, 46.12, "PPL", "RU", "67", 196011),
 ]
 COUNTRIES = [("UA", "UKR", "Ukraine"), ("LB", "LBN", "Lebanon"), ("IR", "IRN", "Iran"),
              ("FR", "FRA", "France"), ("US", "USA", "United States"), ("YE", "YEM", "Yemen"),
-             ("DE", "DEU", "Germany"), ("PL", "POL", "Poland"), ("MY", "MYS", "Malaysia")]
+             ("DE", "DEU", "Germany"), ("PL", "POL", "Poland"), ("MY", "MYS", "Malaysia"),
+             ("IN", "IND", "India"), ("RU", "RUS", "Russia")]
 ADMIN1 = [("UA.07", "Kharkiv"), ("UA.12", "Kyiv City"), ("US.TX", "Texas"),
           ("FR.11", "Île-de-France")]
 

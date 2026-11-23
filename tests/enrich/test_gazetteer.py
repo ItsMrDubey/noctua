@@ -87,3 +87,22 @@ def test_lazy_gazetteer_loads_once(tmp_path):
     lazy = LazyGazetteer(write_gazetteer(tmp_path / "g"))
     assert best_place(lazy.match("Kyiv")).name == "Kyiv"
     assert lazy.get() is lazy.get()
+
+def test_surname_needs_a_same_country_mention(gz):
+    # "Kim" is a town in India and a surname: no India mention, no Indian location
+    hits = gz.match("Petition to oust Vitalii Kim as Ukraine's veterans minister grows")
+    assert _names(hits) == [("Ukraine", "UA", "country")]
+    hits = gz.match("Protest in Kim, India over water")
+    assert ("Kim", "IN", "city") in _names(hits)
+
+
+def test_title_case_headline_keeps_places(gz):
+    hits = gz.match("Drone Strike Hits Pokrovsk, Russia Says")
+    assert ("Pokrovsk", "UA", "city") in _names(hits)
+
+
+def test_current_name_beats_another_citys_former_name(gz):
+    # Engels (RU) was once "Pokrovsk": a Russia mention must not pull the town there
+    hits = gz.match("Russian forces advance on Pokrovsk")
+    assert ("Pokrovsk", "UA", "city") in _names(hits)
+    assert ("Engels", "RU", "city") not in _names(hits)

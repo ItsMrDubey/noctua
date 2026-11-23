@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 INDEX_VERSION = "2"
 SOURCE_FILES = ("cities15000.zip", "countryInfo.txt", "admin1CodesASCII.txt")
 MIN_CONFIDENCE = 0.5
+SMALL_TOWN_POP = 100_000  # "Kim Jong Un": only towns below this defer before a name
 _SPECIFICITY = {"city": 0.08, "admin1": 0.04, "country": 0.0}
 
 # Common words that are also place names (after case-folding); never matched alone.
@@ -300,6 +301,12 @@ def _in_title_phrase(toks: list[tuple[str, str, bool, bool]], i: int) -> bool:
     def cap(j: int) -> bool:
         return 0 <= j < len(toks) and toks[j][1][:1].isupper()
     return (toks[i][3] and cap(i - 1)) or (i + 1 < len(toks) and toks[i + 1][3] and cap(i + 1))
+
+
+def _title_case(toks: list[tuple[str, str, bool, bool]]) -> bool:
+    """Most Latin words of 4+ letters are capitalised ("Drone Strike Hits Pokrovsk")."""
+    words = [o for _, o, *_ in toks if len(o) >= 4 and is_latin(o) and o[:1].isalpha()]
+    return len(words) >= 3 and sum(o[:1].isupper() for o in words) >= 0.7 * len(words)
 
 
 def name_key(name: str) -> str:
@@ -577,6 +584,11 @@ class Gazetteer:
                             toks, i):
                         deferred.append((span[0][1], cands, n, variant))
                     continue
+                if cands and n == 1 and self._in_person_name(toks, i, language, cands):
+                    # "Vitalii Kim": a surname that is also a town elsewhere; kept only with
+                    # a same-country mention, like common words
+                    deferred.append((span[0][1], cands, n, variant))
+                    continue
                 if cands:
                     found.append((" ".join(o for _, o, *_ in span), cands, n, variant))
                     for j in range(i, i + n):
@@ -601,6 +613,23 @@ class Gazetteer:
             found += self._confirm_common(found, deferred, country_hint)
         return self._disambiguate(found, country_hint, limit)
 
+    def _in_person_name(self, toks, i: int, language: str, cands) -> bool:
+        """Latin token ``i`` has the shape of part of a person's name: it directly follows a
+        capitalised non-place word ("Vitalii Kim"), or — for small towns only — directly
+        precedes one ("Kim Jong Un")."""
+        if not is_latin(toks[i][1]) or _title_case(toks):
+            return False  # Title Case headlines capitalise every word: no name signal
+
+        def namelike(j: int) -> bool:
+            key, orig = toks[j][0], toks[j][1]
+            return (orig[:1].isupper() and orig[1:2].islower() and is_latin(orig)
+                    and key not in STOPWORDS and not self.common.is_common(key, language)
+                    and not self._lookup(key))
+        if i > 0 and toks[i][3] and namelike(i - 1):
+            return True
+        small = max(self.places[c].population for c, _ in cands) < SMALL_TOWN_POP
+        return small and i + 1 < len(toks) and toks[i + 1][3] and namelike(i + 1)
+
     def _confirm_common(self, found, deferred, country_hint: str) -> list:
         """Common-word matches kept only for places in a country the text also mentions
         (by name/demonym, or through another matched place)."""
@@ -624,6 +653,9 @@ class Gazetteer:
         best: dict[int, PlaceHit] = {}
         for matched, cands, n, variant in found:
             latin = matched[:1].isascii()
+            # some place carries this as its current name: former/alternate names of other
+            # places ("Pokrovsk", once Engels RU) rank below it
+            has_primary = any(primary for _, primary in cands)
             scored = []
             for i, primary in cands:
                 p = self.places[i]
@@ -638,6 +670,8 @@ class Gazetteer:
                 elif n == 1 and p.population < 500_000 and p.precision == "city":
                     # non-Latin alternate names of smaller towns are often given names
                     s -= 0.2
+                if not primary and has_primary:
+                    s -= 0.15
                 if n > 1:
                     s += 0.08
                 if variant:
