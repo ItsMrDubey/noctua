@@ -68,7 +68,7 @@ def test_publish_round_trip(tmp_path):
         assert snap.version == SCHEMA_VERSION and snap.pid == os.getpid()
         assert abs(snap.heartbeat - time.time()) < 5
         assert snap.ingestor == {"alive": False, "errors": 0, "queue_depth": 0,
-                                 "consecutive_flush_failures": 0}
+                                 "consecutive_flush_failures": 0, "flushed": {}}
         assert 'collector_runs_total{result="ok",source="adsb"}' in snap.metrics
 
         api = ApiRuntime(_settings(tmp_path), WorkerState(path))

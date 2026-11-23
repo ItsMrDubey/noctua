@@ -55,6 +55,10 @@ class IngestorView:
     def consecutive_flush_failures(self) -> int:
         return int(self._ing().get("consecutive_flush_failures", 0))
 
+    @property
+    def flushed(self) -> dict[str, str]:
+        return dict(self._ing().get("flushed") or {})
+
 
 class SchedulerView:
     def __init__(self, state: WorkerState) -> None:

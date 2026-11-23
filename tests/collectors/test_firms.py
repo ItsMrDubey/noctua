@@ -14,6 +14,13 @@ ROW1 = "29.1,47.9,330.5,0.4,0.4,2026-11-21,0105,N20,VIIRS,h,2.0NRT,290.1,12.5,N\
 ROW2 = "-3.2,120.5,310.0,0.4,0.4,2026-11-21,0510,N20,VIIRS,n,2.0NRT,285.0,,D\n"
 
 
+@pytest.fixture(autouse=True)
+def _midday(monkeypatch):
+    """Polls ask for 2 days shortly after UTC midnight: pin the clock so URLs are stable."""
+    monkeypatch.setattr("osint.collectors.firms.utcnow",
+                        lambda: datetime(2026, 11, 21, 12, 0, tzinfo=UTC))
+
+
 def _ctx(http, key="k"):
     return SimpleNamespace(http=http, settings=SimpleNamespace(firms_map_key=key))
 
@@ -47,6 +54,27 @@ async def test_poll_tolerates_one_failing_product():
         batch = await c.poll(_ctx(http))
     assert len(batch.observations) == 2
     assert batch.observations[1].value is None  # empty frp
+
+
+def test_days_overlap_after_utc_midnight():
+    c = FirmsCollector({})
+    assert c.days(datetime(2026, 11, 21, 2, 0, tzinfo=UTC)) == 2  # late detections of the 20th
+    assert c.days(datetime(2026, 11, 21, 6, 0, tzinfo=UTC)) == 1
+    assert FirmsCollector({"days": 3}).days(datetime(2026, 11, 21, 1, tzinfo=UTC)) == 3
+    assert FirmsCollector({"midnight_overlap_h": 0}).days(datetime(2026, 11, 21, 0, tzinfo=UTC)) == 1
+
+
+@respx.mock
+async def test_unchanged_csv_is_not_resubmitted():
+    base = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/k"
+    route = respx.get(f"{base}/P1/world/1").mock(
+        return_value=httpx.Response(200, text=HEADER + ROW1))
+    c = FirmsCollector({"products": ["P1"]})
+    async with httpx.AsyncClient() as http:
+        assert len((await c.poll(_ctx(http))).observations) == 1
+        assert (await c.poll(_ctx(http))).observations == []  # same CSV: skipped
+        route.mock(return_value=httpx.Response(200, text=HEADER + ROW1 + ROW2))
+        assert len((await c.poll(_ctx(http))).observations) == 2  # FIRMS updated
 
 
 @respx.mock

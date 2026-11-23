@@ -60,6 +60,23 @@ def test_observations_deduped_by_id_and_version(parts):
     assert lake.query("SELECT count(*) FROM observations") == [(2,)]
 
 
+def test_flush_records_when_each_observation_type_landed(parts):
+    store, lake, metrics = parts
+    ing = Ingestor(store, lake, metrics)
+    ts = utcnow() - timedelta(minutes=5)
+    ing.flush()
+    assert ing.flushed == {}  # nothing buffered: nothing landed
+    ing.process(Batch(source="t", positions=[_pos(utcnow())], observations=[
+        Observation(id="fire:1", type="fire", ts=ts, lat=1, lon=1, source="t")]))
+    ing.flush()
+    assert set(ing.flushed) == {"fire"}  # positions are pushed live, not versioned
+    first = ing.flushed["fire"]
+    ing.process(Batch(source="t", observations=[
+        Observation(id="quake:1", type="quake", ts=ts, lat=1, lon=1, source="t")]))
+    ing.flush()
+    assert ing.flushed["fire"] == first and ing.flushed["quake"] >= first
+
+
 def test_warm_start_skips_already_stored(parts):
     store, lake, metrics = parts
     ts = utcnow() - timedelta(minutes=5)

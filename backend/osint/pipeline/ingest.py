@@ -66,6 +66,9 @@ class Ingestor:
         # serialises all mutation of ingestor state (worker thread vs loop thread)
         self._lock = threading.Lock()
         self.errors = 0
+        # when rows of each kind last reached the lake (observation type, e.g. "fire", or
+        # "documents"), ISO UTC: the API pushes these to the UI so layers refetch at once
+        self.flushed: dict[str, str] = {}
 
     async def submit(self, batch: Batch) -> None:
         await self.queue.put(batch)
@@ -202,7 +205,11 @@ class Ingestor:
             try:
                 for dataset, rows in self._buffers.items():
                     if rows:
+                        kinds = ({r["type"] for r in rows} if dataset == "observations"
+                                 else {dataset} if dataset == "documents" else set())
                         self.lake.write(dataset, rows)
+                        at = utcnow().isoformat()
+                        self.flushed = {**self.flushed, **dict.fromkeys(kinds, at)}
                         self.metrics.inc("lake_rows_written_total", len(rows), dataset=dataset)
                         self._buffers[dataset] = []
                 self.consecutive_flush_failures = 0

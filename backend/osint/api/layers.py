@@ -307,7 +307,35 @@ def obs_layer(runtime: Runtime, layer: str, hours: int = 24,
     return envelope(layer, items[:limit], truncated=len(items) > limit)
 
 
-def status(runtime: Runtime) -> dict:
+# data layer -> the collector whose polls feed it (age of its last success is shown in the UI)
+LAYER_SOURCES = {"aircraft": "adsb", "ships": "ais", "fires": "firms", "quakes": "usgs"}
+
+
+class LayerVersions:
+    """Per observation/event layer a version string that changes as soon as new rows are
+    queryable: the ingestor's last lake flush containing that observation type, and the
+    event builder's last pass that created or updated events. The live websocket pushes
+    changes so the UI refetches at once instead of on its next slow poll."""
+
+    def __init__(self, runtime: Runtime) -> None:
+        self.rt = runtime
+        self._passes: int | None = None
+        self._events: str | None = None
+
+    def get(self) -> dict[str, str | None]:
+        flushed = getattr(self.rt.ingestor, "flushed", None) or {}
+        b = getattr(self.rt, "event_builder", None)
+        passes = getattr(b, "passes", None)
+        if passes is not None and passes != self._passes:
+            self._passes = passes
+            last = getattr(b, "last_pass", None)
+            if self._events is None or (last is not None and (last.created or last.updated)):
+                self._events = str(passes)
+        return {"fires": flushed.get("fire"), "quakes": flushed.get("quake"),
+                "events": self._events}
+
+
+def status(runtime: Runtime, versions: LayerVersions | None = None) -> dict:
     sources = {}
     for name, h in runtime.scheduler.health.items():
         sources[name] = {
@@ -316,5 +344,12 @@ def status(runtime: Runtime) -> dict:
             "last_error": h.last_error, "last_batch_size": h.last_batch_size,
         }
     counts = live_counts(runtime)
-    return {"sources": sources,
-            "counts": {layer: counts.get(kind, 0) for layer, kind in LAYER_KIND.items()}}
+    out = {"sources": sources,
+           "counts": {layer: counts.get(kind, 0) for layer, kind in LAYER_KIND.items()}}
+    # per layer: collector + its last successful poll, and when new rows last landed
+    ver = (versions or LayerVersions(runtime)).get()
+    out["layers"] = {
+        layer: {"source": src, "polled_at": sources.get(src, {}).get("last_success"),
+                "data_at": ver.get(layer)}
+        for layer, src in LAYER_SOURCES.items()}
+    return out

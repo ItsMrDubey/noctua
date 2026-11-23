@@ -48,7 +48,7 @@ class WorkerSnapshot(msgspec.Struct, kw_only=True):
     heartbeat: float  # unix seconds
     booting: bool
     boot_error: str | None
-    ingestor: dict[str, Any]  # alive, errors, queue_depth, consecutive_flush_failures
+    ingestor: dict[str, Any]  # alive, errors, queue_depth, consecutive_flush_failures, flushed
     scheduler: dict[str, SourceRow]
     metrics: str  # prometheus text
     jobs: dict[str, Any]  # plain-dict status per job (absent = job not running)
@@ -130,7 +130,8 @@ class StatePublisher:
             booting=rt.booting, boot_error=rt.boot_error,
             ingestor={"alive": rt.ingestor_alive, "errors": ing.errors,
                       "queue_depth": ing.queue.qsize(),
-                      "consecutive_flush_failures": getattr(ing, "consecutive_flush_failures", 0)},
+                      "consecutive_flush_failures": getattr(ing, "consecutive_flush_failures", 0),
+                      "flushed": dict(getattr(ing, "flushed", {}))},
             scheduler=health,  # tuples encode like SourceRow arrays
             metrics=rt.metrics.render_prometheus(), jobs=jobs,
             live=rows,  # tuples encode like LivePos arrays

@@ -46,6 +46,7 @@ def _json(body: bytes) -> Response:
 def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     cache = layers.LayerSnapshotCache(runtime)
     app.state.layer_cache = cache
+    versions = layers.LayerVersions(runtime)
 
     @app.get("/api/config")
     def config(request: Request) -> dict:
@@ -82,7 +83,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
 
     @app.get("/api/status")
     def status() -> dict:
-        return layers.status(runtime)
+        return layers.status(runtime, versions)
 
     @app.get("/kml/master.kml")
     def master(request: Request) -> Response:
@@ -107,7 +108,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
         return _kml(kml.quakes_kml(await asyncio.to_thread(layers.quake_items, runtime, 24)))
 
     history.mount(app, runtime)
-    live_ws.mount(app, runtime, cache.meta)
+    live_ws.mount(app, runtime, cache.meta, versions)
     mount_reference(app)
     mount_nuclear(app)
     mount_movements(app, runtime)

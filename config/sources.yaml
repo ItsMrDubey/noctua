@@ -18,12 +18,14 @@ ais:
   batch_seconds: 5
 firms:
   enabled: true
-  interval_s: 900
+  # FIRMS allows 5000 transactions / 10 min per MAP_KEY; 4 world CSVs every 5 min is far
+  # below that, and unchanged CSVs are not re-parsed (FIRMS updates a few times an hour)
+  interval_s: 300
   area: world
-  days: 1
+  days: 1             # 2 for the first hours after 00:00 UTC (midnight_overlap_h, default 6)
 usgs:
   enabled: true
-  interval_s: 120
+  interval_s: 60      # summary feeds regenerate every minute; all_hour is used once caught up
 gdelt:
   enabled: true
   interval_s: 900

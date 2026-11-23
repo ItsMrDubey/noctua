@@ -44,7 +44,7 @@ class UsgsCollector(PollCollector):
     domain = "seismic"
     licence = "USGS public domain"
     commercial_ok = True
-    default_interval_s = 120.0
+    default_interval_s = 60.0
 
     def _window(self, cursor: dict | None, now: datetime) -> str:
         if not cursor:
