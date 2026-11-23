@@ -1,11 +1,17 @@
 # Before/after satellite imagery (M3b). Read by osint.imagery.config.ImageryConfig.
-interval_s: 900            # ImageryJob pass interval
-max_per_run: 5             # events processed per pass
+interval_s: 300            # ImageryJob pass interval
+max_per_run: 15            # events processed per pass
 concurrency: 3             # events processed in parallel
 event_age_days: 7          # only events updated in this window
 min_confidence: 0.0
 statuses: [multi-source, sensor-corroborated, official]
 precisions: [city, point]
+# single-source events too, but only where something is visible from orbit
+category_statuses:
+  armed_conflict: [reported]
+  maritime_security: [reported]
+  infrastructure: [reported]
+  disaster: [reported]
 
 stac_url: https://earth-search.aws.element84.com/v1
 # Landsat (landsat-c2-l2) is searchable, but Earth Search serves its assets from a

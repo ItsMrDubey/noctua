@@ -219,10 +219,13 @@ class ImageryJob:
         """Eligible, not-yet-processed (or due for retry) events, newest first, capped."""
         now = now or utcnow()
         cfg = self.cfg
+        extra = sorted({s for ss in cfg.category_statuses.values() for s in ss} - set(cfg.statuses))
         events = self.event_store.list_events(
-            since=now - timedelta(days=cfg.event_age_days), status=",".join(cfg.statuses),
+            since=now - timedelta(days=cfg.event_age_days), status=",".join([*cfg.statuses, *extra]),
             min_confidence=cfg.min_confidence or None, limit=1000)
         events = [e for e in events if e.get("precision") in cfg.precisions
+                  and (e.get("status") in cfg.statuses
+                       or e.get("status") in cfg.category_statuses.get(e.get("category") or "", []))
                   and e.get("lat") is not None and e.get("lon") is not None
                   and e.get("t_start") and EVENT_ID_RE.match(e["id"])]
         state = self.store.assets_for([e["id"] for e in events])

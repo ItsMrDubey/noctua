@@ -310,3 +310,14 @@ def test_api_path_safety(tmp_path):
     for name in ("..%2Fbefore.png", "before.gif", "before.png.exe", "%2e%2e%2fsecret.png",
                  "other.png"):
         assert client.get(f"/api/imagery/{EID}/{name}").status_code == 404
+
+
+def test_selection_admits_category_gated_statuses(tmp_path):
+    evs = [event("EVMS"), event("EVREP", status="reported", category="armed_conflict"),
+           event("EVPOL", status="reported", category="political")]
+    fake = FakeEvents(evs)
+    job = ImageryJob(fake, ImageryStore(tmp_path / "imagery.sqlite"),
+                     cfg(category_statuses={"armed_conflict": ["reported"]}), tmp_path,
+                     client_factory=lambda: httpx.Client())
+    assert [e["id"] for e in job.select(NOW)] == ["EVMS", "EVREP"]
+    assert fake.calls[0]["status"] == "multi-source,sensor-corroborated,official,reported"

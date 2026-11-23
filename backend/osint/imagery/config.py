@@ -16,6 +16,9 @@ class ImageryConfig:
     statuses: list[str] = field(
         default_factory=lambda: ["multi-source", "sensor-corroborated", "official"])
     precisions: list[str] = field(default_factory=lambda: ["city", "point"])
+    # statuses that qualify only in these categories (e.g. single-source "reported" events,
+    # where imagery is only worth fetching for something visible from orbit)
+    category_statuses: dict[str, list[str]] = field(default_factory=dict)
     stac_url: str = "https://earth-search.aws.element84.com/v1"
     collections: list[str] = field(default_factory=lambda: ["sentinel-2-l2a"])
     max_cloud_pct: float = 30.0
