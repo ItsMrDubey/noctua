@@ -29,11 +29,40 @@ def parse_ts(raw: str) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
-def needs_work(rows: list[dict], now: datetime, max_attempts: int) -> bool:
-    """True when the event was never processed, or an 'after' wait / failure is due a retry."""
+def target_point(event: dict, impact: dict | None = None) -> tuple[float, float, str]:
+    """Where to centre the crop: the resolved impact site, else the centroid of a FIRMS
+    hotspot hull (the burning facility, often km away from a city-level event location),
+    else the event location. Returns (lat, lon, basis)."""
+    best = (impact or {}).get("best") or {}
+    if best.get("lat") is not None and best.get("lon") is not None:
+        return float(best["lat"]), float(best["lon"]), "impact_site"
+    for area in (impact or {}).get("areas") or []:
+        geom = area.get("geometry") or {}
+        if area.get("kind") == "firms_hull" and geom.get("type") == "Polygon":
+            ring = (geom.get("coordinates") or [[]])[0]
+            pts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+            if pts:
+                return (sum(p[1] for p in pts) / len(pts), sum(p[0] for p in pts) / len(pts),
+                        "firms_hull")
+    return float(event["lat"]), float(event["lon"]), "event"
+
+
+def covers(bounds: dict | None, lat: float, lon: float) -> bool:
+    """True when a crop's bounds contain the point (previews / no bounds: assume yes)."""
+    if not bounds or bounds.get("kind") != "crop" or bounds.get("west") is None:
+        return True
+    return bounds["south"] <= lat <= bounds["north"] and bounds["west"] <= lon <= bounds["east"]
+
+
+def needs_work(rows: list[dict], now: datetime, max_attempts: int,
+               target: tuple[float, float] | None = None) -> bool:
+    """True when the event was never processed, an 'after' wait / failure is due a retry,
+    or a stored crop does not cover ``target`` (the event was re-located since)."""
     if not rows:
         return True
     for r in rows:
+        if target and r["status"] == "ok" and not covers(r.get("bounds"), *target):
+            return True
         due = not r.get("next_try_at") or parse_ts(r["next_try_at"]) <= now
         if r["status"] == "awaiting_after" and due:
             return True
@@ -55,7 +84,7 @@ class ImageryProcessor:
         self.cfg, self.store, self.data_dir = cfg, store, data_dir
 
     def _save(self, event_id: str, role: str, scene: Scene, now: datetime, attempts: int,
-              *, client: httpx.Client, lat: float, lon: float) -> None:
+              *, client: httpx.Client, lat: float, lon: float, basis: str = "event") -> None:
         cfg = self.cfg
         rel_dir = Path("imagery") / event_id
         (self.data_dir / rel_dir).mkdir(parents=True, exist_ok=True)
@@ -64,7 +93,7 @@ class ImageryProcessor:
             crop = crop_scene(client, scene, lat, lon, cfg.window_km / 2)
             rel = rel_dir / f"{role}.png"
             (self.data_dir / rel).write_bytes(png.encode_rgb(crop.width, crop.height, crop.rgb))
-            bounds = crop.bounds
+            bounds = {**crop.bounds, "target": {"lat": lat, "lon": lon, "basis": basis}}
         except (Unsupported, NoData, httpx.HTTPError, ValueError, OSError, KeyError) as exc:
             err = f"full-res crop failed ({type(exc).__name__}: {exc}); preview fallback"
             try:
@@ -99,16 +128,37 @@ class ImageryProcessor:
         except (OSError, ValueError):
             log.warning("change score failed for %s", event_id, exc_info=True)
 
-    def process(self, event: dict, client: httpx.Client, now: datetime | None = None) -> None:
+    def _latest_pass(self, client: httpx.Client, lat: float, lon: float, t0: datetime,
+                     now: datetime) -> Scene | None:
+        """The most recent post-event scene at any cloud cover (why 'after' is waiting)."""
+        latest: Scene | None = None
+        try:
+            for coll in self.cfg.collections:
+                for s in search_scenes(client, self.cfg.stac_url, coll, lat, lon, t0, now,
+                                       100.0, limit=10):
+                    if s.acquired_at >= t0 and (latest is None
+                                                or s.acquired_at > latest.acquired_at):
+                        latest = s
+        except httpx.HTTPError:
+            return None
+        return latest
+
+    def process(self, event: dict, client: httpx.Client, now: datetime | None = None,
+                impact: dict | None = None) -> None:
         now = now or utcnow()
         cfg, eid = self.cfg, event["id"]
-        lat, lon = float(event["lat"]), float(event["lon"])
+        lat, lon, basis = target_point(event, impact if impact is not None
+                                       else event.get("_impact"))
         t0 = parse_ts(event["t_start"])
         rows = {r["role"]: r for r in self.store.get_assets(eid)}
+        # a crop that misses the (re-located) target is redone, before and after alike
+        moved = any(r.get("status") == "ok" and not covers(r.get("bounds"), lat, lon)
+                    for r in rows.values())
         todo = [role for role in ("before", "after")
-                if rows.get(role, {}).get("status") not in ("ok", "no_scene")
-                and not (rows.get(role, {}).get("status") == "failed"
-                         and rows[role]["attempts"] >= cfg.max_attempts)]
+                if (moved and rows.get(role, {}).get("status") == "ok")
+                or (rows.get(role, {}).get("status") not in ("ok", "no_scene")
+                    and not (rows.get(role, {}).get("status") == "failed"
+                             and rows[role]["attempts"] >= cfg.max_attempts))]
         if not todo:
             return
         retry = now + timedelta(hours=cfg.retry_after_h)
@@ -135,13 +185,23 @@ class ImageryProcessor:
             prev = rows.get(role, {}).get("attempts", 0)
             if scene is None:
                 if role == "after":
-                    self.store.upsert(eid, role, status="awaiting_after", now=now,
-                                      attempts=prev, next_try_at=retry)
+                    last = self._latest_pass(client, lat, lon, t0, now)
+                    self.store.upsert(
+                        eid, role, status="awaiting_after", now=now, attempts=prev,
+                        next_try_at=retry,
+                        collection=last.collection if last else None,
+                        scene_id=last.id if last else None,
+                        acquired_at=last.acquired_at if last else None,
+                        cloud_pct=last.cloud_pct if last else None,
+                        error=(f"latest pass {last.acquired_at:%Y-%m-%d} cloud "
+                               f"{last.cloud_pct:.0f}% > {cfg.max_cloud_pct:.0f}% limit"
+                               if last else "no post-event pass yet"))
                 else:
                     self.store.upsert(eid, role, status="no_scene", now=now,
                                       error="no cloud-free scene in lookback window")
                 continue
-            self._save(eid, role, scene, now, prev, client=client, lat=lat, lon=lon)
+            self._save(eid, role, scene, now, prev, client=client, lat=lat, lon=lon,
+                       basis=basis)
         self._score(eid)
 
 
@@ -166,7 +226,14 @@ class ImageryJob:
                   and e.get("lat") is not None and e.get("lon") is not None
                   and e.get("t_start") and EVENT_ID_RE.match(e["id"])]
         state = self.store.assets_for([e["id"] for e in events])
-        due = [e for e in events if needs_work(state.get(e["id"], []), now, cfg.max_attempts)]
+        impacts_of = getattr(self.event_store, "impacts", None)
+        impacts = impacts_of([e["id"] for e in events]) if impacts_of else {}
+        due = []
+        for e in events:
+            e["_impact"] = impacts.get(e["id"])
+            lat, lon, _ = target_point(e, e["_impact"])
+            if needs_work(state.get(e["id"], []), now, cfg.max_attempts, (lat, lon)):
+                due.append(e)
         return due[:cfg.max_per_run]
 
     async def run_once(self) -> list[str]:

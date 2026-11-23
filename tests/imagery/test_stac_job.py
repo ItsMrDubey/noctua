@@ -281,13 +281,14 @@ def test_api_assets_files_and_attribution(tmp_path):
                  path=f"imagery/{EID}/after.jpg", bounds={"kind": "preview"})
     j = client.get(f"/api/imagery/{EID}").json()
     by = {a["role"]: a for a in j["assets"]}
-    assert by["before"]["url"] == f"/api/imagery/{EID}/before.png"
-    assert by["after"]["url"] == f"/api/imagery/{EID}/after.jpg"
+    # ?v= (the row's update time) busts a cached copy when a crop is redone
+    assert by["before"]["url"] == f"/api/imagery/{EID}/before.png?v=20261121120000"
+    assert by["after"]["url"] == f"/api/imagery/{EID}/after.jpg?v=20261121120000"
     assert by["before"]["attribution"] == "Contains modified Copernicus Sentinel data 2026"
     assert by["after"]["attribution"] == "Landsat imagery courtesy of USGS"
     assert by["before"]["change_score"] == 0.1 and by["before"]["cloud_pct"] == 2.0
     assert len(j["attributions"]) == 2
-    r = client.get(f"/api/imagery/{EID}/before.png")
+    r = client.get(by["before"]["url"])
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     assert client.get(f"/api/imagery/{EID}/after.jpg").headers["content-type"] == "image/jpeg"
     assert client.get(f"/api/imagery/{EID}/before.jpg").status_code == 404  # wrong extension
