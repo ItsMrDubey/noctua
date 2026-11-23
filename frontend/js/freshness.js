@@ -4,6 +4,7 @@
 // the store, the UI's last fetch, and the newest item's own timestamp (e.g. satellite
 // latency for fires).
 import { $ } from "/static/js/ui.js";
+import { fmtTime, tzLabel, utcTitle } from "/static/js/timefmt.js";
 
 // seconds after which the age turns amber / red (collector interval + store flush + slack)
 const LIMITS = {
@@ -61,7 +62,8 @@ export class Freshness {
   }
   tip(k, now) {
     const L = (this.status && this.status.layers && this.status.layers[k]) || {};
-    const ago = (t) => (t ? fmtAge((now - t) / 1000) + " ago" : "–");
+    // relative age + the clock time in the display zone (timefmt.js) + the exact UTC instant
+    const ago = (t) => (t ? fmtAge((now - t) / 1000) + " ago · " + fmtTime(t, { seconds: true }) + " " + tzLabel(t).split(" ")[0] + " (" + utcTitle(t) + ")" : "–");
     const lines = [];
     if (k === "events") lines.push("newest event update: " + ago(this.newest.events));
     else {

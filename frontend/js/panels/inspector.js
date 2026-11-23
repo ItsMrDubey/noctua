@@ -1,6 +1,7 @@
 // Context inspector: object dossier (glyph + threat colour header, tags, profile sparklines,
 // key/value telemetry, provenance) and actions (Fly to, Follow, Trail, Pin).
-import { $, esc, nf, ago, kv } from "/static/js/ui.js";
+import { $, esc, nf, agoHtml, kv } from "/static/js/ui.js";
+import { fmtTime, tzLabel, utcTitle } from "/static/js/timefmt.js";
 import { uiGlyph, threatColor, aircraftRole, ROLE_LABEL, shipClass, SHIP_LABEL } from "/static/js/symbology.js";
 import { EventDossier } from "/static/js/panels/event-dossier.js";
 
@@ -81,20 +82,20 @@ export class Inspector {
     if (pts.length > 1) {
       prof = (air ? spark("ALT", pts.map((p) => p.alt_ft), (v) => nf(v) + " ft") : "") + spark("SPEED", pts.map((p) => p.speed_kts), (v) => nf(v) + " kt");
       const t0 = tsMs(pts[0].ts);
-      prof = '<section class="dz-sec"><h3>Profile<small>' + pts.length + " fixes · since " + (isNaN(t0) ? "–" : new Date(t0).toISOString().slice(11, 16) + " UTC") + "</small></h3>" + (prof || '<div class="dz-empty">No altitude / speed samples</div>') + "</section>";
+      prof = '<section class="dz-sec"><h3>Profile<small>' + pts.length + " fixes · since " + (isNaN(t0) ? "–" : '<span title="' + esc(utcTitle(t0)) + '">' + fmtTime(t0) + " " + esc(tzLabel(t0).split(" ")[0]) + "</span>") + "</small></h3>" + (prof || '<div class="dz-empty">No altitude / speed samples</div>') + "</section>";
     } else prof = '<section class="dz-sec"><h3>Profile</h3><div class="dz-empty">Loading trail…</div></section>';
     const tele = air
       ? [["Altitude", it.alt_ft == null ? "–" : nf(it.alt_ft) + " ft · " + nf(it.alt_ft * 0.3048) + " m"], ["Speed", it.speed_kts == null ? "–" : nf(it.speed_kts) + " kt"],
-        ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"], ["Squawk", esc(ex.squawk)], ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Last fix", ago(it.ts)]]
+        ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"], ["Squawk", esc(ex.squawk)], ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Last fix", agoHtml(it.ts)]]
       : [["Speed", it.speed_kts == null ? "–" : nf(it.speed_kts, 1) + " kt"], ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"],
-        ["Destination", esc(ex.destination)], ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Last fix", ago(it.ts)]];
+        ["Destination", esc(ex.destination)], ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Last fix", agoHtml(it.ts)]];
     const ident = air
       ? [["Callsign", esc(it.name)], ["ICAO hex", esc(tr.ident || String(it.id).replace(/^air:/, ""))], ["Registration", esc(it.reg || tr.reg)], ["Type", esc(it.type_code)],
         ["Model", esc(ex.desc)], ["Operator", esc(it.operator)], ["Category", esc(it.category)], ["Role", esc(ex.role)], ...extras(ex, ["squawk", "desc", "role"])]
       : [["Name", esc(it.name)], ["MMSI / ID", esc(it.id)], ["IMO", esc(ex.imo)], ["Callsign", esc(ex.callsign)], ["Type", esc(it.type_code)], ["Operator", esc(it.operator)],
         ["Category", esc(it.category)], ...extras(ex, ["destination", "imo", "callsign"])];
     const pos = detail && detail.position;
-    const prov = [pos && pos.source ? ["Feed", pos.source] : null, tr.first_seen ? ["First seen", ago(tr.first_seen)] : null, tr.last_seen ? ["Track updated", ago(tr.last_seen)] : null,
+    const prov = [pos && pos.source ? ["Feed", pos.source] : null, tr.first_seen ? ["First seen", agoHtml(tr.first_seen)] : null, tr.last_seen ? ["Track updated", agoHtml(tr.last_seen)] : null,
       ["Record", detail ? "Full record · /api/track" : "List item (full record unavailable)"]].filter(Boolean);
     const html = this._head(kind, it, eyebrow, it.name || it.id, sub) + '<div class="dz-tags">' + tags + "</div>" + (this.trackExtra ? this.trackExtra(kind, it) : "") + prof +
       '<section class="dz-sec"><h3>Telemetry</h3>' + kv(tele) + '</section><section class="dz-sec"><h3>Identity</h3>' + kv(ident) + "</section>" +
@@ -123,12 +124,12 @@ export class Inspector {
     if (kind === "fires") {
       html = this._head(kind, it, "Thermal anomaly · VIIRS / MODIS", "Fire detection", nf(it.frp, 1) + " MW radiative power") + '<section class="dz-sec"><h3>Detection</h3>' +
         kv([["FRP", it.frp == null ? "–" : nf(it.frp, 1) + " MW"], ["Confidence", esc(it.confidence)], ["Satellite", esc(it.satellite)], ["Day / night", it.daynight === "D" ? "Day" : it.daynight === "N" ? "Night" : esc(it.daynight)],
-          ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Detected", ago(it.ts)], ["ID", esc(it.id)]]) + '</section><section class="dz-sec"><h3>Provenance</h3><div class="prov"><div><i></i>NASA FIRMS</div></div></section>';
+          ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Detected", agoHtml(it.ts)], ["ID", esc(it.id)]]) + '</section><section class="dz-sec"><h3>Provenance</h3><div class="prov"><div><i></i>NASA FIRMS</div></div></section>';
     } else {
       const url = /^https?:\/\//.test(it.url || "") ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener">USGS event page</a>' : "";
       html = this._head(kind, it, "Seismic event" + (it.mag >= 5 ? " · Significant" : ""), "M " + nf(it.mag, 1) + " " + (it.place || "Earthquake"), (it.event_type || "earthquake") + " · depth " + nf(it.depth_km, 1) + " km") +
         '<section class="dz-sec"><h3>Event</h3>' + kv([["Magnitude", nf(it.mag, 1)], ["Place", esc(it.place)], ["Depth", it.depth_km == null ? "–" : nf(it.depth_km, 1) + " km"], ["Type", esc(it.event_type)],
-          ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Time", ago(it.ts)], ["ID", esc(it.id)]]) + '</section><section class="dz-sec"><h3>Provenance</h3><div class="prov"><div><i></i>USGS ' + (url || "") + "</div></div></section>";
+          ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Time", agoHtml(it.ts)], ["ID", esc(it.id)]]) + '</section><section class="dz-sec"><h3>Provenance</h3><div class="prov"><div><i></i>USGS ' + (url || "") + "</div></div></section>";
     }
     this._show(html, threatColor(kind, it));
   }

@@ -4,6 +4,7 @@
 // while an animated sub-layer is visible and the page is visible (requestRenderMode stays on).
 import { fetchJson } from "/static/js/api.js";
 import { esc } from "/static/js/ui.js";
+import { timeHtml } from "/static/js/timefmt.js";
 
 const C = Cesium;
 const FONT = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
@@ -194,7 +195,7 @@ const apName = (a) => (a ? a.icao || a.iata || a.ident || a.name : "unknown");
 export function surgeText(s) { return s.ratio != null ? Number(s.ratio).toFixed(1) + "× baseline" : "z " + Number(s.z).toFixed(1); }
 
 const kv = (rows) => '<div class="kv">' + rows.filter((r) => r[1] != null && r[1] !== "").map((r) => "<span>" + esc(r[0]) + "</span><div>" + r[1] + "</div>").join("") + "</div>";
-const t16 = (s) => esc(String(s || "").replace("T", " ").slice(0, 16)) + (s ? " UTC" : "");
+const t16 = (s) => (s ? timeHtml(s, { zone: true }) : "");
 const apFull = (a, how) => (a ? esc((a.icao || a.ident) + " · " + (a.name || "")) + (how && how !== "ground" ? " <small>(" + esc(how) + ")</small>" : "") : "<small>unknown</small>");
 
 export const MOV_KINDS = { corridor: "Corridor", leg: "Flight leg", surge: "Activity surge", naval: "Naval unit" };

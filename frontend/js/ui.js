@@ -1,4 +1,5 @@
 // DOM helpers: formatting, key/value grids, details content.
+import { fmtDateTime, utcTitle, toMs } from "/static/js/timefmt.js";
 export const $ = (id) => document.getElementById(id);
 const ENT = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ENT[c]);
@@ -15,13 +16,20 @@ export const TR_TAG = '<span class="tr-pend" title="English translation pending;
 // true when the record carries a translation that differs from its source-language text
 export const hasOriginal = (it) => !!(it && ((it.title_en && it.title && it.title_en !== it.title) || (it.summary_en && it.summary && it.summary_en !== it.summary)));
 
+// "3 min ago (2026-11-23 14:03:22 IST)": relative age + the absolute time in the display zone
+// (timefmt.js). Plain text; use agoHtml() where HTML is allowed so the exact UTC instant shows on hover.
 export function ago(ts) {
   if (ts == null) return "–";
-  const t = typeof ts === "number" ? (ts < 1e11 ? ts * 1000 : ts) : Date.parse(ts);
+  const t = toMs(ts);
   if (isNaN(t)) return esc(ts);
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
   const rel = s < 60 ? s + " s ago" : s < 3600 ? Math.floor(s / 60) + " min ago" : s < 86400 ? Math.floor(s / 3600) + " h ago" : Math.floor(s / 86400) + " d ago";
-  return rel + " (" + new Date(t).toISOString().replace("T", " ").slice(0, 19) + " UTC)";
+  return rel + " (" + fmtDateTime(t, { seconds: true, zone: true }) + ")";
+}
+export function agoHtml(ts) {
+  const t = toMs(ts);
+  if (ts == null || isNaN(t)) return ago(ts);
+  return '<span class="ts" title="' + esc(utcTitle(t)) + '">' + esc(ago(t)) + "</span>";
 }
 
 export const kv = (rows) => '<div class="kv">' + rows.filter((r) => r[1] != null && r[1] !== "").map((r) => "<span>" + esc(r[0]) + "</span><div>" + r[1] + "</div>").join("") + "</div>";
@@ -38,18 +46,18 @@ export function detailsHtml(kind, it) {
       ["Operator", esc(it.operator)], ["Category", esc(it.category)], ["Flags", esc(flags)],
       ["Altitude", it.alt_ft == null ? "–" : nf(it.alt_ft) + " ft (" + nf(it.alt_ft * 0.3048) + " m)"],
       ["Speed", unit(it.speed_kts, "kts")], ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"],
-      ["Squawk", esc(ex.squawk)], ["Position", coords(it)], ["Last seen", ago(it.ts)], ["Source", esc(it.source)], ...extras(ex, ["squawk", "desc"])])];
+      ["Squawk", esc(ex.squawk)], ["Position", coords(it)], ["Last seen", agoHtml(it.ts)], ["Source", esc(it.source)], ...extras(ex, ["squawk", "desc"])])];
   }
   if (kind === "ships") {
     return [it.name || it.id, kv([["Name", esc(it.name)], ["ID / MMSI", esc(it.id)], ["Type", esc(it.type_code)], ["Operator", esc(it.operator)], ["Category", esc(it.category)],
       ["Military", it.is_mil ? "Yes" : "No"], ["Speed", unit(it.speed_kts, "kts", 1)], ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"],
-      ["Position", coords(it)], ["Last seen", ago(it.ts)], ["Source", esc(it.source)], ...extras(ex, [])])];
+      ["Position", coords(it)], ["Last seen", agoHtml(it.ts)], ["Source", esc(it.source)], ...extras(ex, [])])];
   }
   if (kind === "fires") {
     return ["Fire detection", kv([["ID", esc(it.id)], ["FRP", unit(it.frp, "MW", 1)], ["Confidence", esc(it.confidence)], ["Satellite", esc(it.satellite)],
-      ["Day / night", it.daynight === "D" ? "Day" : it.daynight === "N" ? "Night" : esc(it.daynight)], ["Position", coords(it)], ["Detected", ago(it.ts)]])];
+      ["Day / night", it.daynight === "D" ? "Day" : it.daynight === "N" ? "Night" : esc(it.daynight)], ["Position", coords(it)], ["Detected", agoHtml(it.ts)]])];
   }
   const url = /^https?:\/\//.test(it.url || "") ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener">USGS event page</a>' : "";
   return ["M " + nf(it.mag, 1) + " · " + (it.place || "Earthquake"), kv([["Magnitude", nf(it.mag, 1)], ["Place", esc(it.place)], ["Depth", unit(it.depth_km, "km", 1)],
-    ["Type", esc(it.event_type)], ["Position", coords(it)], ["Time", ago(it.ts)], ["Link", url], ["ID", esc(it.id)]])];
+    ["Type", esc(it.event_type)], ["Position", coords(it)], ["Time", agoHtml(it.ts)], ["Link", url], ["ID", esc(it.id)]])];
 }

@@ -10,7 +10,8 @@
 // own scroll container left them unrequested until scrolled into view, showing only the alt
 // text) into fixed-aspect boxes, so nothing shifts while they decode.
 import { esc, nf } from "/static/js/ui.js";
-import { fmtUtc, since } from "/static/js/panels/dossier-kit.js";
+import { since } from "/static/js/panels/dossier-kit.js";
+import { fmtDate, fmtDateTime } from "/static/js/timefmt.js";
 
 const BASIS = { impact_site: "impact site", firms_hull: "FIRMS hotspot hull", event: "event location" };
 const ROLE = { before: "Before", after: "After" };
@@ -38,7 +39,7 @@ function overlays(a, ev, points) {
   }
   return h;
 }
-const caption = (a) => [ROLE[a.role], fmtUtc(a.acquired_at).slice(0, 16), a.cloud_pct != null ? "cloud " + nf(a.cloud_pct, a.cloud_pct < 1 ? 1 : 0) + "%" : "",
+const caption = (a) => [ROLE[a.role], fmtDateTime(a.acquired_at), a.cloud_pct != null ? "cloud " + nf(a.cloud_pct, a.cloud_pct < 1 ? 1 : 0) + "%" : "",
   a.collection, a.kind === "preview" ? "preview (low-res)" : a.bounds && a.bounds.gsd ? a.bounds.gsd + " m/px" : ""].filter(Boolean).join(" · ");
 const ratio = (a) => (a && a.bounds && a.bounds.px ? a.bounds.px[0] + " / " + a.bounds.px[1] : "1 / 1");
 
@@ -47,15 +48,15 @@ function statusCard(role, a, watch) {
   if (!a) return '<div class="im-st"><b>' + ROLE[role] + "</b><span>No imagery job for this event yet (eligible events are processed every few minutes)</span></div>";
   if (a.status === "awaiting_after") {
     const lines = [];
-    lines.push(a.acquired_at ? "Latest pass " + fmtUtc(a.acquired_at).slice(0, 10) + " · cloud " + nf(a.cloud_pct) + "% > " + nf(w.max_cloud_pct) + "% limit" : "No post-event pass yet");
-    if (w.next_pass_est) lines.push('Next Sentinel-2 pass ≈ <b title="' + esc(w.next_pass_basis || "") + '">' + esc(fmtUtc(w.next_pass_est).slice(0, 10)) + "</b> (est.)");
-    if (a.next_try_at) lines.push("Next check " + esc(fmtUtc(a.next_try_at)) + (a.checked_at ? " · last " + esc(since(a.checked_at)) + " ago" : ""));
-    if (w.watch_until) lines.push("Watch ends " + esc(fmtUtc(w.watch_until).slice(0, 10)));
+    lines.push(a.acquired_at ? "Latest pass " + fmtDate(a.acquired_at) + " · cloud " + nf(a.cloud_pct) + "% > " + nf(w.max_cloud_pct) + "% limit" : "No post-event pass yet");
+    if (w.next_pass_est) lines.push('Next Sentinel-2 pass ≈ <b title="' + esc(w.next_pass_basis || "") + '">' + esc(fmtDate(w.next_pass_est)) + "</b> (est.)");
+    if (a.next_try_at) lines.push("Next check " + esc(fmtDateTime(a.next_try_at, { zone: true })) + (a.checked_at ? " · last " + esc(since(a.checked_at)) + " ago" : ""));
+    if (w.watch_until) lines.push("Watch ends " + esc(fmtDate(w.watch_until)));
     return '<div class="im-st wait"><b>' + ROLE[role] + " · awaiting clear pass</b>" + lines.map((l) => "<span>" + l + "</span>").join("") + "</div>";
   }
   if (a.status === "no_scene") return '<div class="im-st"><b>' + ROLE[role] + " · none</b><span>" + esc(a.error || "No cloud-free scene in the lookback window") + "</span></div>";
   if (a.status === "failed") return '<div class="im-st bad"><b>' + ROLE[role] + " · failed (" + nf(a.attempts) + " attempts)</b><span>" + esc(a.error || "") + "</span>" +
-    (a.next_try_at ? "<span>Retry " + esc(fmtUtc(a.next_try_at)) + "</span>" : "") + "</div>";
+    (a.next_try_at ? "<span>Retry " + esc(fmtDateTime(a.next_try_at, { zone: true })) + "</span>" : "") + "</div>";
   return '<div class="im-st"><b>' + ROLE[role] + "</b><span>" + esc(a.status) + "</span></div>";
 }
 
@@ -71,7 +72,7 @@ export function imageryHtml(j, ev, points) {
     const b = by.before, a = by.after;
     h = '<div class="im-frame im-cmp" tabindex="0" role="slider" aria-label="Before / after divider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" style="aspect-ratio:' + ratio(b) + ';--pos:50%">' +
       '<img class="im-a" decoding="async" alt="" src="' + esc(a.url) + '"><div class="im-b"><img decoding="async" alt="" src="' + esc(b.url) + '"></div>' + overlays(b, ev, points) +
-      '<div class="im-div"><i></i></div><span class="im-lab l">BEFORE ' + esc(fmtUtc(b.acquired_at).slice(0, 10)) + '</span><span class="im-lab r">AFTER ' + esc(fmtUtc(a.acquired_at).slice(0, 10)) + "</span>" +
+      '<div class="im-div"><i></i></div><span class="im-lab l">BEFORE ' + esc(fmtDate(b.acquired_at)) + '</span><span class="im-lab r">AFTER ' + esc(fmtDate(a.acquired_at)) + "</span>" +
       '<button type="button" class="im-zoom" title="Enlarge">⤢</button></div>' +
       '<div class="im-cap">' + esc(caption(b)) + "</div><div class=\"im-cap\">" + esc(caption(a)) + (a.change_score != null ? " · change " + nf(a.change_score * 100, 1) + "%" : "") + "</div>";
   } else {
@@ -79,7 +80,7 @@ export function imageryHtml(j, ev, points) {
     if (have) {
       const a = by[have];
       h = '<div class="im-frame" style="aspect-ratio:' + ratio(a) + '"><img decoding="async" alt="" src="' + esc(a.url) + '">' + overlays(a, ev, points) +
-        '<span class="im-lab l">' + ROLE[have].toUpperCase() + " " + esc(fmtUtc(a.acquired_at).slice(0, 10)) + '</span><button type="button" class="im-zoom" title="Enlarge">⤢</button></div>' +
+        '<span class="im-lab l">' + ROLE[have].toUpperCase() + " " + esc(fmtDate(a.acquired_at)) + '</span><button type="button" class="im-zoom" title="Enlarge">⤢</button></div>' +
         '<div class="im-cap">' + esc(caption(a)) + "</div>";
     }
     h += statusCard(have === "after" ? "before" : "after", by[have === "after" ? "before" : "after"], j.watch);
