@@ -11,6 +11,8 @@ For each event that needs (re-)evaluation, the per-category rules in
 * ``ship``     ships in range (military ships and loitering count more)
 * ``ais_gap``  AIS dark gaps: consecutive positions of a ship > ``min_gap_h`` apart, the gap
                overlapping the event window and an end of the gap within range
+* ``hazard``   official hazard alerts (GDACS / NASA EONET / ReliefWeb ``hazard``
+               observations) of a matching type, scored by alert level x proximity x timing
 
 Candidate lookup never scans: the event point is turned into an H3 cell (res 5 when the
 radius fits in a small ``grid_disk``, else res 3) plus ``grid_disk(k)`` covering the radius;
@@ -56,7 +58,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = ROOT / "config" / "corroboration.yaml"
 _WORDS = re.compile(r"[^\W_]+")
-MANAGED_KINDS = frozenset({"fire", "quake", "aircraft", "ship", "ais_gap"})
+MANAGED_KINDS = frozenset({"fire", "quake", "aircraft", "ship", "ais_gap", "hazard"})
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -407,6 +409,8 @@ class Corroborator:
             rows += self._fires(by_kind["fire"])
         if by_kind.get("quake"):
             rows += self._quakes(by_kind["quake"])
+        if by_kind.get("hazard"):
+            rows += self._hazards(by_kind["hazard"])
         if by_kind.get("aircraft"):
             rows += self._aircraft(by_kind["aircraft"])
         sea = by_kind.get("ship", []) + by_kind.get("ais_gap", [])
@@ -491,6 +495,27 @@ class Corroborator:
                 "magnitude": mag, "event_type": etype, "depth_km": depth, "lat": lat,
                 "lon": lon, "ts": iso(ts), "place": attrs.get("place"),
                 "url": attrs.get("url")}))
+        return rows
+
+    def _hazards(self, reqs: list[_Req]) -> list[dict]:
+        alert_w = {str(k).casefold(): float(v) for k, v in
+                   (self.cfg.scoring.get("hazard_alert") or {}).items()}
+        rows = []
+        for req, d, oid, ts, lat, lon, value, attrs in self._observations(reqs, "hazard"):
+            hazard = str(attrs.get("hazard") or "other")
+            types = req.rule.params.get("hazards")
+            if types and hazard not in types:
+                continue
+            alert = str(attrs.get("alert_level") or "").casefold()
+            base = alert_w.get(alert or str(attrs.get("source") or ""), 0.6)
+            score = base * req.proximity(d) * req.timing(ts)
+            rows.append(self._row(req, "hazard", oid, f"{attrs.get('source')}_{alert or 'alert'}",
+                                  d, ts, score, {
+                                      "source": attrs.get("source"), "hazard": hazard,
+                                      "name": attrs.get("name"), "alert_level": alert or None,
+                                      "severity_text": attrs.get("severity_text"),
+                                      "value": value, "lat": lat, "lon": lon, "ts": iso(ts),
+                                      "url": attrs.get("url")}))
         return rows
 
     def _positions(self, idx: _CellIndex, kind: str, pad: timedelta) -> list[tuple]:

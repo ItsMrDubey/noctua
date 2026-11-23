@@ -249,6 +249,123 @@ def test_event_builder_does_not_load_sensor_events(env, tmp_path):
     assert len(store.list_events(limit=10)) == 1  # and the migration kept it
 
 
+# ---------------------------------------------------------------------- hazard
+
+
+def hazard(oid, source, hz, lat, lon, *, alert=None, hours_ago=2, value=None, **attrs):
+    ts = NOW - timedelta(hours=hours_ago)
+    return Observation(id=oid, type="hazard", ts=ts, lat=lat, lon=lon, source=source,
+                       value=value, version="1", attrs={
+                           "source": source, "hazard": hz, "alert_level": alert,
+                           "name": attrs.pop("name", f"{hz} {oid}"),
+                           "t_start": attrs.pop("t_start", (ts - timedelta(hours=6)).isoformat()),
+                           "t_end": ts.isoformat(), "precision": "point", **attrs})
+
+
+def hazard_events(store):
+    out = {}
+    for e in store.list_events(limit=100):
+        full = store.get_event(e["id"])
+        full["evidence"] = store.list_corroborations(e["id"])
+        out[full["title"]] = full
+    return out
+
+
+def test_hazard_events_grouped_across_sources_and_filtered(env):
+    lake, store, det, m = env
+    obs = [
+        hazard("hazard:gdacs:FL:1", "gdacs", "flood", -33.10, -71.67, alert="orange",
+               name="Flood in Chile", country="Chile", iso2=["CL"], iso3="CHL",
+               severity_text="Magnitude 0"),
+        hazard("hazard:eonet:EONET_9", "eonet", "flood", -33.5, -71.2, name="Floods Chile"),
+        # same type, far away: its own event
+        hazard("hazard:eonet:EONET_10", "eonet", "flood", 10.0, 10.0, name="Floods Nigeria"),
+        # below min_alert (earthquake: orange) and an excluded type: no events
+        hazard("hazard:gdacs:EQ:2", "gdacs", "earthquake", -13.5, 172.2, alert="green",
+               value=4.9),
+        hazard("hazard:eonet:EONET_11", "eonet", "sea_lake_ice", -57.0, -23.0),
+    ]
+    lake.write("observations", [observation_row(o) for o in obs])
+    assert det.run_once()["created"] == {"hazard": 2}
+    evs = hazard_events(store)
+    chile = evs["Flood in Chile"]
+    assert chile["category"] == "disaster" and chile["subcategory"] == "flood"
+    assert chile["status"] == "official" and chile["confidence"] == 0.9  # orange + 1 source
+    assert chile["place_name"] == "Chile" and chile["country"] == "CL"
+    assert (chile["lat"], chile["lon"]) == (-33.10, -71.67)
+    assert {r["ref_id"] for r in chile["evidence"]} == {"hazard:gdacs:FL:1",
+                                                        "hazard:eonet:EONET_9"}
+    assert "Orange alert" in chile["summary"] and "GDACS, NASA EONET" in chile["summary"]
+    assert evs["Floods Nigeria"]["confidence"] == 0.6
+    assert det.run_once()["created"] == {}  # idempotent
+    assert store.corroboration_stats()["sensor_derived"]["by_detector"] == {"hazard_flood": 2}
+    assert m.get("corroborations_total", kind="hazard") == 3
+
+
+def test_hazard_quake_deduped_against_usgs(env):
+    lake, store, det, _ = env
+    t0 = NOW - timedelta(hours=3)
+    usgs = Observation(id="quake:us7000xyz", type="quake", ts=t0, lat=-6.10, lon=130.20,
+                       source="usgs", value=6.4,
+                       attrs={"event_type": "earthquake", "place": "Banda Sea",
+                              "url": "https://earthquake.usgs.gov/x"})
+    gd = hazard("hazard:gdacs:EQ:7", "gdacs", "earthquake", -6.3, 130.4, alert="orange",
+                value=6.3, t_start=(t0 + timedelta(minutes=2)).isoformat(),
+                name="Earthquake in Banda Sea")
+    far = hazard("hazard:gdacs:EQ:8", "gdacs", "earthquake", 40.0, 20.0, alert="red",
+                 value=6.0, name="Earthquake in Albania")  # no USGS match
+    lake.write("observations", [observation_row(o) for o in (usgs, gd, far)])
+    assert det.run_once()["created"] == {"hazard": 2}
+    evs = hazard_events(store)
+    banda = evs["Earthquake in Banda Sea"]
+    assert (banda["lat"], banda["lon"]) == (-6.10, 130.20)  # placed on the USGS event
+    assert banda["place_name"] == "Banda Sea" and banda["confidence"] == 0.9
+    assert {(r["kind"], r["ref_id"]) for r in banda["evidence"]} == {
+        ("hazard", "hazard:gdacs:EQ:7"), ("quake", "quake:us7000xyz")}
+    assert store.get_sensor_event_by_key("hazard:quake:us7000xyz") is not None
+    assert evs["Earthquake in Albania"]["confidence"] == 0.95
+    # a later EONET record of the same quake joins the same event, not a new one
+    lake.write("observations", [observation_row(hazard(
+        "hazard:eonet:EONET_77", "eonet", "earthquake", -6.2, 130.3, value=6.4,
+        t_start=(t0 + timedelta(minutes=1)).isoformat(), name="M 6.4 Banda Sea"))])
+    assert det.run_once()["created"] == {}
+    assert len(hazard_events(store)) == 2
+
+
+def test_hazard_country_level_record_merges_by_country(env):
+    lake, store, det, _ = env
+    gd = hazard("hazard:gdacs:TC:5", "gdacs", "tropical_cyclone", 14.0, 125.0,
+                alert="red", name="Tropical Cyclone FUNG-26", iso3="PHL", iso3s=["PHL"])
+    rw = hazard("hazard:reliefweb:52371", "reliefweb", "tropical_cyclone", 11.75, 122.88,
+                name="Philippines: Typhoon Fung - Nov 2026", iso3="PHL", iso3s=["PHL"],
+                precision="country", country="Philippines")
+    other = hazard("hazard:reliefweb:52372", "reliefweb", "flood", 9.0, 8.0,
+                   name="Nigeria: Floods - Nov 2026", iso3="NGA", precision="country",
+                   country="Nigeria")
+    lake.write("observations", [observation_row(o) for o in (gd, rw, other)])
+    assert det.run_once()["created"] == {"hazard": 2}
+    evs = hazard_events(store)
+    tc = evs["Tropical Cyclone FUNG-26"]
+    assert len(tc["evidence"]) == 2 and tc["precision"] == "point"
+    assert evs["Nigeria: Floods - Nov 2026"]["precision"] == "country"
+
+
+def test_hazard_moving_storm_extends_its_event(env):
+    lake, store, det, _ = env
+    lake.write("observations", [observation_row(hazard(
+        "hazard:gdacs:TC:9", "gdacs", "tropical_cyclone", 15.0, 130.0, alert="green",
+        name="Tropical Cyclone A", hours_ago=10))])
+    assert det.run_once()["created"] == {"hazard": 1}
+    # the next advisory (new version) has moved ~250 km: same id -> same event
+    moved = hazard("hazard:gdacs:TC:9", "gdacs", "tropical_cyclone", 16.5, 128.0,
+                   alert="orange", name="Tropical Cyclone A", hours_ago=1)
+    lake.write("observations", [observation_row(moved)])
+    out = det.run_once()
+    assert out["created"] == {} and out["updated"] == {"hazard": 1}
+    ev = next(iter(hazard_events(store).values()))
+    assert ev["confidence"] == 0.85 and "Orange alert" in ev["summary"]
+
+
 def test_wire_sets_runtime_attribute(tmp_path):
     from osint.config import Settings
     from osint.pipeline.sensor_events import wire

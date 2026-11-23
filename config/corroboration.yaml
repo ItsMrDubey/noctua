@@ -40,6 +40,8 @@ categories:
   disaster:
     - {kind: quake, radius_km: 300, before_h: 24, after_h: 6, weight: 1.0, min_mag: 4.0}
     - {kind: fire, radius_km: 50, before_h: 12, after_h: 24, weight: 0.8}
+    # GDACS / EONET / ReliefWeb alerts (hazard observations; ts = last upstream update)
+    - {kind: hazard, radius_km: 300, before_h: 72, after_h: 48, weight: 1.0}
 
 # evidence scoring constants (see osint.pipeline.corroborate for the formulas)
 scoring:
@@ -47,6 +49,8 @@ scoring:
   seismic_types: {explosion: 0.9, "chemical explosion": 0.9, "nuclear explosion": 1.0,
                   "mining explosion": 0.5, "quarry blast": 0.4}
   shallow_quake: 0.4
+  # hazard evidence: by GDACS alert level, else by source (EONET / ReliefWeb carry none)
+  hazard_alert: {red: 1.0, orange: 0.85, green: 0.6, eonet: 0.5, reliefweb: 0.7}
   aircraft: 0.25            # a military aircraft in range
   aircraft_high_priority: 0.45
   ship: 0.15
@@ -102,3 +106,28 @@ sensor_events:
     types: {explosion: 0.8, "chemical explosion": 0.8, "nuclear explosion": 1.0,
             "mining explosion": 0.4, "quarry blast": 0.3}
     category: infrastructure
+  # official natural-hazard alerts (GDACS / NASA EONET / ReliefWeb `hazard` observations,
+  # osint.core.hazards) -> `disaster` events with status `official`
+  hazard:
+    lookback_h: 48            # observation ts = last upstream update, clamped to 47 h ago
+    category: disaster
+    status: official
+    # weakest GDACS alert level that becomes an event (records without a level always do);
+    # green quakes stay on the USGS quake layer only
+    min_alert: {earthquake: orange, default: green}
+    exclude: [sea_lake_ice, water_color]
+    alert_confidence: {red: 0.95, orange: 0.85, green: 0.7}
+    source_confidence: {eonet: 0.6, reliefweb: 0.8}
+    multi_source_bonus: 0.05  # per extra source (and for a USGS match)
+    source_priority: [gdacs, eonet, reliefweb]
+    # records of one type from different sources within this distance and overlapping in
+    # time (+- group_slack_h) are one hazard; country-level records match on country / GLIDE
+    group_km: {tropical_cyclone: 600, flood: 300, drought: 1000, volcano: 50, wildfire: 60,
+               earthquake: 100, default: 150}
+    group_slack_h: 72
+    # a later record of the same type in the area (H3 res-3 cell + neighbours) whose time
+    # overlaps an existing event within this gap extends it (0 = never merge by area)
+    merge_gap_h: {earthquake: 0, tropical_cyclone: 72, flood: 72, wildfire: 48, volcano: 168,
+                  drought: 720, default: 48}
+    quake_match: {radius_km: 100, minutes: 15, max_mag_diff: 0.7}  # GDACS/EONET vs USGS
+    quake_lookback_h: 48

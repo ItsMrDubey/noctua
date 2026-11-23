@@ -25,9 +25,18 @@ Detectors (thresholds in ``config/corroboration.yaml`` -> ``sensor_events``):
   (so the silence is not simply missing receiver coverage).
 * ``seismic`` — USGS events typed explosion / chemical / nuclear / mining explosion / quarry
   blast; confidence per type.
+* ``hazard`` — official natural-hazard alerts (``hazard`` observations from GDACS, NASA
+  EONET, ReliefWeb; ``osint.core.hazards``) at or above ``min_alert`` for their type, status
+  ``official``, confidence from the GDACS alert level / per-source value. Reports of one
+  hazard from several sources (same type, within ``group_km`` and overlapping in time, or
+  sharing a GLIDE number / country for country-level records) become one event with every
+  source as evidence; a GDACS/EONET earthquake that matches a USGS quake (``quake_match``)
+  is keyed and placed on the USGS event and carries it as ``quake`` evidence (ShakeMap
+  areas via the impact job), so the same quake is never two events. Per-type detector names
+  ``hazard_<type>`` keep the area merge (``merge_gap_h``) within one hazard type.
 
-Every event gets category air_activity / maritime_security (seismic: configurable), status
-``sensor-corroborated`` by definition, ``confidence`` from the pattern strength, and its
+Every event gets category air_activity / maritime_security (seismic: configurable; hazard:
+disaster), status ``sensor-corroborated`` by definition (hazard: ``official``), ``confidence`` from the pattern strength, and its
 supporting tracks / observations as corroboration rows. De-duplication: an event is keyed
 ``<detector>:<res-3 cell>:<window>``; a detection in the same area (cell or neighbours) whose
 time overlaps an existing event of the detector within ``merge_gap_h`` extends that event
@@ -55,6 +64,7 @@ import yaml
 
 from osint.config import ROOT
 from osint.core.geo import haversine_km, utcnow
+from osint.core.hazards import ALERT_LEVELS, HAZARD_TYPES, parse_time
 from osint.core.metrics import Metrics
 from osint.enrich.mil_types import TRAINERS
 from osint.pipeline.cluster import CLUSTER_VERSION, new_ulid
@@ -68,13 +78,15 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = ROOT / "config" / "corroboration.yaml"
-DETECTORS = ("orbit", "concentration", "ais_gap", "seismic")
+DETECTORS = ("orbit", "concentration", "ais_gap", "seismic", "hazard")
 # bumped when a detector's rules change; on start, events written by an older version are
 # deleted (re-detected under the current rules if the pattern still holds).
 # concentration v2: baseline counts only buckets with collected positions, civil GA types
 # excluded (removes "Military aircraft concentration: 6/7 aircraft" false positives)
-DETECTOR_VERSIONS = {"orbit": 1, "concentration": 2, "ais_gap": 1, "seismic": 1}
+DETECTOR_VERSIONS = {"orbit": 1, "concentration": 2, "ais_gap": 1, "seismic": 1,
+                     **{f"hazard_{t}": 1 for t in HAZARD_TYPES}}
 _KTS_KMH = 1.852
+SOURCE_NAMES = {"gdacs": "GDACS", "eonet": "NASA EONET", "reliefweb": "ReliefWeb"}
 
 
 @dataclass
@@ -85,6 +97,7 @@ class SensorEventsConfig:
     concentration: dict[str, Any] = field(default_factory=dict)
     ais_gap: dict[str, Any] = field(default_factory=dict)
     seismic: dict[str, Any] = field(default_factory=dict)
+    hazard: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_file(cls, path: Path = DEFAULT_CONFIG) -> SensorEventsConfig:
@@ -126,6 +139,12 @@ def _long_axis_km(win: list[tuple]) -> float:
     return max((haversine_km(a[1], a[2], b[1], b[2]) for a in pts for b in pts), default=0.0)
 
 
+def _severity(text: object) -> str:
+    """Upstream severity text, without GDACS's placeholder for floods ("Magnitude 0")."""
+    t = " ".join(str(text or "").split())
+    return "" if re.fullmatch(r"(?i)magnitude 0(\.0+)?", t) else t
+
+
 def _cell3(lat: float, lon: float) -> str:
     return h3.latlng_to_cell(lat, lon, 3)
 
@@ -147,6 +166,11 @@ class Detection:
     details: dict = field(default_factory=dict)
     merge_gap_h: float = 1.0  # 0 = never merge with an earlier event
     key: str | None = None  # explicit dedupe key (default <detector>:<cell>:<window>)
+    subcategory: str | None = None  # default: the detector name
+    status: str = "sensor-corroborated"
+    precision: str = "point"
+    place_name: str | None = None  # default: the coordinates
+    country: str | None = None
 
 
 # ------------------------------------------------------------------ detectors
@@ -579,6 +603,170 @@ class SensorEventDetector:
                 key=f"seismic:{_cell3(lat, lon)}:{oid}"))
         return dets
 
+    # ------------------------------------------------------------- hazard
+
+    def _usgs_match(self, c: dict, h: dict, quakes: list[tuple]) -> tuple | None:
+        """The USGS quake (id, ts, lat, lon, mag, attrs) that is this hazard earthquake."""
+        q = c.get("quake_match") or {}
+        radius, minutes = _g(q, "radius_km", 100), _g(q, "minutes", 15)
+        max_dmag = _g(q, "max_mag_diff", 0.7)
+        best = None
+        for row in quakes:
+            d = haversine_km(h["lat"], h["lon"], row[2], row[3])
+            dt = abs((row[1] - h["t_start"]).total_seconds()) / 60
+            if d > radius or dt > minutes:
+                continue
+            if h["value"] is not None and row[4] is not None \
+                    and abs(h["value"] - row[4]) > max_dmag:
+                continue
+            score = d / radius + dt / minutes
+            if best is None or score < best[0]:
+                best = (score, row)
+        return best[1] if best else None
+
+    @staticmethod
+    def _same_hazard(c: dict, a: dict, b: dict) -> bool:
+        """Do two records of one hazard type (different sources) describe one hazard?"""
+        ga, gb = a["attrs"].get("glide"), b["attrs"].get("glide")
+        if ga and gb:
+            return ga == gb
+        if "country" in (a["precision"], b["precision"]):
+            if not a["iso3"] & b["iso3"]:
+                return False
+        else:
+            km = c.get("group_km") or {}
+            if haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]) > float(
+                    km.get(a["hazard"], km.get("default", 150))):
+                return False
+        slack = timedelta(hours=_g(c, "group_slack_h", 72))
+        return a["t_start"] - slack <= b["t_end"] and b["t_start"] - slack <= a["t_end"]
+
+    def _hazard_records(self, c: dict, since: datetime, now: datetime) -> list[dict]:
+        rows = self.lake.query(
+            "SELECT id, epoch_us(max(ts)), arg_max(lat, ts), arg_max(lon, ts), "
+            "arg_max(value, ts), arg_max(attrs, ts), arg_max(source, ts) FROM observations "
+            "WHERE type = 'hazard' AND ts >= ? GROUP BY id ORDER BY id", [since], start=since)
+        min_alert = {str(k): str(v).casefold() for k, v in (c.get("min_alert") or {}).items()}
+        alert_conf = {str(k).casefold(): float(v)
+                      for k, v in (c.get("alert_confidence") or {}).items()}
+        source_conf = {str(k): float(v) for k, v in (c.get("source_confidence") or {}).items()}
+        exclude = {str(x) for x in c.get("exclude") or ()}
+        out = []
+        for oid, us, lat, lon, value, attrs_s, source in rows:
+            try:
+                attrs = json.loads(attrs_s) if attrs_s else {}
+            except ValueError:
+                continue
+            hazard = str(attrs.get("hazard") or "other")
+            if hazard in exclude:
+                continue
+            alert = str(attrs.get("alert_level") or "").casefold()
+            need = min_alert.get(hazard, min_alert.get("default", "green"))
+            if alert in ALERT_LEVELS and need in ALERT_LEVELS \
+                    and ALERT_LEVELS.index(alert) < ALERT_LEVELS.index(need):
+                continue
+            ts = ts_from_us(us)
+            t_start = min(now, parse_time(attrs.get("t_start")) or ts)
+            t_end = min(now, max(t_start, parse_time(attrs.get("t_end")) or ts))
+            conf = alert_conf[alert] if alert in alert_conf else source_conf.get(
+                str(source), 0.6)
+            iso3 = {str(x).upper() for x in [attrs.get("iso3"), *(attrs.get("iso3s") or [])]
+                    if x}
+            out.append({"id": oid, "lat": lat, "lon": lon, "value": value, "attrs": attrs,
+                        "source": str(source), "hazard": hazard, "alert": alert or None,
+                        "conf": conf, "t_start": t_start, "t_end": t_end, "iso3": iso3,
+                        "precision": attrs.get("precision") or "point"})
+        return out
+
+    def _usgs_quakes(self, since: datetime) -> list[tuple]:
+        out = []
+        for qid, qus, qlat, qlon, qmag, qattrs in self.lake.query(
+                "SELECT id, epoch_us(max(ts)), arg_max(lat, ts), arg_max(lon, ts), "
+                "arg_max(value, ts), arg_max(attrs, ts) FROM observations "
+                "WHERE type = 'quake' AND ts >= ? GROUP BY id", [since], start=since):
+            try:
+                qa = json.loads(qattrs) if qattrs else {}
+            except ValueError:
+                qa = {}
+            out.append((qid, ts_from_us(qus), qlat, qlon, qmag, qa))
+        return out
+
+    def detect_hazard(self, now: datetime) -> list[Detection]:
+        c = self.cfg.hazard
+        since = now - timedelta(hours=_g(c, "lookback_h", 48))
+        records = self._hazard_records(c, since, now)
+        # one group per hazard: point records first, strongest first, at most one record
+        # per source (GDACS lists neighbouring wildfires separately; they stay separate)
+        rank = {s: i for i, s in enumerate(c.get("source_priority")
+                                           or ["gdacs", "eonet", "reliefweb"])}
+        records.sort(key=lambda r: (r["precision"] != "point", -r["conf"],
+                                    rank.get(r["source"], 99), r["id"]))
+        groups: list[list[dict]] = []
+        for r in records:
+            for g in groups:
+                if g[0]["hazard"] == r["hazard"] and r["source"] not in {
+                        x["source"] for x in g} and self._same_hazard(c, g[0], r):
+                    g.append(r)
+                    break
+            else:
+                groups.append([r])
+        quakes = self._usgs_quakes(since - timedelta(hours=_g(c, "quake_lookback_h", 48))) \
+            if any(g[0]["hazard"] == "earthquake" for g in groups) else []
+        merge = c.get("merge_gap_h") or {}
+        bonus = _g(c, "multi_source_bonus", 0.05)
+        dets = []
+        for g in groups:
+            head, a = g[0], g[0]["attrs"]
+            hazard = head["hazard"]
+            lat, lon, key = head["lat"], head["lon"], f"hazard:{head['id']}"
+            evidence = [{
+                "kind": "hazard", "ref_id": r["id"],
+                "rule": f"{r['source']}_{r['alert'] or 'alert'}",
+                "distance_km": round(haversine_km(lat, lon, r["lat"], r["lon"]), 2),
+                "dt_minutes": 0.0, "score": round(r["conf"], 4),
+                "details": {k: r["attrs"].get(k) for k in (
+                    "source", "hazard", "name", "alert_level", "severity_text", "url",
+                    "glide", "country", "t_start", "t_end", "updated_at", "precision")}
+                | {"value": r["value"]}} for r in g]
+            quake = self._usgs_match(c, head, quakes) if hazard == "earthquake" else None
+            precision = "point" if head["precision"] == "point" else "country"
+            if quake is not None:  # the USGS event is the canonical one (key and place)
+                lat, lon, key, precision = quake[2], quake[3], f"hazard:{quake[0]}", "point"
+                evidence.append({
+                    "kind": "quake", "ref_id": quake[0], "rule": "usgs_match",
+                    "distance_km": round(haversine_km(head["lat"], head["lon"], lat, lon), 2),
+                    "dt_minutes": round((quake[1] - head["t_start"]).total_seconds() / 60, 1),
+                    "score": 1.0,
+                    "details": {"magnitude": quake[4], "place": quake[5].get("place"),
+                                "depth_km": quake[5].get("depth_km"),
+                                "url": quake[5].get("url")}})
+            conf = min(0.97, max(r["conf"] for r in g) + bonus * (len(g) - 1)
+                       + (bonus if quake is not None else 0.0))
+            label = hazard.replace("_", " ")
+            name = " ".join(str(a.get("name") or "").split()) or label.capitalize()
+            sources = sorted({r["source"] for r in g}, key=lambda s: (rank.get(s, 99), s))
+            alert = next((r["alert"] for r in g if r["alert"]), None)
+            facts = [f"{alert.capitalize()} alert" if alert else "",
+                     _severity(a.get("severity_text")),
+                     f"USGS M{quake[4]:.1f} {quake[5].get('place') or ''}".strip()
+                     if quake is not None and quake[4] is not None else ""]
+            iso2 = a.get("iso2") or []
+            dets.append(Detection(
+                f"hazard_{hazard}", str(c.get("category") or "disaster"), lat, lon,
+                min(r["t_start"] for r in g), max(r["t_end"] for r in g), round(conf, 4),
+                name, "; ".join(f for f in [label.capitalize(), *facts] if f)
+                + f". Source: {', '.join(SOURCE_NAMES.get(s, s) for s in sources)}.",
+                evidence, {"hazard": hazard, "alert_level": alert, "sources": sources,
+                           "usgs_id": quake[0] if quake is not None else None,
+                           "url": a.get("url")},
+                merge_gap_h=float(merge.get(hazard, merge.get("default", 48))), key=key,
+                subcategory=hazard, status=str(c.get("status") or "official"),
+                precision=precision,
+                place_name=(quake[5].get("place") if quake is not None else None)
+                or a.get("country") or None,
+                country=iso2[0] if len(iso2) == 1 else None))
+        return dets
+
     # --------------------------------------------------------------- emit
 
     def emit(self, det: Detection, now: datetime) -> str | None:
@@ -614,15 +802,19 @@ class SensorEventDetector:
             {(r["kind"], r["ref_id"]) for r in self.store.list_corroborations(eid)}
             | {(e["kind"], e["ref_id"]) for e in det.evidence})
         row = {
-            "id": eid, "category": det.category, "subcategory": det.detector,
+            "id": eid, "category": det.category,
+            "subcategory": det.subcategory or det.detector,
             "cameo_root": None, "title": det.title if old is None else old["title"],
             "summary": det.summary, "actors": [], "lat": det.lat if old is None else old["lat"],
-            "lon": det.lon if old is None else old["lon"], "precision": "point",
-            "place_name": f"{abs(det.lat):.2f}{'N' if det.lat >= 0 else 'S'} "
-                          f"{abs(det.lon):.2f}{'E' if det.lon >= 0 else 'W'}"
+            "lon": det.lon if old is None else old["lon"],
+            "precision": det.precision if old is None else old["precision"],
+            "place_name": (det.place_name or f"{abs(det.lat):.2f}{'N' if det.lat >= 0 else 'S'} "
+                           f"{abs(det.lon):.2f}{'E' if det.lon >= 0 else 'W'}")
             if old is None else old["place_name"],
-            "country": None, "geo_confidence": 1.0, "h3_3": c3, "h3_5": c5, "h3_7": c7,
-            "t_start": iso(t_start), "t_end": iso(t_end), "status": "sensor-corroborated",
+            "country": det.country if old is None else old.get("country"),
+            "geo_confidence": 1.0 if det.precision == "point" else 0.5,
+            "h3_3": c3, "h3_5": c5, "h3_7": c7,
+            "t_start": iso(t_start), "t_end": iso(t_end), "status": det.status,
             "confidence": round(conf, 4), "version": version, "mention_count": n_evidence,
             "source_diversity": 0, "gdelt_ids": [], "first_seen": iso(first_seen),
             "updated_at": iso(now),

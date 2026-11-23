@@ -40,7 +40,17 @@ Memory tip (WSL2): cap the VM in `%UserProfile%\.wslconfig` (`[wsl2]` / `memory=
 The UI footer opens an "Attributions & licences" panel; the same register is served as JSON at
 `GET /api/sources/licences` (commercial-readiness checklist: `commercial` is `ok`, `review` or `no`).
 Review before any commercial launch: Esri World Imagery, Cesium ion, adsb.lol (ODbL share-alike on the
-derived positions database), airplanes.live and adsb.fi (non-commercial), AISStream, AlterLab.
+derived positions database), adsb.fi, airplanes.live and OpenSky (non-commercial), AISStream, AlterLab,
+GDACS and ReliefWeb (terms review).
+
+## Hazard alerts
+
+`gdacs` (earthquakes, cyclones, floods, volcanoes, droughts, forest fires), `eonet` (NASA open natural
+events) and `reliefweb` (UN OCHA disasters + reports; needs an approved `RELIEFWEB_APPNAME`, disabled by
+default) write `hazard` observations. The sensor-event detector `hazard` (`config/corroboration.yaml`)
+turns them into `disaster` events (status `official`, glyph per hazard type), merging one hazard reported
+by several sources and keying GDACS/EONET quakes on the matching USGS event; news events about disasters
+use them as corroboration evidence.
 
 ## History histogram
 

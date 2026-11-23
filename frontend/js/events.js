@@ -36,7 +36,7 @@ export class EventLayer extends Layer {
     };
   }
   make(it) {
-    return this.col.add({ image: eventGlyph(it.category, it.status, isHollow(it)), scaleByDistance: EV_SCALE, translucencyByDistance: EV_FADE, disableDepthTestDistance: 0 });
+    return this.col.add({ image: eventGlyph(it.category, it.status, isHollow(it), it.subcategory), scaleByDistance: EV_SCALE, translucencyByDistance: EV_FADE, disableDepthTestDistance: 0 });
   }
   upsert(list) {
     for (const it of list) {
@@ -46,10 +46,10 @@ export class EventLayer extends Layer {
     }
     return super.upsert(list);
   }
-  key(it) { return it.lat + "|" + it.lon + "|" + it.category + "|" + it.status + "|" + it.precision + "|" + it.confidence; }
+  key(it) { return it.lat + "|" + it.lon + "|" + it.category + "|" + it.subcategory + "|" + it.status + "|" + it.precision + "|" + it.confidence; }
   apply(p, it) {
     p.position = C.Cartesian3.fromDegrees(it.lon, it.lat, 0);
-    const img = eventGlyph(it.category, it.status, isHollow(it));
+    const img = eventGlyph(it.category, it.status, isHollow(it), it.subcategory);
     if (p.image !== img) p.image = img;
     const hollow = isHollow(it);
     p.color = (hollow ? COLOR_FAINT : COLOR)[it.category] || (hollow ? DEFAULT_FAINT : DEFAULT);

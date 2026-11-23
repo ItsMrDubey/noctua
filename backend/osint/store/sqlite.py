@@ -131,7 +131,7 @@ _EVENT_DOC_COLUMNS = ("event_id", "doc_id", "source", "url", "title", "published
                       "language", "role", "added_at")
 SLIM_EVENT_COLUMNS = ("id", "lat", "lon", "precision", "category", "status", "confidence",
                       "title", "mention_count", "source_diversity", "t_start", "t_end",
-                      "updated_at", "place_name", "country")
+                      "updated_at", "place_name", "country", "subcategory")
 
 
 def iso(dt: datetime) -> str:
