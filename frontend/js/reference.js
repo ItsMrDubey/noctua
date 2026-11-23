@@ -3,6 +3,7 @@
 // loaded once and diffed by id; labels come from a small recycled pool covering only the current view.
 import { fetchJson } from "/static/js/api.js";
 import { esc } from "/static/js/ui.js";
+import { airportMaxDist, portMaxDist } from "/static/js/lod.js";
 
 const C = Cesium;
 const FONT = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
@@ -34,6 +35,11 @@ const LABEL_MAX_H = 1.6e6;   // labels only below this camera height
 const LABEL_CAP = 300;
 const MED_MAX_H = 2.5e6;     // medium airports only below this camera height
 const PRIORITY = { base: 0, airport: 1, port: 2, medairport: 3 };
+// level of detail (lod.js): large airports / ports far out, small ones only when zoomed in;
+// curated military bases at every height. One shared condition object per distance.
+const DDC = new Map();
+const ddcFor = (d) => (d === Infinity ? undefined : DDC.get(d) || DDC.set(d, new C.DistanceDisplayCondition(0, d)).get(d));
+const refMaxDist = (kind, it) => (kind === "airport" || kind === "medairport" ? airportMaxDist(it) : kind === "port" ? portMaxDist(it.harbor_size) : Infinity);
 
 export const REF_IDS = ["r-airports", "r-airports-med", "r-airports-mil", "r-runways", "r-ports", "r-bases", "r-rings", "r-borders", "r-disputed", "r-maritime", "r-choke", "r-clabels"];
 
@@ -178,7 +184,7 @@ export class ReferenceLayers {
     let o = this.pts.get(key);
     if (!o) {
       const ref = { ref: true, kind, item };
-      const b = this.bb.add({ position: pos(item.lon, item.lat), image, width: size, height: size, scaleByDistance: BB_SCALE, translucencyByDistance: BB_FADE, show: false });
+      const b = this.bb.add({ position: pos(item.lon, item.lat), image, width: size, height: size, scaleByDistance: BB_SCALE, translucencyByDistance: BB_FADE, distanceDisplayCondition: ddcFor(refMaxDist(kind, item)), show: false });
       b.id = ref;
       o = { b, kind, item, label: label.toUpperCase(), color, ref, pr: PRIORITY[kind] ?? 4 };
       this.pts.set(key, o);
@@ -321,7 +327,7 @@ export class ReferenceLayers {
       for (const o of cands.slice(0, LABEL_CAP)) {
         let l = used < pool.length ? pool.get(used) : null;
         if (!l) l = pool.add({ font: FONT, scale: 0.85, outlineColor: BLACK85, outlineWidth: 3, style: C.LabelStyle.FILL_AND_OUTLINE, horizontalOrigin: C.HorizontalOrigin.LEFT, pixelOffset: LABEL_OFFSET });
-        if (l._k !== o) { l._k = o; l.text = o.label; l.position = o.b.position; l.fillColor = col(o.color, 0.9); l.id = o.ref; }
+        if (l._k !== o) { l._k = o; l.text = o.label; l.position = o.b.position; l.fillColor = col(o.color, 0.9); l.id = o.ref; l.distanceDisplayCondition = o.b.distanceDisplayCondition; }
         l.show = true;
         used++;
       }
