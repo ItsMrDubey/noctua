@@ -271,3 +271,18 @@ def test_firms_has_long_timeouts():
 
     assert firms.FirmsCollector({}).effective_poll_timeout_s(120.0) == 600.0
     assert firms.REQUEST_TIMEOUT == httpx.Timeout(600, connect=30)
+
+
+class SlowSteadyPoll(PollCollector):
+    name, domain, licence, commercial_ok = "steadypoll", "test", "test", True
+    default_interval_s = 0.1
+
+    async def poll(self, ctx):
+        await asyncio.sleep(0.08)
+        return Batch(source=self.name)
+
+
+async def test_poll_cadence_is_fixed_rate():
+    # interval measured from poll start: ~10 polls/s, not one per (interval + duration)
+    _, submitted, _ = await _run([SlowSteadyPoll({})], seconds=1.0)
+    assert len(submitted) >= 8

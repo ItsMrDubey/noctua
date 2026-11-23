@@ -114,8 +114,11 @@ class Scheduler:
                 timeout = c.effective_poll_timeout_s(self.poll_timeout_s)
                 batch = await asyncio.wait_for(c.poll(self.ctx), timeout=timeout)
                 await self.submit(batch)
-                self._ok(c, batch, time.monotonic() - t0)
-                delay = c.interval_s
+                elapsed = time.monotonic() - t0
+                self._ok(c, batch, elapsed)
+                # fixed rate: a slow poll (FIRMS world CSVs take a minute) must not stretch
+                # the cadence; at least 10 % of the interval stays idle between polls
+                delay = max(c.interval_s - elapsed, c.interval_s * 0.1)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 — isolate every collector failure

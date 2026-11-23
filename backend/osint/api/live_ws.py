@@ -1,4 +1,6 @@
-"""WebSocket live push: full snapshot then 2 s deltas computed from Ingestor.live."""
+"""WebSocket live push: full snapshot then 2 s deltas computed from Ingestor.live, plus a
+``layers`` message whenever new fires / quakes / events become queryable (the UI refetches
+those layers on it instead of waiting for its 5 min poll)."""
 
 import asyncio
 import contextlib
@@ -47,8 +49,16 @@ class Differ:
         return layers.encode(self.step(full)).decode()
 
 
-def mount(app: FastAPI, runtime: Runtime, meta: layers.TrackMetaCache | None = None) -> None:
+def mount(app: FastAPI, runtime: Runtime, meta: layers.TrackMetaCache | None = None,
+          versions: layers.LayerVersions | None = None) -> None:
     shared = meta or layers.TrackMetaCache(runtime)
+    versions = versions or layers.LayerVersions(runtime)
+
+    async def push_versions(ws: WebSocket, last: dict | None) -> dict:
+        cur = versions.get()
+        if cur != last:
+            await ws.send_text(layers.encode({"type": "layers", "layers": cur}).decode())
+        return cur
 
     @app.websocket("/ws/live")
     async def ws_live(ws: WebSocket) -> None:
@@ -56,9 +66,11 @@ def mount(app: FastAPI, runtime: Runtime, meta: layers.TrackMetaCache | None = N
         diff = Differ(runtime, shared)
         try:
             await ws.send_text(await asyncio.to_thread(diff.step_encoded, True))
+            seen = await push_versions(ws, None)
             while True:
                 await asyncio.sleep(INTERVAL_S)
                 await ws.send_text(await asyncio.to_thread(diff.step_encoded, False))
+                seen = await push_versions(ws, seen)
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:

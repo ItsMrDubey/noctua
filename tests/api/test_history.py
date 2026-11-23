@@ -120,6 +120,8 @@ def test_websocket_snapshot_then_delta(rt, monkeypatch):
         assert snap["type"] == "snapshot" and snap["removed"] == []
         assert [i["id"] for i in snap["aircraft"]] == ["air:a"] and snap["aircraft"][0]["is_mil"]
         assert [i["id"] for i in snap["ships"]] == ["sea:1"]
+        lv = ws.receive_json()  # layer versions follow the snapshot
+        assert lv == {"type": "layers", "layers": {"fires": None, "quakes": None, "events": None}}
         d = ws.receive_json()
         assert d["type"] == "delta" and d["aircraft"] == [] and d["ships"] == []
         now = utcnow()
@@ -134,6 +136,22 @@ def test_websocket_snapshot_then_delta(rt, monkeypatch):
         assert {i["id"] for i in d["aircraft"]} == {"air:a", "air:c"}
         assert d["removed"] == ["sea:1"]
         assert next(i for i in d["aircraft"] if i["id"] == "air:c")["name"] == "CIV"
+
+
+def test_websocket_pushes_layer_versions(rt, monkeypatch):
+    monkeypatch.setattr(live_ws, "INTERVAL_S", 0.05)
+    app = FastAPI()
+    mount_m1(app, rt)
+    with TestClient(app).websocket_connect("/ws/live") as ws:
+        assert ws.receive_json()["type"] == "snapshot"
+        assert ws.receive_json()["layers"]["fires"] is None
+        rt.ingestor.flushed = {"fire": "2026-11-23T04:00:00+00:00"}
+        for _ in range(20):
+            m = ws.receive_json()
+            if m["type"] == "layers":
+                break
+        assert m["layers"]["fires"] == "2026-11-23T04:00:00+00:00"
+        assert m["layers"]["quakes"] is None
 
 
 def test_history_counts_lake_and_events(client, rt):

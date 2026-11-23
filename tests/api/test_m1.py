@@ -136,6 +136,24 @@ def test_status(client):
     assert d["counts"] == {"aircraft": 2, "ships": 1}  # air:old is past the 30 min max age
     assert d["sources"]["adsb"]["status"] == "healthy"
     assert d["sources"]["adsb"]["last_batch_size"] == 3
+    assert d["layers"]["aircraft"]["source"] == "adsb"
+    assert d["layers"]["aircraft"]["polled_at"] == d["sources"]["adsb"]["last_success"]
+    assert d["layers"]["fires"] == {"source": "firms", "polled_at": None, "data_at": None}
+
+
+def test_layer_versions_follow_flushes_and_event_passes(rt):
+    from types import SimpleNamespace
+
+    v = layers.LayerVersions(rt)
+    assert v.get() == {"fires": None, "quakes": None, "events": None}
+    rt.ingestor.flushed = {"fire": "t1", "quake": "t2"}
+    assert v.get()["fires"] == "t1" and v.get()["quakes"] == "t2"
+    rt.event_builder = SimpleNamespace(passes=1, last_pass=SimpleNamespace(created=0, updated=0))
+    assert v.get()["events"] == "1"  # first sighting
+    rt.event_builder.passes, rt.event_builder.last_pass.created = 2, 0
+    assert v.get()["events"] == "1"  # pass changed nothing
+    rt.event_builder.passes, rt.event_builder.last_pass.updated = 3, 4
+    assert v.get()["events"] == "3"
 
 
 def _parse(resp):
