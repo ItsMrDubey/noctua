@@ -335,7 +335,8 @@ def section_traffic(runtime, subj: dict, now: datetime) -> dict:
             continue
         d = haversine_km(lat, lon, p.lat, p.lon)
         if d <= r and p.track_id != subj.get("id"):
-            live.append({"id": p.track_id, "kind": p.kind, "ts": p.ts.isoformat(),
+            live.append({"id": p.track_id, "kind": context.KIND_NAME.get(p.kind, p.kind),
+                         "ts": p.ts.isoformat(),
                          "lat": p.lat, "lon": p.lon, "alt_ft": p.alt_ft,
                          "speed_kts": p.speed_kts, "heading_deg": p.heading_deg,
                          **geo(lat, lon, p.lat, p.lon)})
@@ -354,7 +355,7 @@ def section_traffic(runtime, subj: dict, now: datetime) -> dict:
             rows = runtime.lake.query(sql, [lat, lon, lo, hi, s, n, w, e], start=lo, end=hi)
         except Exception:  # noqa: BLE001 — no positions partitions for that window
             rows = []
-        passed = [{"id": tid, "kind": kind, "ts": _us_iso(us), "closest_km": round(d, 2),
+        passed = [{"id": tid, "kind": context.KIND_NAME.get(kind, kind), "ts": _us_iso(us), "closest_km": round(d, 2),
                    "fixes": cnt, "lat": la, "lon": lo_} for tid, kind, us, d, cnt, la, lo_
                   in rows if d <= r]
     ids = list({x["id"] for x in live + passed})

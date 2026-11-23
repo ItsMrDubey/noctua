@@ -20,6 +20,11 @@ instead of raising) and states its basis and timestamp:
   country      the country's curated conflict record (UCDP GED, by month / type) and the
                platform's recent event tempo against its own baseline
   attention    reports per day attached to events around the point (own data)
+  track        (aircraft / ship) the last 24 h of the track from the lake: path, distance,
+               gaps (AIS dark periods), loitering and port calls, cables / pipelines passed,
+               countries crossed, GNSS-degraded cells crossed, events and front line near the
+               path, watchlist hits and alerts, live state; plus "alerts" (notable findings)
+  fire         (fire) the conflict score with its reasons and features, the FIRMS detection
 
 Outbound requests (Open-Meteo, Wikimedia pageviews) are cached in-process; the overhead
 computation is cached per site and hour.
@@ -49,7 +54,7 @@ from osint.timeline.build import bearing_deg, compass, parse_ts
 log = logging.getLogger(__name__)
 
 SECTIONS = ("environment", "overhead", "signals", "exposure", "activity", "country",
-            "attention")
+            "attention", "track", "fire")
 EXPOSURE_KM = 50.0
 RINGS_KM = (10.0, 25.0, 50.0)
 USER_AGENT = "noctua-osint/0.1 ({contact}; intel console site context) httpx/" + httpx.__version__
@@ -836,7 +841,276 @@ def pageviews(title: str, project: str = "en.wikipedia", now: datetime | None = 
     return out
 
 
-FUNCS = {"environment": section_environment, "overhead": section_overhead,
+# ------------------------------------------------------------------ track (aircraft / ship)
+
+KIND_NAME = {"air": "aircraft", "sea": "ship", "aircraft": "aircraft", "ship": "ship"}
+EMERGENCY = {"7500": "Unlawful interference", "7600": "Radio failure", "7700": "General emergency"}
+GAP_MIN = {"aircraft": 30, "ship": 60}  # a gap this long is reported (coverage or transponder)
+LOITER_KTS, LOITER_MIN = 1.0, 60
+
+
+def _sample(n: int, k: int) -> list[int]:
+    return sorted({round(i * (n - 1) / max(1, k - 1)) for i in range(k)}) if n else []
+
+
+def _ts(t: float) -> str:
+    return _iso(datetime.fromtimestamp(t, UTC))
+
+
+def section_track(runtime, subj: dict, now: datetime) -> dict | None:
+    """The selected aircraft / ship over the last 24 h (lake positions) plus its live state,
+    metadata, watchlist hits and the notable findings ("alerts") the console promotes."""
+    tid = subj.get("id") or ""
+    if subj["kind"] not in ("aircraft", "ship") or not tid:
+        return None
+    kind = KIND_NAME.get(tid.partition(":")[0]) or KIND_NAME[subj["kind"]]
+    meta = runtime.store.get_tracks([tid]).get(tid) or {}
+    extra = meta.get("extra") or {}
+    out: dict = {"id": tid, "kind": kind,
+                 "meta": {k: meta.get(k) for k in ("name", "reg", "type_code", "operator", "category",
+                                                   "is_mil", "high_priority", "first_seen",
+                                                   "last_seen")},
+                 "extra": {k: extra.get(k) for k in ("desc", "role", "squawk", "callsign",
+                                                     "destination", "imo", "flag", "eta")
+                           if extra.get(k) is not None}}
+    with runtime.ingestor._lock:
+        p = runtime.ingestor.live.get(tid)
+    if p is not None:
+        out["live"] = {"ts": _iso(p.ts), "lat": p.lat, "lon": p.lon, "alt_ft": p.alt_ft,
+                       "speed_kts": p.speed_kts, "heading_deg": p.heading_deg, "source": p.source,
+                       "age_s": round((now - p.ts).total_seconds())}
+    lo = now - timedelta(hours=24)
+    try:
+        rows = runtime.lake.query(
+            "SELECT epoch_us(ts), lat, lon, alt_ft, speed_kts FROM positions WHERE track_id = ? "
+            "AND ts >= ? AND ts <= ? ORDER BY ts", [tid, lo, now], start=lo, end=now)
+    except Exception as exc:  # no partitions for the window
+        log.debug("track history query failed", exc_info=True)
+        rows = []
+        out["error_history"] = f"{type(exc).__name__}: {exc}"[:200]
+    pts = [(us / 1e6, la, lo_, alt, spd) for us, la, lo_, alt, spd in rows if la is not None]
+    alerts: list[dict] = []
+    sq = str(extra.get("squawk") or "")
+    if sq in EMERGENCY:
+        alerts.append({"level": "alert", "text": f"Squawk {sq}: {EMERGENCY[sq]}", "basis": "ADS-B"})
+    out["fixes"] = len(pts)
+    if pts:
+        _track_history(runtime, out, pts, kind, lo, alerts)
+    tr = [{"id": tid, "flags": []}]
+    watch_flags(runtime, tr)
+    out["flags"] = tr[0]["flags"]
+    for f in out["flags"]:
+        alerts.insert(0, {"level": "alert" if f.get("severity") == "high" else "warn",
+                          "text": "Watchlist: " + f["label"], "basis": f["source"]})
+    out["watch_alerts"] = []
+    db = _watch_db(runtime)
+    if db is not None:
+        try:
+            keys = ("ts", "kind", "severity", "title", "sub", "lat", "lon")
+            out["watch_alerts"] = [dict(zip(keys, r, strict=True)) for r in db.execute(
+                "SELECT ts, kind, severity, title, sub, lat, lon FROM alerts WHERE track_id = ? "
+                "AND ts >= ? ORDER BY ts DESC LIMIT 20", (tid, _iso(now - timedelta(days=7))))]
+        except sqlite3.Error:
+            log.debug("watch alerts unreadable", exc_info=True)
+        finally:
+            db.close()
+    for a in out["watch_alerts"][:3]:
+        alerts.append({"level": "warn", "text": "Watch alert: " + str(a["title"]) + " ("
+                       + str(a["ts"])[:16] + "Z)", "basis": "infrastructure watch job"})
+    out["alerts"] = alerts
+    return out
+
+
+def _track_history(runtime, out: dict, pts: list[tuple], kind: str, lo: datetime,
+                   alerts: list[dict]) -> None:
+    n = len(pts)
+    dist = sum(haversine_km(a[1], a[2], b[1], b[2]) for a, b in itertools.pairwise(pts))
+    alts = [x[3] for x in pts if x[3] is not None]
+    spds = [x[4] for x in pts if x[4] is not None]
+    out["summary"] = {"first": _ts(pts[0][0]), "last": _ts(pts[-1][0]), "distance_km": round(dist),
+                      "alt_max_ft": max(alts, default=None), "alt_min_ft": min(alts, default=None),
+                      "speed_max_kts": round(max(spds), 1) if spds else None}
+    out["path"] = [[round(pts[i][1], 4), round(pts[i][2], 4), int(pts[i][0])]
+                   for i in _sample(n, 300)]
+    gaps = []
+    for a, b in itertools.pairwise(pts):
+        m = (b[0] - a[0]) / 60
+        if m >= GAP_MIN[kind]:
+            gaps.append({"from": _ts(a[0]), "to": _ts(b[0]), "minutes": round(m),
+                         "jump_km": round(haversine_km(a[1], a[2], b[1], b[2]), 1),
+                         "lat": a[1], "lon": a[2], "lat2": b[1], "lon2": b[2]})
+    gaps.sort(key=lambda g: -g["minutes"])
+    out["gaps"] = gaps[:10]
+    if kind == "ship" and gaps and gaps[0]["minutes"] >= 180:
+        g = gaps[0]
+        alerts.append({"level": "alert", "text": f"AIS gap {g['minutes'] // 60} h "
+                       f"{g['minutes'] % 60} min ({g['jump_km']} km apart)",
+                       "basis": "lake positions; a coverage gap looks the same"})
+    samp = [pts[i] for i in _sample(n, 60)]
+    st, names = settlements(runtime), country_names(runtime)
+    crossed: list[dict] = []
+    for t, la, lo_, *_ in samp:
+        cc = st.country_at(la, lo_) if st else None
+        key = cc or "-"
+        if not crossed or crossed[-1]["cc"] != key:
+            crossed.append({"cc": key, "name": names.get(cc, cc) if cc else "sea / remote",
+                            "from": _ts(t)})
+    out["regions"] = crossed[:20]
+    out["gnss_crossed"] = _gnss_crossed(runtime, samp, lo)
+    if any(c["level"] == "high" for c in out["gnss_crossed"]):
+        w = out["gnss_crossed"][0]
+        alerts.append({"level": "warn", "text": f"Crossed GNSS interference ({w['pct']}% of aircraft "
+                       f"degraded) at {w['at'][11:16]}Z", "basis": "ADS-B NIC/NACp, last 24 h"})
+    from osint.intel.aggregate import _frontline_km
+
+    fls = [f for f in (_frontline_km(runtime, la, lo_) for _, la, lo_, *_ in samp[::3]) if f]
+    out["frontline_min"] = min(fls, key=lambda f: f["distance_km"]) if fls else None
+    if out["frontline_min"] and out["frontline_min"]["distance_km"] <= 25:
+        alerts.append({"level": "warn", "text": f"Within {out['frontline_min']['distance_km']} km "
+                       "of the front line", "basis": out["frontline_min"]["source"]})
+    lats, lons = [x[1] for x in pts], [x[2] for x in pts]
+    evs = runtime.store.list_events(bbox=(min(lons) - 0.4, min(lats) - 0.3, max(lons) + 0.4,
+                                          max(lats) + 0.3), since=lo, limit=400,
+                                    include_unlocated=False, origin="news,sensor")
+    near = []
+    for e in evs:
+        d = min(haversine_km(e["lat"], e["lon"], la, lo_) for _, la, lo_, *_ in samp)
+        if d <= 25:
+            near.append({k: e.get(k) for k in ("id", "title", "category", "status", "t_start",
+                                                "lat", "lon", "place_name")}
+                        | {"distance_km": round(d, 1)})
+    near.sort(key=lambda e: e["distance_km"])
+    out["events_near"] = near[:12]
+    if kind == "ship":
+        out.update(_ship_behaviour(pts, alerts))
+
+
+def _gnss_crossed(runtime, samp: list[tuple], lo: datetime) -> list[dict]:
+    """H3 cells the path crossed whose 24 h ADS-B integrity share was medium / high."""
+    try:
+        import h3
+
+        from osint.api.signals import gnss_history
+
+        live_g = _signal_reader(runtime).get("gnss") or {}
+        hist = gnss_history(runtime.lake, 24, live_g, (lo + timedelta(hours=24)).timestamp())
+    except Exception:  # signals history absent
+        log.debug("gnss history unavailable", exc_info=True)
+        return []
+    res = int(live_g.get("res") or 3)
+    bad = {c.get("h3") or c.get("cell"): c for c in hist["cells"]
+           if c.get("level") in ("medium", "high")}
+    seen: dict = {}
+    for t, la, lo_, *_ in samp:
+        c = h3.latlng_to_cell(la, lo_, res)
+        if c in bad and c not in seen:
+            seen[c] = {"level": bad[c].get("level"), "pct": bad[c].get("pct"), "n": bad[c].get("n"),
+                       "cell": c, "at": _ts(t), "lat": la, "lon": lo_}
+    return sorted(seen.values(), key=lambda c: -(c["pct"] or 0))[:8]
+
+
+def _ship_behaviour(pts: list[tuple], alerts: list[dict]) -> dict:
+    """Loitering spells (<= 1 kn for >= 60 min), which were port calls (within 5 km of a
+    World Port Index port) or near a submarine cable / pipeline (3 km), and the cables /
+    pipelines the path passed within 5 km of."""
+    from osint.infra.loader import get_infra
+    from osint.reference.loader import get_reference
+
+    inf = get_infra()
+    spells, cur = [], []
+    for x in pts:
+        if x[4] is not None and x[4] <= LOITER_KTS:
+            cur.append(x)
+            continue
+        if cur and (cur[-1][0] - cur[0][0]) / 60 >= LOITER_MIN:
+            spells.append(cur)
+        cur = []
+    if cur and (cur[-1][0] - cur[0][0]) / 60 >= LOITER_MIN:
+        spells.append(cur)
+
+    def lines_near(la: float, lo_: float, km: float) -> list[tuple[dict, float]]:
+        return (_lines_near(inf.cables, "lines", la, lo_, km, multi=True)
+                + _lines_near(inf.pipelines, "line", la, lo_, km, multi=False))
+
+    loiters = []
+    for sp in spells:
+        la = sum(x[1] for x in sp) / len(sp)
+        lo_ = sum(x[2] for x in sp) / len(sp)
+        try:
+            ports = get_reference().query_ports((lo_ - 0.1, la - 0.07, lo_ + 0.1, la + 0.07))
+        except Exception:  # reference data absent
+            log.debug("ports unavailable", exc_info=True)
+            ports = []
+        port = min(((pt, haversine_km(la, lo_, pt["lat"], pt["lon"])) for pt in ports),
+                   key=lambda x: x[1], default=None)
+        rec = {"from": _ts(sp[0][0]), "to": _ts(sp[-1][0]),
+               "minutes": round((sp[-1][0] - sp[0][0]) / 60), "lat": round(la, 4),
+               "lon": round(lo_, 4),
+               "port": {"name": port[0].get("name"), "distance_km": round(port[1], 1)}
+               if port and port[1] <= 5 else None,
+               "near_lines": [{"name": it.get("name"), "distance_km": round(d, 2)}
+                              for it, d in lines_near(la, lo_, 3.0)[:3]]}
+        loiters.append(rec)
+        if rec["near_lines"] and not rec["port"]:
+            ln = rec["near_lines"][0]
+            alerts.append({"level": "alert", "text": f"Loitered {rec['minutes']} min within "
+                           f"{ln['distance_km']} km of {ln['name']}",
+                           "basis": "lake positions vs cable / pipeline layers"})
+    along: dict[str, float] = {}
+    for i in _sample(len(pts), 80):
+        for it, d in lines_near(pts[i][1], pts[i][2], 5.0):
+            nm = it.get("name") or it.get("id") or "unnamed"
+            along[nm] = min(d, along.get(nm, 99.0))
+    return {"loiters": loiters[:10], "port_calls": [x for x in loiters if x["port"]][:10],
+            "lines_crossed": [{"name": k, "distance_km": round(v, 2)}
+                              for k, v in sorted(along.items(), key=lambda kv: kv[1])][:10]}
+
+
+# ------------------------------------------------------------------ fire score
+
+def section_fire(runtime, subj: dict, now: datetime) -> dict | None:
+    """The fire's conflict score (osint.fires: reasons, features, threshold) and the FIRMS
+    detection record."""
+    if subj["kind"] != "fire" or not subj.get("id"):
+        return None
+    from osint.fires.store import get_score_store
+
+    thr = 50
+    try:
+        from osint.fires.config import load_config as fire_config
+
+        cfg_dir = getattr(runtime.settings, "config_dir", None)
+        if cfg_dir is not None:
+            thr = fire_config(cfg_dir / "fire_score.yaml").threshold
+    except Exception:  # default cut when the config is unreadable
+        log.debug("fire config unreadable", exc_info=True)
+    out: dict = {"id": subj["id"], "threshold": thr, "score": None}
+    rec = get_score_store(runtime).get(subj["id"])
+    if rec:
+        out.update({"score": rec["score"], "reasons": rec["reasons"],
+                    "features": rec.get("features"), "computed_at": rec.get("computed_at"),
+                    "war_likely": rec["score"] >= thr})
+    t = parse_ts(subj.get("t")) or now
+    a, b = t - timedelta(hours=6), t + timedelta(hours=6)
+    try:
+        rows = runtime.lake.query(
+            "SELECT epoch_us(ts), value, attrs FROM observations WHERE type = 'fire' AND id = ? "
+            "AND ts >= ? AND ts <= ? ORDER BY version DESC LIMIT 1", [subj["id"], a, b],
+            start=a, end=b)
+    except Exception:  # no partitions
+        log.debug("fire detection query failed", exc_info=True)
+        rows = []
+    if rows:
+        us, frp, attrs = rows[0]
+        at = json.loads(attrs or "{}")
+        out["detection"] = {"ts": _ts(us / 1e6), "frp_mw": frp,
+                            **{k: at.get(k) for k in ("satellite", "instrument", "confidence",
+                                                      "daynight", "bright_ti4", "scan")}}
+    return out
+
+
+FUNCS = {"track": section_track, "fire": section_fire,
+         "environment": section_environment, "overhead": section_overhead,
          "signals": section_signals, "exposure": section_exposure,
          "activity": section_activity, "country": section_country,
          "attention": section_attention}
