@@ -44,8 +44,13 @@ from osint.pipeline.cluster import (
     Clusterer,
     Embedder,
     EventState,
+    Merge,
+    NullEmbedder,
+    embed_many,
+    embed_text,
 )
 from osint.pipeline.corroborate import CorroborationConfig, Corroborator
+from osint.pipeline.embed import EmbeddingConfig, build_embedder
 from osint.store.lake import FileLock, Lake
 from osint.store.sqlite import SqliteStore
 
@@ -85,7 +90,20 @@ class EventsConfig:
     overlap_threshold: float = 0.2
     place_only_window_h: float = 6.0
     refine_max_km: float = 300.0
+    # semantic path (pipeline.embed): cosine thresholds for a document joining an event by
+    # place relation (Clusterer._place_relation): same place / one side country-level /
+    # otherwise; merge_* the same for event-to-event consolidation
     embed_threshold: float = 0.85
+    embed_threshold_contained: float = 0.88
+    embed_threshold_unshared: float = 0.92
+    merge_threshold: float = 0.85
+    merge_threshold_contained: float = 0.88
+    merge_threshold_unshared: float = 0.92
+    merge_enabled: bool = True
+    # categories that may hold the same incident (a drone strike on a ship in port is
+    # armed_conflict to one outlet and maritime_security to the next); semantic path only
+    compatible_categories: list[list[str]] = field(default_factory=list)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     min_shared_tokens: dict[str, int] = field(default_factory=lambda: {"default": 2})
     max_signatures: int = 8
     max_tokens: int = 64
@@ -108,6 +126,24 @@ class EventsConfig:
 
     def window_h(self, category: str) -> float:
         return float(self.time_window_h.get(category, self.time_window_h.get("default", 24)))
+
+    def threshold(self, relation: str, *, merge: bool = False) -> float:
+        """Cosine needed for a semantic join (``merge``: an event merge) by place relation:
+        'shared', 'contained' or 'none'."""
+        if merge:
+            return {"shared": self.merge_threshold,
+                    "contained": self.merge_threshold_contained}.get(
+                relation, self.merge_threshold_unshared)
+        return {"shared": self.embed_threshold,
+                "contained": self.embed_threshold_contained}.get(
+            relation, self.embed_threshold_unshared)
+
+    def compatible(self, category: str, others: list[str] | tuple[str, ...]) -> bool:
+        """``category`` equals one of ``others`` or shares a compatible group with one."""
+        if category in others:
+            return True
+        return any(category in g and any(o in g for o in others)
+                   for g in self.compatible_categories)
 
     def min_shared(self, category: str) -> int:
         return int(self.min_shared_tokens.get(category,
@@ -141,6 +177,19 @@ class EventsConfig:
             place_only_window_h=float(cl.get("place_only_window_h",
                                              base.place_only_window_h)),
             embed_threshold=float(cl.get("embed_threshold", base.embed_threshold)),
+            embed_threshold_contained=float(cl.get("embed_threshold_contained",
+                                                   base.embed_threshold_contained)),
+            embed_threshold_unshared=float(cl.get("embed_threshold_unshared",
+                                                  base.embed_threshold_unshared)),
+            merge_threshold=float(cl.get("merge_threshold", base.merge_threshold)),
+            merge_threshold_contained=float(cl.get("merge_threshold_contained",
+                                                   base.merge_threshold_contained)),
+            merge_threshold_unshared=float(cl.get("merge_threshold_unshared",
+                                                  base.merge_threshold_unshared)),
+            merge_enabled=bool(cl.get("merge_enabled", base.merge_enabled)),
+            compatible_categories=[[str(c) for c in g] for g in
+                                   (cl.get("compatible_categories") or [])],
+            embedding=EmbeddingConfig.from_dict(d.get("embedding")),
             refine_max_km=float(cl.get("refine_max_km", base.refine_max_km)),
             min_shared_tokens={str(k): int(v) for k, v in
                                (cl.get("min_shared_tokens") or base.min_shared_tokens).items()},
@@ -321,6 +370,8 @@ class PassStats:
     corroboration_evaluated: int = 0
     verdicts_applied: int = 0
     sensor_corroborated: int = 0
+    joins: dict[str, int] = field(default_factory=dict)  # join path -> documents
+    merged: int = 0  # events folded into another (consolidation)
     seconds: float = 0.0
 
 
@@ -360,6 +411,7 @@ class EventBuilder:
         # OS lock shared with rebuild_events: passes are skipped while a rebuild runs
         path = getattr(store, "path", None)
         self.rebuild_lock: Path | None = rebuild_lock_path(path) if path else None
+        self.data_dir: Path | None = Path(path).parent if path else None  # side stores
         self.paused = False
         self._stop = asyncio.Event()
         self.passes = 0
@@ -374,9 +426,11 @@ class EventBuilder:
         corroborator = Corroborator(
             store, lake, metrics,
             CorroborationConfig.from_file(cfg_dir / "corroboration.yaml"))
-        return cls(store, lake, metrics, EventsConfig.from_file(cfg_dir / "events.yaml"),
+        cfg = EventsConfig.from_file(cfg_dir / "events.yaml")
+        return cls(store, lake, metrics, cfg,
                    cameo_category=load_cameo_map(cfg_dir / "triage.yaml"),
-                   corroborator=corroborator)
+                   corroborator=corroborator,
+                   embedder=build_embedder(cfg.embedding, Path(settings.data_dir)))
 
     # ---------------------------------------------------------------- state
 
@@ -393,6 +447,14 @@ class EventBuilder:
         if self.corroborator is not None:
             self.corroborator.warm_start(now)
         self.verdicts = {k: v["verdict"] for k, v in self.store.verifications().items()}
+        try:  # events from before embeddings existed; then merge the split ones once
+            self.hydrate()
+            merged = self.consolidate(now)
+            if merged:
+                log.info("event builder warm start: %d split events merged", merged)
+        except Exception:  # consolidation must never stop event building
+            self.metrics.inc("event_merge_errors_total")
+            log.exception("warm-start consolidation failed")
         self._impact_cursor = None  # re-apply impact upgrades to the reloaded index
         cursor = self._cursor()
         if cursor is not None:
@@ -472,6 +534,13 @@ class EventBuilder:
         changed = [self.clusterer.events[eid].to_row() for eid in res.changed
                    if eid in self.clusterer.events]
         self.store.save_events(changed, res.documents, res.fields, res.decisions)
+        merged = 0
+        if res.changed:
+            try:
+                merged = self.consolidate(now, res.changed)
+            except Exception:  # consolidation must never stop event building
+                self.metrics.inc("event_merge_errors_total")
+                log.exception("event consolidation failed")
         newest = max((d.fetched_at for d in docs if d.fetched_at), default=None)
         if newest is not None and (cursor is None or newest > cursor):
             cursor = newest
@@ -509,10 +578,106 @@ class EventBuilder:
                           gdelt_rejected=dict(res.gdelt_rejected), skipped=dict(res.skipped),
                           corroboration_evaluated=cres.evaluated if cres else 0,
                           sensor_corroborated=len(cres.newly_corroborated) if cres else 0,
-                          verdicts_applied=verified,
-                          seconds=time.perf_counter() - t0)
+                          verdicts_applied=verified, joins=dict(res.joins),
+                          merged=merged, seconds=time.perf_counter() - t0)
         self._record(stats)
         return stats
+
+    # ----------------------------------------------------------- consolidation
+
+    def hydrate(self, ids: set[str] | None = None, *, save: bool = True) -> int:
+        """Fill in the semantic state of indexed events written before it existed (once
+        per event): the title language (from the document the title came from); an
+        English title when the event has an English article but a non-English title (the
+        earliest English article's title and snippet); and, with an embedder, the centroid
+        of the article vectors (title + snippet from the lake, cached per document). Rows
+        are re-saved with ``updated_at`` unchanged. Returns events given a vector."""
+        evs = [e for e in self.clusterer.events.values()
+               if e.has_article and (ids is None or e.id in ids)
+               and (not e.title_lang or e.vector is None)]
+        if not evs:
+            return 0
+        docs = self.store.event_documents_for([e.id for e in evs])
+        for e in evs:
+            if not e.title_lang:
+                own = [d for d in docs.get(e.id, []) if d["title"] == e.title]
+                e.title_lang = ((own or docs.get(e.id) or [{}])[0].get("language") or "")
+        retitle: dict[str, dict] = {}  # event id -> its earliest English article
+        for e in evs:
+            en = [d for d in docs.get(e.id, []) if d.get("language") == "en" and d["title"]]
+            if e.title_lang != "en" and en:
+                retitle[e.id] = min(en, key=lambda d: (d["published_at"], d["doc_id"]))
+        need = [e for e in evs if e.vector is None and docs.get(e.id)]
+        embed = bool(need) and not isinstance(self.clusterer.embedder, NullEmbedder)
+        flat = [d for e in need for d in docs[e.id]] if embed else []
+        snippets = self._snippets(flat + list(retitle.values())) if flat or retitle else {}
+        fields: list[dict] = []
+        for e in evs:
+            d = retitle.get(e.id)
+            if d is None:
+                continue
+            e.title, e.title_lang = d["title"], "en"
+            e.summary = snippets.get(d["doc_id"]) or e.summary
+            fields.append({"event_id": e.id, "field": "title", "value": d["title"],
+                           "doc_id": d["doc_id"], "quote": "English source title preferred"})
+        vectors = 0
+        if embed:
+            vecs = embed_many(self.clusterer.embedder, [
+                (d["doc_id"], embed_text(d["title"], snippets.get(d["doc_id"], "")))
+                for d in flat])
+            by_doc = {d["doc_id"]: v for d, v in zip(flat, vecs, strict=True)
+                      if v is not None}
+            for e in need:
+                for d in docs[e.id]:
+                    if d["doc_id"] in by_doc:
+                        self.clusterer._add_vector(e, by_doc[d["doc_id"]])
+                vectors += e.vector is not None
+        if save:
+            self.store.save_events([e.to_row() for e in evs], fields=fields)
+        return vectors
+
+    def _snippets(self, docs: list[dict]) -> dict[str, str]:
+        """{doc_id: snippet} from the lake (partition-pruned by published_at)."""
+        from osint.translate.job import lake_snippets  # local: optional stage
+
+        try:
+            return lake_snippets(self.lake, docs)
+        except Exception:  # titles alone still embed
+            log.exception("snippet lookup for %d documents failed", len(docs))
+            return {}
+
+    def consolidate(self, now: datetime, ids: set[str] | None = None) -> int:
+        """Merge split events (``Clusterer.consolidate``) among ``ids`` (None: the whole
+        index) and their neighbours, and persist the merges. Returns events merged away."""
+        if not self.cfg.merge_enabled or isinstance(self.clusterer.embedder, NullEmbedder):
+            return 0
+        merges = self.clusterer.consolidate(ids, now)
+        return self.persist_merges(merges) if merges else 0
+
+    def persist_merges(self, merges: list[Merge]) -> int:
+        """Write merges (``SqliteStore.merge_events``), move the side stores' links and
+        carry the in-memory sensor scores and verdicts over to the survivors."""
+        from osint.pipeline.merge import rekey_external
+
+        recs = [{"survivor": m.survivor, "loser": m.loser, "similarity": m.similarity,
+                 "fields": m.fields} for m in merges]
+        final = {m.survivor for m in merges} - {m.loser for m in merges}
+        rows = [self.clusterer.events[e].to_row() for e in sorted(final)
+                if e in self.clusterer.events]
+        n = self.store.merge_events(recs, rows)
+        for m in merges:
+            score = self.sensor_scores.pop(m.loser, None)
+            if score is not None:
+                self.sensor_scores[m.survivor] = max(score,
+                                                     self.sensor_scores.get(m.survivor, 0.0))
+            if self.verdicts.pop(m.loser, None) == "supported":
+                self.verdicts.setdefault(m.survivor, "supported")
+        rekey_external(self.data_dir, recs)
+        self.metrics.inc("events_merged_total", n)
+        for m in merges:
+            log.info("event %s merged into %s (cosine %.3f)", m.loser, m.survivor,
+                     m.similarity)
+        return n
 
     # ------------------------------------------------------------ verification
 
@@ -687,6 +852,12 @@ class EventBuilder:
         m.inc("events_created_total", s.created)
         m.inc("events_updated_total", s.updated)
         m.inc("documents_clustered_total", s.clustered)
+        for path, n in s.joins.items():
+            m.inc("documents_joined_total", n, path=path)
+        emb = getattr(self.clusterer.embedder, "stats", None)
+        if emb:
+            m.set("embedding_seconds_total", round(emb.get("seconds", 0.0), 3))
+            m.set("embedding_documents_total", emb.get("embedded", 0))
         m.inc("gdelt_accepted_total", s.gdelt_accepted)
         for reason, n in s.gdelt_rejected.items():
             m.inc("gdelt_rejected_total", n, reason=reason)
@@ -806,7 +977,8 @@ def rebuild_events(store: SqliteStore, lake: Lake, config: EventsConfig | None =
                    step: timedelta = timedelta(minutes=15),
                    metrics: Metrics | None = None, verifier: Any = None,
                    batch: int = 5000, lock_timeout: float = 600.0,
-                   now: datetime | None = None) -> dict[str, Any]:
+                   now: datetime | None = None,
+                   embedder: Embedder | None = None) -> dict[str, Any]:
     """Re-cluster every lake document from scratch with the current rules, memory-bounded.
 
     Runs under the rebuild lock (``data/.event_rebuild.lock``): a live EventBuilder of any
@@ -821,17 +993,19 @@ def rebuild_events(store: SqliteStore, lake: Lake, config: EventsConfig | None =
     ids are carried over; new ones are derived from the primary article), so extraction,
     verification, imagery and benchmark labels stay linked. Events are stamped with a new
     rebuild generation; afterwards only *older-generation news* events are deleted - sensor
-    and historical events are never touched. GDELT decisions are re-derived."""
+    and historical events are never touched. GDELT decisions are re-derived. With an
+    ``embedder`` the semantic path and consolidation run as they do live."""
     cfg = config or EventsConfig()
     with FileLock(rebuild_lock_path(store.path), lock_timeout):
         return _rebuild_locked(store, lake, cfg, cameo_category=cameo_category, step=step,
-                               metrics=metrics, verifier=verifier, batch=batch, now=now)
+                               metrics=metrics, verifier=verifier, batch=batch, now=now,
+                               embedder=embedder)
 
 
 def _rebuild_locked(store: SqliteStore, lake: Lake, cfg: EventsConfig, *,
                     cameo_category: Callable[[str, str], str | None] | None,
                     step: timedelta, metrics: Metrics | None, verifier: Any, batch: int,
-                    now: datetime | None) -> dict[str, Any]:
+                    now: datetime | None, embedder: Embedder | None = None) -> dict[str, Any]:
     marker = store.get_cursor(REBUILD_STATE) or {}
     gen = int(marker.get("generation") or 0) + 1
     carry = store.news_primary_event_ids()
@@ -839,7 +1013,8 @@ def _rebuild_locked(store: SqliteStore, lake: Lake, cfg: EventsConfig, *,
     store.clear_gdelt_decisions()
     sim = [utcnow()]
     builder = EventBuilder(store, lake, metrics or Metrics(), cfg,
-                           cameo_category=cameo_category, clock=lambda: sim[0])
+                           cameo_category=cameo_category, clock=lambda: sim[0],
+                           embedder=embedder)
     builder._warm = True
     builder.clusterer.generation = gen
     builder.clusterer.id_override = carry
@@ -884,6 +1059,8 @@ def _rebuild_locked(store: SqliteStore, lake: Lake, cfg: EventsConfig, *,
                     changed = [builder.clusterer.events[e].to_row() for e in res.changed
                                if e in builder.clusterer.events]
                     store.save_events(changed, res.documents, res.fields, res.decisions)
+                    if res.changed:
+                        totals.merged += builder.consolidate(slice_now, res.changed)
                     totals.documents += len(docs)
                     totals.clustered += res.clustered
                     totals.created += len(res.created)
@@ -921,7 +1098,7 @@ def _rebuild_locked(store: SqliteStore, lake: Lake, cfg: EventsConfig, *,
             "gdelt_rejected": totals.gdelt_rejected, "skipped": totals.skipped,
             "generation": gen, "carried_over_ids": len(reset),
             "deleted_stale": deleted, "verdicts_reapplied": verified,
-            "peak_slice_docs": peak}
+            "merged": totals.merged, "peak_slice_docs": peak}
 
 
 def _slices(articles: list[ClusterDoc], gdelt: Iterator[ClusterDoc], step: timedelta
@@ -944,6 +1121,20 @@ def _slices(articles: list[ClusterDoc], gdelt: Iterator[ClusterDoc], step: timed
         yield max(d.fetched_at for d in out), out
 
 
+def translated_lookup(store: Any) -> Callable[[str, str], bool] | None:
+    """(language, text) -> True when the translation cache already holds its English
+    (``translate.store`` keys texts by language + whitespace-collapsed text)."""
+    if store is None:
+        return None
+    from osint.translate.store import clean, text_key
+
+    def translated(lang: str, text: str) -> bool:
+        rec = store.get(text_key(lang, clean(text)))
+        return bool(rec and rec.get("status") == "done" and rec.get("text_en"))
+
+    return translated
+
+
 def wire(runtime: Runtime) -> EventBuilder:
     """Create the runtime's EventBuilder (``runtime.event_builder``) and return it; the
     caller schedules ``builder.run()`` as a background task."""
@@ -955,6 +1146,12 @@ def wire(runtime: Runtime) -> EventBuilder:
         builder.verifier = get_store(runtime)
     except Exception:
         log.exception("extraction store unavailable; verdicts not merged")
+    try:  # merged non-English events keep a title whose translation is already cached
+        from osint.translate.job import get_store as translation_store
+
+        builder.clusterer.translated = translated_lookup(translation_store(runtime))
+    except Exception:
+        log.exception("translation cache unavailable; merged titles not checked")
     runtime.event_builder = builder
     return builder
 

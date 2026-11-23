@@ -109,6 +109,14 @@ def test_detail(client):
     assert client.get("/api/events/nope").status_code == 404
 
 
+def test_detail_of_a_merged_event_resolves_to_its_survivor(client, store):
+    e1, e2 = "01EV" + "1".zfill(22), "01EV" + "2".zfill(22)
+    assert store.merge_events([{"survivor": e1, "loser": e2, "similarity": 0.81}], []) == 1
+    d = client.get(f"/api/events/{e2}").json()
+    assert d["id"] == e1 and d["redirected_from"] == e2
+    assert d["documents"][0]["doc_id"] == "doc:a"
+
+
 def test_stats(client):
     s = client.get("/api/events/stats").json()
     assert s["events"] == 3

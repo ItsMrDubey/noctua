@@ -156,9 +156,13 @@ def main(argv: list[str] | None = None) -> int:
         from osint.pipeline.extract.store import ExtractionStore
 
         verifier = ExtractionStore(st.data_dir / "extraction.sqlite")
-        res = rebuild_events(store, lake, EventsConfig.from_file(st.config_dir / "events.yaml"),
+        from osint.pipeline.embed import build_embedder
+
+        cfg = EventsConfig.from_file(st.config_dir / "events.yaml")
+        res = rebuild_events(store, lake, cfg,
                              cameo_category=load_cameo_map(st.config_dir / "triage.yaml"),
-                             verifier=verifier)
+                             verifier=verifier,
+                             embedder=build_embedder(cfg.embedding, st.data_dir))
         examples = event_examples(before, _event_snapshot(store))
         print(msgspec.json.format(msgspec.json.encode(
             {"rebuild_events": res, "place_change_examples": examples}), indent=2).decode())

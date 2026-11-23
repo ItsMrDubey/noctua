@@ -201,6 +201,7 @@ def mount_events(app: FastAPI, runtime) -> None:
         ev = await asyncio.to_thread(store.get_event, event_id)
         if ev is None:
             raise HTTPException(404, "unknown event")
+        event_id = ev["id"]  # a merged-away id resolves to its survivor (redirected_from)
         await asyncio.to_thread(add_corroboration, store, [ev])
         ev["corroborations"] = await asyncio.to_thread(store.list_corroborations, event_id)
         await asyncio.to_thread(add_english, [ev], summaries=True)

@@ -94,6 +94,13 @@ def watch_status(assets: list[dict], t_start: str | None, cfg: ImageryConfig,
     return out
 
 
+def resolve_event_id(runtime, event_id: str) -> str:
+    """The surviving id of a merged-away news event (``event_redirects``), else itself."""
+    store = getattr(runtime, "store", None)
+    resolve = getattr(store, "resolve_event_id", None)
+    return resolve(event_id) if resolve is not None else event_id
+
+
 def mount_imagery(app: FastAPI, runtime) -> None:
     store = get_store(runtime)
     root = (runtime.settings.data_dir / "imagery").resolve()
@@ -113,6 +120,9 @@ def mount_imagery(app: FastAPI, runtime) -> None:
             raise HTTPException(404, "unknown image")
         role, ext = m.groups()
         rows = await asyncio.to_thread(store.get_assets, event_id)
+        if not rows:
+            rows = await asyncio.to_thread(
+                store.get_assets, await asyncio.to_thread(resolve_event_id, runtime, event_id))
         row = next((r for r in rows if r["role"] == role and r["status"] == "ok"
                     and r["path"] and r["path"].endswith("." + ext)), None)
         if row is None:
@@ -127,6 +137,9 @@ def mount_imagery(app: FastAPI, runtime) -> None:
 def imagery_payload(runtime, store, cfg: ImageryConfig, event_id: str) -> dict:
     """GET /api/imagery/{id} body (also embedded by the intel aggregation)."""
     rows = store.get_assets(event_id)
+    if not rows:  # a merged-away event id: its imagery moved to the surviving event
+        event_id = resolve_event_id(runtime, event_id)
+        rows = store.get_assets(event_id)
     assets = [_asset_out(event_id, a, getattr(runtime.settings, "api_token", "")) for a in rows]
     attributions = sorted({a["attribution"] for a in assets if a["attribution"]})
     get_event = getattr(getattr(runtime, "store", None), "get_event", None)

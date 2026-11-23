@@ -12,8 +12,24 @@ A relevant document joins an existing event when either
   place (gazetteer/GDELT name key or H3 res-5 cell) counts as one token, plus title words
   and GDELT actor words. Two specific but different places never join on this path.
 
-An optional ``Embedder`` (multilingual sentence embeddings, spec §2.6) adds a semantic path
-among the geo/time candidates; the default is a no-op.
+* **semantic path** — with an ``Embedder`` (multilingual sentence embeddings, spec §2.6,
+  ``osint.pipeline.embed``) the vector of the document's title + snippet is compared with
+  the centroids of the nearby events (H3 res-3 disk, or the same country when one side is
+  only located at country level; a compatible category, ``compatible_categories``, e.g.
+  armed_conflict ~ maritime_security; the time window; the same country; no conflicting
+  specific place). The cosine needed depends on how the two locations relate
+  (``EventsConfig.threshold``): the same place, one side country-level only, or neither.
+  This groups one incident reported in English, Arabic, Russian and Farsi (no shared words,
+  no shared MinHash shingles). The default ``NullEmbedder`` turns the path off.
+
+``find_merges``/``merge`` consolidate events that are already split (e.g. created before the
+semantic path existed, or by two first reports in different languages in the same pass)
+with the same guards on the event vectors (``merge_threshold``); the largest event keeps
+its id. See ``osint.pipeline.events.EventBuilder.consolidate``.
+
+Title language: an event's title is its primary article's, except that an English article
+joining an event whose title is not English replaces the title and summary (the event list
+should read in English when English coverage exists).
 
 Otherwise a new event is created, but only from a real article whose triage relevance is at
 least ``min_relevance_create`` (gated categories such as ``political`` also need a concrete
@@ -35,18 +51,19 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import math
+import logging
 import os
 import re
 import struct
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 from urllib.parse import urlsplit
 
 import h3
+import numpy as np
 
 from osint.core.geo import haversine_km, valid_coord
 from osint.enrich.gazetteer import fold
@@ -54,6 +71,8 @@ from osint.pipeline.minhash import LSHIndex, MinHasher, jaccard
 
 if TYPE_CHECKING:
     from osint.pipeline.events import EventsConfig
+
+log = logging.getLogger(__name__)
 
 PRECISION_RANK = {"point": 3, "city": 2, "admin1": 1, "country": 0}
 UNLOCATED = "unlocated"
@@ -284,6 +303,21 @@ def _unpack(text: str) -> tuple[int, ...]:
     return struct.unpack(f"<{len(raw) // 4}I", raw)
 
 
+def _pack_vec(v: np.ndarray | None) -> str | None:
+    """float16 + base64 (768 bytes for 384 dimensions): compact enough for cluster_state."""
+    if v is None:
+        return None
+    return base64.b64encode(np.asarray(v, dtype=np.float16).tobytes()).decode("ascii")
+
+
+def _unpack_vec(v: Any) -> np.ndarray | None:
+    if not v:
+        return None
+    if isinstance(v, str):
+        return np.frombuffer(base64.b64decode(v), dtype=np.float16).astype(np.float32)
+    return np.asarray(v, dtype=np.float32)  # legacy JSON list
+
+
 def _parse_iso(s: str) -> datetime:
     dt = datetime.fromisoformat(s)
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
@@ -330,7 +364,10 @@ class EventState:
     relevance: float = 0.0
     title_score: float = -1.0
     has_article: bool = False
-    vector: list[float] | None = None
+    # semantic state: centroid of the member documents' vectors (pipeline.embed)
+    vector: np.ndarray | None = None
+    vec_n: int = 0  # documents averaged into ``vector``
+    title_lang: str = ""
     languages: set[str] = field(default_factory=set)
     # hooks for M3/M4 status levels
     sensor_corroborated: bool = False
@@ -363,8 +400,9 @@ class EventState:
                 "domains": sorted(self.domains), "words": sorted(self.words),
                 "places": sorted(self.place_keys), "sigs": [_pack(s) for s in self.sigs],
                 "relevance": self.relevance, "title_score": self.title_score,
-                "has_article": self.has_article, "vector": self.vector,
-                "languages": sorted(self.languages),
+                "has_article": self.has_article, "vector": _pack_vec(self.vector),
+                "vec_n": self.vec_n,
+                "title_lang": self.title_lang, "languages": sorted(self.languages),
                 "sensor_corroborated": self.sensor_corroborated, "official": self.official,
                 "v": CLUSTER_VERSION, "gen": self.gen,
             },
@@ -392,7 +430,8 @@ class EventState:
             sigs=[_unpack(s) for s in st.get("sigs") or []],
             relevance=float(st.get("relevance") or 0.0),
             title_score=float(st.get("title_score", -1.0)),
-            has_article=bool(st.get("has_article")), vector=st.get("vector"),
+            has_article=bool(st.get("has_article")), vector=_unpack_vec(st.get("vector")),
+            vec_n=int(st.get("vec_n") or 0), title_lang=str(st.get("title_lang") or ""),
             languages=set(st.get("languages") or []),
             sensor_corroborated=bool(st.get("sensor_corroborated")),
             official=bool(st.get("official")), gen=int(st.get("gen") or 0),
@@ -403,22 +442,85 @@ class EventState:
 
 
 class Embedder(Protocol):
-    """Pluggable sentence embedder (e.g. multilingual-e5-small via ONNX, spec §2.6)."""
+    """Pluggable sentence embedder (``osint.pipeline.embed.OnnxEmbedder``, spec §2.6): one
+    vector per text, or None when unavailable. ``keys`` (document ids) allow caching."""
 
-    def embed(self, texts: list[str]) -> list[list[float]] | None: ...
+    def embed(self, texts: list[str], keys: list[str] | None = None
+              ) -> Sequence[Any] | None: ...
 
 
 class NullEmbedder:
     """Default: no embeddings, so the semantic path is skipped."""
 
-    def embed(self, texts: list[str]) -> list[list[float]] | None:
+    def embed(self, texts: list[str], keys: list[str] | None = None) -> None:
         return None
 
 
-def _cosine(a: list[float], b: list[float]) -> float:
-    num = sum(x * y for x, y in zip(a, b, strict=False))
-    den = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
-    return num / den if den else 0.0
+def _cosine(a: Any, b: Any) -> float:
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
+    den = float(np.linalg.norm(a)) * float(np.linalg.norm(b))
+    return float(a @ b) / den if den else 0.0
+
+
+def _relation(prec_a: str | None, prec_b: str | None) -> str:
+    """'contained' when exactly one side is located at country level only, else 'none'."""
+    return "contained" if (prec_a == "country") != (prec_b == "country") else "none"
+
+
+def english_title_better(lang: str | None, ev: EventState) -> bool:
+    """An English title replaces a non-English event title (never the other way round)."""
+    return (lang or "") == "en" and (ev.title_lang or "") != "en"
+
+
+_NOISE = re.compile(r"https?://\S+|[#@]\w+", re.UNICODE)
+EMBED_MIN_WORDS = 4
+
+
+def _content_words(text: str) -> int:
+    return sum(1 for m in _WORD.finditer(_NOISE.sub(" ", text))
+               if len(m.group(0)) >= 2 and not m.group(0).isdigit())
+
+
+def embed_text(title: str, snippet: str = "", max_chars: int = 400) -> str:
+    """The text embedded for a document: title and snippet without links and hashtags (a
+    snippet that repeats the title replaces it). On labelled event pairs title+snippet
+    beats the title alone (at 98% precision it finds 30% of the same-incident pairs instead
+    of 21%: one-line headlines in two languages often stress different aspects). "" when
+    fewer than ``EMBED_MIN_WORDS`` words remain ("#Ukraine"): no vector, such posts would
+    match anything."""
+    t = " ".join(_NOISE.sub(" ", title or "").split())
+    sn = " ".join(_NOISE.sub(" ", snippet or "").split())
+    if t and sn.startswith(t.rstrip(".:…")):
+        t = ""
+    text = f"{t}. {sn}" if t and sn else (t or sn)
+    text = text[:max_chars]
+    return text if _content_words(text) >= EMBED_MIN_WORDS else ""
+
+
+def embed_key(doc_id: str, text: str) -> str:
+    """Cache key: the document id plus a hash of the embedded text (a rule change re-embeds)."""
+    return f"{doc_id}:{hashlib.sha1(text.encode('utf-8')).hexdigest()[:8]}"
+
+
+def embed_many(embedder: Embedder, items: list[tuple[str, str]]) -> list[Any]:
+    """Vectors for (doc id, text) pairs; None for empty texts or when the embedder is
+    unavailable or fails (the semantic path is optional: never fail a pass over it)."""
+    out: list[Any] = [None] * len(items)
+    idx = [i for i, (_, t) in enumerate(items) if t]
+    if not idx:
+        return out
+    try:
+        vecs = embedder.embed([items[i][1] for i in idx],
+                              [embed_key(items[i][0], items[i][1]) for i in idx])
+    except Exception:
+        log.exception("embedding %d documents failed", len(idx))
+        return out
+    if vecs is None or len(vecs) != len(idx):
+        return out
+    for i, v in zip(idx, vecs, strict=True):
+        out[i] = v
+    return out
 
 
 # ------------------------------------------------------------------------- results
@@ -437,6 +539,10 @@ class ClusterResult:
     skipped: dict[str, int] = field(default_factory=dict)
     gdelt_accepted: int = 0
     gdelt_rejected: dict[str, int] = field(default_factory=dict)
+    joins: dict[str, int] = field(default_factory=dict)  # path -> documents (text/geo/...)
+
+    def join(self, path: str) -> None:
+        self.joins[path] = self.joins.get(path, 0) + 1
 
     def skip(self, reason: str) -> None:
         self.skipped[reason] = self.skipped.get(reason, 0) + 1
@@ -447,6 +553,16 @@ class ClusterResult:
 
 
 Scorer = Callable[[EventState, datetime], tuple[str, float]]
+
+
+@dataclass
+class Merge:
+    """One event folded into another by ``Clusterer.merge`` (the loser's id is gone)."""
+
+    survivor: str
+    loser: str
+    similarity: float
+    fields: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Clusterer:
@@ -461,9 +577,15 @@ class Clusterer:
         self.lsh = LSHIndex(cfg.permutations, cfg.bands)
         self.events: dict[str, EventState] = {}
         self._geo: dict[int, set[str]] = {}
+        # country (upper case) -> event ids, and event id -> its indexed country
+        self._by_country: dict[str, set[str]] = {}
+        self._ev_country: dict[str, str] = {}
         self.generation = 0  # stamped on created events (rebuild generation)
         # primary document id -> event id to reuse (a rebuild keeps pre-existing ids)
         self.id_override: dict[str, str] = {}
+        # (language, title) -> True when its English translation is already cached; a
+        # merge of two non-English events then keeps the translated title (EventBuilder)
+        self.translated: Callable[[str, str], bool] | None = None
         from osint.pipeline.triage import Lexicon  # local: triage loads the gazetteer stack
 
         self._gates = Lexicon()
@@ -476,7 +598,24 @@ class Clusterer:
 
     # --------------------------------------------------------------- index upkeep
 
+    def _index_country(self, ev: EventState, *, drop: bool = False) -> None:
+        old = self._ev_country.get(ev.id)
+        new = None if drop else ((ev.country or "").upper() or None)
+        if old == new:
+            return
+        if old is not None:
+            bucket = self._by_country.get(old)
+            if bucket is not None:
+                bucket.discard(ev.id)
+                if not bucket:
+                    del self._by_country[old]
+            del self._ev_country[ev.id]
+        if new is not None:
+            self._by_country.setdefault(new, set()).add(ev.id)
+            self._ev_country[ev.id] = new
+
     def _index_geo(self, ev: EventState, old_cell: int | None) -> None:
+        self._index_country(ev)
         if old_cell == ev.h3_3:
             return
         if old_cell is not None:
@@ -492,6 +631,8 @@ class Clusterer:
         """Forget every in-memory event (after an external rebuild)."""
         self.events.clear()
         self._geo.clear()
+        self._by_country.clear()
+        self._ev_country.clear()
         self.lsh = LSHIndex(self.cfg.permutations, self.cfg.bands)
 
     def _add_event(self, ev: EventState) -> None:
@@ -505,6 +646,7 @@ class Clusterer:
         if ev is None:
             return
         self.lsh.remove(event_id)
+        self._index_country(ev, drop=True)
         if ev.h3_3 is not None:
             bucket = self._geo.get(ev.h3_3)
             if bucket is not None:
@@ -597,17 +739,249 @@ class Clusterer:
                 best, best_key = ev, key
         return best
 
-    def _semantic_match(self, vec: list[float] | None,
-                        candidates: list[EventState]) -> EventState | None:
+    def _semantic_candidates(self, doc: ClusterDoc) -> list[EventState]:
+        """Events with a vector in the document's H3 res-3 disk, of a category compatible
+        with one of the document's, whose time window covers the document."""
+        if doc.h3_3 is None:
+            return []
+        ids = {eid for cell in h3.grid_disk(h3.int_to_str(doc.h3_3), 1)
+               for eid in self._geo.get(h3.str_to_int(cell), ())}
+        country = (self._country(doc) or "").upper()
+        for eid in self._by_country.get(country, ()) if country else ():
+            # a country-level report ("in Libya") contains the city-level ones and vice versa
+            if doc.place_precision == "country" or self.events[eid].precision == "country":
+                ids.add(eid)
+        out = []
+        for eid in sorted(ids):
+            ev = self.events[eid]
+            if ev.vector is not None and self.cfg.compatible(ev.category, doc.categories) \
+                    and self._in_window(ev, doc, self.cfg.window_h(ev.category)):
+                out.append(ev)
+        return out
+
+    def _semantic_match(self, doc: ClusterDoc, vec: Any, places: set[str], words: set[str],
+                        candidates: list[EventState]) -> tuple[EventState, float] | None:
+        """Best event at cosine >= the threshold of its place relation (the document and
+        the event located at the same specific place, or not); a conflicting specific place
+        or another country never joins."""
         if vec is None:
             return None
-        best, best_sim = None, self.cfg.embed_threshold
+        country = (self._country(doc) or "").upper()
+        own = self.own_places(doc)
+        best, best_sim = None, -1.0
         for ev in candidates:
-            if ev.vector is not None:
-                sim = _cosine(vec, ev.vector)
-                if sim >= best_sim:
-                    best, best_sim = ev, sim
-        return best
+            if country and ev.country and country != ev.country.upper():
+                continue
+            if self.overlap(places, words, ev) is None:
+                continue  # two specific, different places
+            rel = "shared" if own & self.own_places(ev) else _relation(doc.place_precision,
+                                                                       ev.precision)
+            need = self.cfg.threshold(rel)
+            sim = _cosine(vec, ev.vector)
+            if sim >= need and sim > best_sim:
+                best, best_sim = ev, sim
+        return (best, best_sim) if best is not None else None
+
+    # ------------------------------------------------------------ consolidation
+
+    @staticmethod
+    def own_places(ev: EventState | ClusterDoc) -> set[str]:
+        """The location itself as place tokens (name key, H3 res-5 cell); empty below
+        admin1 precision. Not the places its documents mention: a roundup event mentions
+        many."""
+        if ev.lat is None or PRECISION_RANK.get(
+                (ev.precision if isinstance(ev, EventState) else ev.place_precision) or "",
+                0) < 1:
+            return set()
+        keys = {f"h5:{ev.h3_5:x}"} if ev.h3_5 is not None else set()
+        if ev.place_name:
+            keys.add(_place_key(ev.place_name))
+        return keys
+
+    def _place_relation(self, a: EventState, b: EventState) -> str | None:
+        """How the locations of two events relate (thresholds ``Clusterer.threshold``):
+
+        * 'shared': the same specific place (name or H3 res-5 cell);
+        * 'contained': exactly one of the two is located only at country level (same
+          country, checked by the caller): "in Libya" vs the Benghazi event;
+        * 'none': both country-level, or two different sites of one area each named by
+          the other's coverage (two strikes of one night around Kyiv);
+        * None: specific, different places neither event's documents mention: never."""
+        pa, pb = self.own_places(a), self.own_places(b)
+        if pa & pb:
+            return "shared"
+        if pa and pb and not (pa & b.place_keys or pb & a.place_keys):
+            return None
+        return _relation(a.precision, b.precision)
+
+    def pair_similarity(self, a: EventState, b: EventState) -> float | None:
+        """Centroid cosine of two events when they may be one incident (compatible
+        category, neighbouring H3 res-3 cells, overlapping time windows, no conflicting
+        place, both article-backed) and the cosine reaches the merge threshold of their
+        place relation; else None."""
+        cfg = self.cfg
+        if a.vector is None or b.vector is None or not (a.has_article and b.has_article):
+            return None
+        if a.h3_3 is None or b.h3_3 is None or not cfg.compatible(a.category, [b.category]):
+            return None
+        if not self._near(a, b):
+            return None
+        w = timedelta(hours=max(cfg.window_h(a.category), cfg.window_h(b.category)))
+        if a.t_start - w > b.t_end or b.t_start - w > a.t_end:
+            return None
+        if a.country and b.country and a.country.upper() != b.country.upper():
+            return None
+        rel = self._place_relation(a, b)
+        if rel is None:
+            return None
+        need = cfg.threshold(rel, merge=True)
+        sim = _cosine(a.vector, b.vector)
+        return sim if sim >= need else None
+
+    @staticmethod
+    def _contains(a: EventState, b: EventState) -> bool:
+        """Same country and one of the two is only located at country level."""
+        return bool(a.country) and (a.country or "").upper() == (b.country or "").upper() \
+            and "country" in (a.precision, b.precision)
+
+    def _near(self, a: EventState, b: EventState) -> bool:
+        if a.h3_3 == b.h3_3 or self._contains(a, b):
+            return True
+        return h3.int_to_str(b.h3_3) in h3.grid_disk(h3.int_to_str(a.h3_3), 1)
+
+    def _neighbours(self, ev: EventState) -> list[EventState]:
+        """Events in the H3 res-3 disk of ``ev`` or in its country with one of the two at
+        country level."""
+        if ev.h3_3 is None:
+            return []
+        ids = {eid for cell in h3.grid_disk(h3.int_to_str(ev.h3_3), 1)
+               for eid in self._geo.get(h3.str_to_int(cell), ())}
+        for eid in self._by_country.get((ev.country or "").upper(), ()) if ev.country else ():
+            if self._contains(ev, self.events[eid]):
+                ids.add(eid)
+        ids.discard(ev.id)
+        return [self.events[e] for e in sorted(ids)]
+
+    def find_merges(self, ids: Iterable[str] | None = None) -> list[tuple[float, str, str]]:
+        """Candidate pairs (similarity, event id, event id), best first, among ``ids`` (all
+        indexed events when None) and their neighbours."""
+        pool = self.events if ids is None else {e: self.events[e] for e in ids
+                                                 if e in self.events}
+        seen: set[tuple[str, str]] = set()
+        out = []
+        for ev in pool.values():
+            for other in self._neighbours(ev):
+                key = (min(ev.id, other.id), max(ev.id, other.id))
+                if key in seen:
+                    continue
+                seen.add(key)
+                sim = self.pair_similarity(ev, other)
+                if sim is not None:
+                    out.append((sim, *key))
+        out.sort(key=lambda t: (-t[0], t[1], t[2]))
+        return out
+
+    def consolidate(self, ids: Iterable[str] | None, now: datetime) -> list[Merge]:
+        """Merge split events among ``ids`` (all when None) and their neighbours, best pair
+        first, re-scoring the merged event after each merge (average linkage: a chain
+        A~B~C only collapses while the merged centroids stay similar)."""
+        merges: list[Merge] = []
+        pairs = self.find_merges(ids)
+        while pairs:
+            sim, a, b = pairs[0]
+            m = self.merge(self.events[a], self.events[b], now, similarity=sim)
+            merges.append(m)
+            # pairs of the two merged events are re-scored against the merged event only
+            pairs = [p for p in pairs if not {p[1], p[2]} & {a, b}]
+            pairs += self.find_merges([m.survivor])
+            pairs.sort(key=lambda t: (-t[0], t[1], t[2]))
+        return merges
+
+    @staticmethod
+    def survivor_of(a: EventState, b: EventState) -> tuple[EventState, EventState]:
+        """(survivor, loser): the larger event keeps its id (then the older, then the
+        smaller id, so the choice is deterministic)."""
+        ka = (-a.mention_count, a.t_start, a.id)
+        kb = (-b.mention_count, b.t_start, b.id)
+        return (a, b) if ka <= kb else (b, a)
+
+    def merge(self, a: EventState, b: EventState, now: datetime, *,
+              similarity: float = 0.0) -> Merge:
+        """Fold the smaller of two events into the larger (in memory; the caller persists
+        the survivor row and moves the loser's links, ``SqliteStore.merge_events``)."""
+        cfg = self.cfg
+        s, lo = self.survivor_of(a, b)
+        m = Merge(survivor=s.id, loser=lo.id, similarity=round(similarity, 4))
+        self._drop_event(lo.id)
+        s.version = max(s.version, lo.version) + 1
+        s.mention_count += lo.mention_count
+        s.domains |= lo.domains
+        s.languages |= lo.languages
+        s.t_start, s.t_end = min(s.t_start, lo.t_start), max(s.t_end, lo.t_end)
+        s.first_seen = min(s.first_seen, lo.first_seen)
+        s.updated_at = now
+        s.relevance = max(s.relevance, lo.relevance)
+        s.place_keys |= lo.place_keys
+        for w in sorted(lo.words):
+            if len(s.words) >= cfg.max_tokens:
+                break
+            s.words.add(w)
+        for sig in lo.sigs:
+            if len(s.sigs) >= cfg.max_signatures:
+                break
+            s.sigs.append(sig)
+            self.lsh.insert(s.id, sig)
+        for g in lo.gdelt_ids:
+            if g not in s.gdelt_ids:
+                s.gdelt_ids.append(g)
+        known = {x["name"].casefold() for x in s.actors}
+        s.actors += [x for x in lo.actors if x["name"].casefold() not in known]
+        s.cameo_root = s.cameo_root or lo.cameo_root
+        s.subcategory = s.subcategory or lo.subcategory
+        s.has_article = s.has_article or lo.has_article
+        s.sensor_corroborated = s.sensor_corroborated or lo.sensor_corroborated
+        s.official = s.official or lo.official
+        if lo.vector is not None:
+            if s.vector is None:
+                s.vector, s.vec_n = lo.vector.copy(), lo.vec_n
+            else:
+                n = max(1, s.vec_n) + max(1, lo.vec_n)
+                s.vector = (s.vector * max(1, s.vec_n) + lo.vector * max(1, lo.vec_n)) / n
+                s.vec_n = n
+        why = None
+        if english_title_better(lo.title_lang, s):
+            why = "English source title preferred"
+        elif s.title_lang != "en" and lo.title_lang != "en" and self.translated is not None \
+                and not self.translated(s.title_lang, s.title) \
+                and self.translated(lo.title_lang, lo.title):
+            why = "title with a cached English translation preferred"
+        if why:
+            s.title, s.summary = lo.title, lo.summary
+            s.title_score, s.title_lang = lo.title_score, lo.title_lang
+            m.fields.append({"event_id": s.id, "field": "title", "value": lo.title,
+                             "doc_id": f"merge:{lo.id}", "quote": why})
+        if lo.lat is not None and PRECISION_RANK.get(lo.precision or "", -1) > PRECISION_RANK.get(
+                s.precision or "", -1) and (s.lat is None or (s.country or "").upper() == (
+                lo.country or "").upper()):
+            # the merged event keeps the finer location (never a downgrade, never across
+            # countries): a country-level "in Libya" event absorbing the Benghazi one
+            if s.lat is not None:
+                m.fields.append({"event_id": s.id, "field": "location_before_merge",
+                                 "value": f"{s.place_name or ''} ({s.lat}, {s.lon}, "
+                                          f"{s.precision})"[:300],
+                                 "doc_id": f"merge:{lo.id}", "quote": "finer place of a merged event"})
+            old_cell = s.h3_3
+            s.lat, s.lon, s.precision = lo.lat, lo.lon, lo.precision
+            s.place_name, s.country, s.geo_confidence = lo.place_name, lo.country,                 lo.geo_confidence
+            s.h3_3, s.h3_5, s.h3_7 = lo.h3_3, lo.h3_5, lo.h3_7
+            self._index_geo(s, old_cell)
+            m.fields.append({"event_id": s.id, "field": "location", "value": lo.place_name or "",
+                             "doc_id": f"merge:{lo.id}", "quote": lo.place_name or ""})
+        m.fields.append({"event_id": s.id, "field": "merged_event", "value": lo.id,
+                         "doc_id": f"merge:{lo.id}",
+                         "quote": f"cosine {similarity:.3f}: {lo.title}"[:300]})
+        s.status, s.confidence = self.scorer(s, now)
+        return m
 
     # ---------------------------------------------------------------- mutation
 
@@ -624,7 +998,7 @@ class Clusterer:
 
     def _attach(self, ev: EventState, doc: ClusterDoc, role: str, now: datetime,
                 res: ClusterResult, sig: tuple[int, ...] | None, places: set[str],
-                words: set[str], vec: list[float] | None) -> None:
+                words: set[str], vec: Any) -> None:
         cfg = self.cfg
         ev.version += 1
         ev.mention_count += 1
@@ -645,9 +1019,7 @@ class Clusterer:
             ev.sigs.append(sig)
             self.lsh.insert(ev.id, sig)
         if vec is not None:
-            n = ev.mention_count
-            ev.vector = vec if ev.vector is None else [
-                (a * (n - 1) + b) / n for a, b in zip(ev.vector, vec, strict=False)]
+            self._add_vector(ev, vec)
         # location and title come from the primary (first) article only: a later article
         # or a GDELT row never moves the event or renames it
         primary = role == ROLE_PRIMARY and not doc.is_gdelt
@@ -666,8 +1038,15 @@ class Clusterer:
         if primary:
             ev.title, ev.summary = doc.title, doc.snippet
             ev.title_score = doc.relevance
+            ev.title_lang = doc.language or ""
             if not doc.located:
                 ev.precision = UNLOCATED
+        elif role == ROLE_MENTION and not doc.is_gdelt and doc.title \
+                and english_title_better(doc.language, ev):
+            ev.title, ev.summary = doc.title, doc.snippet
+            ev.title_score, ev.title_lang = doc.relevance, doc.language
+            res.fields.append(self._field(ev, "title", doc.title, doc,
+                                          "English source title preferred"))
         if not doc.is_gdelt:
             ev.has_article = True
         if doc.is_gdelt:
@@ -693,6 +1072,16 @@ class Clusterer:
             "title": doc.title, "published_at": _iso(doc.published_at),
             "language": doc.language or "", "role": role, "added_at": _iso(now)})
         ev.status, ev.confidence = self.scorer(ev, now)
+
+    def _add_vector(self, ev: EventState, vec: Any) -> None:
+        """Fold a member document's vector into the event centroid (running mean). Scoring
+        is centroid-only: on labelled pairs the best single member vector was less precise."""
+        v = np.asarray(vec, dtype=np.float32)
+        if ev.vector is None or ev.vec_n <= 0:
+            ev.vector, ev.vec_n = v.copy(), 1
+        else:
+            ev.vec_n += 1
+            ev.vector = ev.vector + (v - ev.vector) / ev.vec_n
 
     def _refine(self, ev: EventState, doc: ClusterDoc, res: ClusterResult) -> None:
         """A later article whose own text names a finer place (its text-supported best
@@ -763,15 +1152,16 @@ class Clusterer:
         res.updated = {eid for eid in res.updated if eid in before} - res.created
         return res
 
-    def _embed(self, docs: list[ClusterDoc]) -> list[list[float] | None]:
-        if not docs:
-            return []
-        vecs = self.embedder.embed([f"{d.title}. {d.snippet}" for d in docs])
-        if vecs is None or len(vecs) != len(docs):
+    def _embed(self, docs: list[ClusterDoc]) -> list[Any]:
+        """Vectors of the documents that can cluster (relevant, with a category)."""
+        if isinstance(self.embedder, NullEmbedder):
             return [None] * len(docs)
-        return list(vecs)
+        return embed_many(self.embedder, [
+            (d.id, embed_text(d.title, d.snippet)
+             if d.relevance >= self.cfg.min_relevance and d.categories else "")
+            for d in docs])
 
-    def _process_article(self, doc: ClusterDoc, vec: list[float] | None, now: datetime,
+    def _process_article(self, doc: ClusterDoc, vec: Any, now: datetime,
                          res: ClusterResult) -> None:
         if doc.relevance < self.cfg.min_relevance or not doc.categories:
             res.skip("irrelevant")
@@ -783,11 +1173,12 @@ class Clusterer:
         doc.relocate(self.cfg.min_place_confidence)
         sig = self.hasher.signature(f"{doc.title} {doc.snippet}")
         places, words = doc.place_keys(), doc.words()
-        ev = self._text_match(doc, sig, places)
+        ev, path = self._text_match(doc, sig, places), "text"
         if ev is None:
-            candidates = self._geo_candidates(doc)
-            ev = self._geo_match(doc, places, words, candidates) \
-                or self._semantic_match(vec, candidates)
+            ev, path = self._geo_match(doc, places, words, self._geo_candidates(doc)), "geo"
+        if ev is None and vec is not None:
+            hit = self._semantic_match(doc, vec, places, words, self._semantic_candidates(doc))
+            ev, path = (hit[0], "semantic") if hit else (None, "")
         if ev is None:
             if self.cfg.require_location and not doc.located:
                 res.skip("unlocated")
@@ -800,6 +1191,7 @@ class Clusterer:
             role = ROLE_PRIMARY
         else:
             res.updated.add(ev.id)
+            res.join(path)
             role = ROLE_MENTION if ev.has_article else ROLE_PRIMARY
         self._attach(ev, doc, role, now, res, sig, places, words, vec)
         res.clustered += 1

@@ -84,6 +84,31 @@ clustering:
     disaster: 1
     infrastructure: 1
     civil_unrest: 1
+  # semantic path (multilingual sentence embeddings, block `embedding` below): a document
+  # joins a nearby event (H3 res-3 disk, or same country with one side country-level;
+  # compatible category; time window; same country; no conflicting specific place) when
+  # the cosine with the event centroid reaches the threshold of their place relation:
+  #   embed_threshold            same specific place (name or H3 res-5 cell)
+  #   embed_threshold_contained  exactly one side only country-level ("in Libya")
+  #   embed_threshold_unshared   both country-level, or two nearby sites
+  # merge_* are the same for two existing events (consolidation of split events; the
+  # larger keeps its id, the other id redirects).
+  # Calibration (title+snippet vectors, 456 labelled event pairs from 2026-11-19..23, 396
+  # same-incident incl. the Benghazi ship attack): 0.75/0.78/0.88 -> pair precision 0.99,
+  # pair recall 0.29 (0.75/0.88/0.88: 0.99/0.17; 0.70 shared: 0.93/0.20; the spec's
+  # multilingual-e5-small at its best: 0.89/0.28). Replaying 1985 lake documents: 57/57
+  # semantic joins and 24/27 merges correct, events -7%; dry run on the live DB: 66
+  # merges (63 correct), Benghazi 19 events -> 1 (70 mentions, 7 languages) + residue.
+  embed_threshold: 0.75
+  embed_threshold_contained: 0.78
+  embed_threshold_unshared: 0.88
+  merge_threshold: 0.75
+  merge_threshold_contained: 0.78
+  merge_threshold_unshared: 0.88
+  merge_enabled: true
+  # categories that may describe one incident (semantic path and merges only)
+  compatible_categories:
+    - [armed_conflict, maritime_security]
   max_signatures: 8       # MinHash signatures kept per event for text matching
   max_tokens: 64          # overlap tokens kept per event
   # time window around [t_start, t_end] in which a document may still join (hours)
@@ -98,6 +123,20 @@ clustering:
     political: 48
     economic: 48
     cyber_outage: 24
+
+# Multilingual sentence encoder for the semantic path (osint.pipeline.embed): local ONNX
+# on the CPU, downloaded once (pinned revision, sha256-checked) into data/models/<model>/,
+# vectors cached per document in data/embeddings.sqlite. Unavailable -> semantic path off
+# (logged once), lexical clustering unchanged. OSINT_EMBEDDING=0 disables it too.
+embedding:
+  enabled: true
+  model: paraphrase-multilingual-minilm-l12-v2   # or multilingual-e5-small (see embed.py)
+  threads: 2              # ONNX Runtime intra-op threads (bounded: Cesium + worker share the CPU)
+  batch: 32
+  max_tokens: 128         # title + snippet fit; longer texts are truncated
+  download: true
+  cache_days: 14          # cached vectors older than this are pruned
+  retry_after_s: 3600     # after a failed load (offline, bad checksum)
 
 gdelt:
   # CAMEO root codes we track; others are rejected as irrelevant_category

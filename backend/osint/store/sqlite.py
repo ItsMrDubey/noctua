@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS quarantine (
 
 # Events (spec §3): one row per de-duplicated event; event_documents links contributing
 # documents (role primary | mention | gdelt); event_fields is the per-field provenance;
-# gdelt_decisions records every accept/reject of a GDELT row (benchmark substrate).
+# gdelt_decisions records every accept/reject of a GDELT row (benchmark substrate);
+# event_redirects maps the id of a news event merged into another (pipeline.cluster
+# consolidation) to the surviving id, so links held by the UI or other stores still resolve.
 # Timestamps are UTC ISO-8601 strings with milliseconds (lexically sortable). H3 cells are
 # stored as hex strings. cluster_state is the clusterer's private warm-start state.
 EVENTS_SCHEMA = """
@@ -59,6 +61,9 @@ CREATE TABLE IF NOT EXISTS gdelt_decisions (
   gdelt_event_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL,
   event_id TEXT, doc_id TEXT, category TEXT, decided_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS gdelt_decisions_at ON gdelt_decisions(decided_at);
+CREATE TABLE IF NOT EXISTS event_redirects (
+  old_id TEXT PRIMARY KEY, new_id TEXT NOT NULL, similarity REAL, merged_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS event_redirects_new ON event_redirects(new_id);
 """
 
 # Sensor corroboration (spec §3 Corroboration, §5 stage 6). corroborations: one row per
@@ -461,10 +466,19 @@ class SqliteStore:
             "event_id": event_id, "doc_id": doc_id, "category": category,
             "decided_at": iso(decided_at or utcnow())}])
 
-    def get_event(self, event_id: str) -> dict | None:
-        """Full event: columns plus fields (with quotes) and documents (with links)."""
+    def get_event(self, event_id: str, *, follow: bool = True) -> dict | None:
+        """Full event: columns plus fields (with quotes) and documents (with links). The id
+        of a merged-away event resolves to its survivor (``redirected_from`` is set)."""
+        redirected = None
         with self._lock:
             row = self._db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+            if row is None and follow:
+                hop = self._db.execute("SELECT new_id FROM event_redirects WHERE old_id=?",
+                                       (event_id,)).fetchone()
+                if hop is not None:
+                    redirected, event_id = event_id, hop[0]
+                    row = self._db.execute("SELECT * FROM events WHERE id=?",
+                                           (event_id,)).fetchone()
             if row is None:
                 return None
             docs = self._db.execute(
@@ -477,6 +491,8 @@ class SqliteStore:
         out = _event_out(row)
         out["documents"] = [dict(r) for r in docs]
         out["fields"] = [dict(r) for r in fields]
+        if redirected is not None:
+            out["redirected_from"] = redirected
         return out
 
     def list_events(self, *, bbox: tuple[float, float, float, float] | None = None,
@@ -732,6 +748,87 @@ class SqliteStore:
                 "UPDATE gdelt_decisions SET decision='rejected', reason=?, event_id=NULL "
                 "WHERE decision='accepted' AND (event_id IS NULL OR event_id NOT IN "
                 "(SELECT id FROM events))", (reason,)).rowcount
+
+    # ------------------------------------------------------------- event merges
+
+    def event_documents_for(self, event_ids: list[str]) -> dict[str, list[dict]]:
+        """event id -> its article documents (doc_id, title, published_at, language, role),
+        primary first (vector backfill of events written before embeddings existed)."""
+        out: dict[str, list[dict]] = {}
+        for i in range(0, len(event_ids), 900):
+            chunk = event_ids[i: i + 900]
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT event_id, doc_id, title, published_at, language, role FROM "
+                    f"event_documents WHERE role != 'gdelt' AND event_id IN "
+                    f"({','.join('?' * len(chunk))}) ORDER BY event_id, "
+                    "role != 'primary', published_at, doc_id", chunk).fetchall()
+            for r in rows:
+                out.setdefault(r[0], []).append({"doc_id": r[1], "title": r[2],
+                                                 "published_at": r[3], "language": r[4],
+                                                 "role": r[5]})
+        return out
+
+    def merge_events(self, merges: list[dict], events: list[dict]) -> int:
+        """Fold merged-away news events into their survivors, atomically and in order.
+
+        ``merges``: {survivor, loser, similarity, fields} as produced by
+        ``Clusterer.consolidate`` (a survivor may be merged away by a later entry);
+        ``events``: the final survivor rows. For each merge the loser's documents (its
+        primary article becomes a mention), field provenance, corroborations and GDELT
+        decisions move to the survivor; one-row-per-event records (verification, impact
+        sites, corroboration roll-up) move only when the survivor has none, and of the
+        verdicts only ``supported`` (a rejected article must not cap the merged event).
+        The loser row is deleted and ``event_redirects`` maps it (and anything that
+        redirected to it) to the survivor. A loser that is already gone or not a news event
+        is skipped, so re-running the same merges is harmless. Returns merges applied."""
+        now = iso(utcnow())
+        done = 0
+        with self._lock, self._db:
+            db = self._db
+            for m in merges:
+                sv, lo = m["survivor"], m["loser"]
+                if sv == lo:
+                    continue
+                row = db.execute("SELECT origin FROM events WHERE id=?", (lo,)).fetchone()
+                tgt = db.execute("SELECT origin FROM events WHERE id=?", (sv,)).fetchone()
+                if row is None or row[0] != "news" or (tgt is not None and tgt[0] != "news"):
+                    continue
+                db.execute("UPDATE OR IGNORE event_documents SET event_id=?, role=CASE "
+                           "WHEN role='primary' THEN 'mention' ELSE role END WHERE event_id=?",
+                           (sv, lo))
+                for table in ("event_documents", "event_fields", "corroborations"):
+                    if table != "event_documents":
+                        db.execute(f"UPDATE OR IGNORE {table} SET event_id=? WHERE event_id=?",
+                                   (sv, lo))
+                    db.execute(f"DELETE FROM {table} WHERE event_id=?", (lo,))
+                db.execute("UPDATE OR IGNORE event_verification SET event_id=? "
+                           "WHERE event_id=? AND verdict='supported'", (sv, lo))
+                for table in ("event_impacts", "event_corroboration"):
+                    db.execute(f"UPDATE OR IGNORE {table} SET event_id=? WHERE event_id=?",
+                               (sv, lo))
+                for table in ("event_verification", "event_impacts", "event_corroboration"):
+                    db.execute(f"DELETE FROM {table} WHERE event_id=?", (lo,))
+                db.execute("UPDATE gdelt_decisions SET event_id=? WHERE event_id=?", (sv, lo))
+                db.execute("UPDATE event_redirects SET new_id=? WHERE new_id=?", (sv, lo))
+                db.execute("INSERT OR REPLACE INTO event_redirects VALUES (?,?,?,?)",
+                           (lo, sv, m.get("similarity"), now))
+                db.execute("DELETE FROM event_redirects WHERE old_id=?", (sv,))
+                db.execute("DELETE FROM events WHERE id=?", (lo,))
+                db.executemany("INSERT OR IGNORE INTO event_fields VALUES (?,?,?,?,?)", [
+                    (f["event_id"], f["field"], str(f["value"]), f["doc_id"],
+                     f.get("quote") or "") for f in m.get("fields") or ()])
+                done += 1
+            if events:
+                db.executemany(_UPSERT_EVENT, [_event_tuple(e) for e in events])
+        return done
+
+    def resolve_event_id(self, event_id: str) -> str:
+        """The surviving id of a merged-away event (itself when not redirected)."""
+        with self._lock:
+            row = self._db.execute("SELECT new_id FROM event_redirects WHERE old_id=?",
+                                   (event_id,)).fetchone()
+        return row[0] if row else event_id
 
     def clear_news_events(self) -> int:
         """Remove every news event (origin news: never sensor or historical rows) with its
