@@ -57,7 +57,15 @@ def test_excluded_patrol_type_and_generic_military_weight():
     rows = [row("air:p8", m, 0.0, 8.0, 800, 180) for m in (0, 5, 10)]
     assert not run(rows, {"air:p8": {"type_code": "P8"}})
     rows = [row("air:h", m, 0.0, 8.0, 800, 120) for m in (0, 5, 10)]
-    evs = [e for e in run(rows, {"air:h": {"type_code": "XYZ"}}) if e.kind == "sea_terminating_flight"]
+    # unlisted military types are ignored by default (generic_weight_factor: 0) ...
+    assert not [e for e in run(rows, {"air:h": {"type_code": "XYZ"}})
+                if e.kind == "sea_terminating_flight"]
+    # ... and get the configured share when enabled
+    c = cfg()
+    c["flights"]["generic_weight_factor"] = 0.5
+    evs = [e for e in I.air_indicators(rows, {"air:h": {"type_code": "XYZ"}}, synthetic_geo(), c,
+                                       window_start=ts(-600), now=ts(120))
+           if e.kind == "sea_terminating_flight"]
     assert evs and all(e.weight == 0.5 for e in evs)
 
 
@@ -74,10 +82,10 @@ def test_orbit_detection_far_from_land():
         a = i / 24 * 2 * math.pi
         rows.append(row("air:k", i * 2, 0.36 * math.sin(a), 9.0 + 0.36 * math.cos(a), 25000, 300))
     evs = run(rows, {"air:k": {"type_code": "K35R"}}, now=ts(300))
-    orb = [e for e in evs if e.kind == "orbit"]
+    orb = [e for e in evs if e.kind == "support_orbit"]  # land-based tanker: supporting
     assert len(orb) == 1 and orb[0].weight == 1.5
     assert abs(orb[0].lon - 9.0) < 0.2
     # a straight transit is not an orbit
     rows = [row("air:t", i * 2, 0.0, 6.0 + i * 0.1, 25000, 300) for i in range(48)]
-    assert not [e for e in run(rows, {"air:t": {"type_code": "K35R"}}) if e.kind == "orbit"]
+    assert not [e for e in run(rows, {"air:t": {"type_code": "K35R"}}) if "orbit" in e.kind]
     assert NOW

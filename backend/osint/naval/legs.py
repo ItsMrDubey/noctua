@@ -89,9 +89,11 @@ def sea_terminating(legs: list[Leg], meta: dict | None, geo: Geo, cfg: dict,
     appear = float(cfg.get("appear_alt_ft", 3000))
     min_km = float(cfg.get("open_ocean_km", 80))
     base = float(cfg.get("base_weight", 1.0))
-    if mult <= 0:  # generic military type: must be both low and slow, half weight
+    if mult <= 0:  # generic military type: must be both low and slow, reduced weight
         appear = min(appear, low_alt)
-        weight = base * 0.5
+        weight = base * float(cfg.get("generic_weight_factor", 0.5))
+        if weight <= 0:
+            return []
     else:
         weight = base * mult
     out: list[Evidence] = []
@@ -109,6 +111,8 @@ def sea_terminating(legs: list[Leg], meta: dict | None, geo: Geo, cfg: dict,
             why = _low(edge, low_alt, slow, appear)
             if why is None or not geo.open_ocean(p.lat, p.lon, min_km):
                 continue
+            if geo.near_platform(p.lat, p.lon, float(cfg.get("platform_km", 25))):
+                continue  # offshore oil/gas platform (helideck) proxy
             coast = geo.coast_km(p.lat, p.lon)
             verb = "appeared" if which == "start" else "disappeared"
             out.append(Evidence(

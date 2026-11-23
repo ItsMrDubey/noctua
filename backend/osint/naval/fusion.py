@@ -129,16 +129,58 @@ def independent_kinds(kinds: list[str], sources: dict[str, set[str]],
 
 
 def confidence(strengths: dict[str, float], cfg: dict,
-               sources: dict[str, set[str]] | None = None) -> tuple[float, list[str], list[str]]:
+               sources: dict[str, set[str]] | None = None, *,
+               air_multi: bool = False) -> tuple[float, list[str], list[str]]:
     """1 - exp(-sum strengths); fewer than 2 independent positional kinds caps it.
+
+    Positional kinds whose sources all sit behind a stronger kind (the same flights seen as
+    sea-terminating + cvw + air-track) add only ``shadowed_factor`` of their strength.
+    Kinds of one ``family`` (all aircraft-derived kinds) count as ONE for the 2-kind rule:
+    aircraft alone never pass ``single_kind_cap`` - unless ``air_multi`` (one moving-point fit
+    holds several independent aircraft of several types), which lifts it to ``air_multi_cap``.
     Returns (confidence, positional kinds present, independent positional kinds)."""
     positional = set(cfg.get("positional_kinds") or [])
     pos_kinds = sorted(k for k, v in strengths.items() if k in positional and v >= 0.05)
     indep = independent_kinds(pos_kinds, sources or {}, strengths)
-    conf = 1 - math.exp(-sum(strengths.values()))
-    if len(indep) < 2:
-        conf = min(conf, float(cfg.get("single_kind_cap", 0.45)))
+    shadow = float(cfg.get("shadowed_factor", 1.0)) if sources else 1.0
+    total = sum(v * (shadow if k in positional and k in pos_kinds and k not in indep else 1.0)
+                for k, v in strengths.items())
+    conf = 1 - math.exp(-total)
+    fam = {k: f for f, ks in (cfg.get("families") or {}).items() for k in ks}
+    families = {fam.get(k, k) for k in indep}
+    if len(families) < 2:  # one independent kind, or several kinds of ONE family (aircraft)
+        cap = float(cfg.get("single_kind_cap", 0.45))
+        if air_multi and families <= {fam.get("air_track", "air_track")}:
+            cap = max(cap, float(cfg.get("air_multi_cap", cap)))
+        conf = min(conf, cap)
     return round(min(conf, float(cfg.get("max_confidence", 0.95))), 3), pos_kinds, indep
+
+
+def _superseded(evidence: list[Evidence], shares: dict[int, float],
+                sources: dict[str, set[str]], pos_kinds: list[str], lat: float, lon: float,
+                cfg: dict) -> bool:
+    """True when every positional signal here is aircraft-derived and all of those aircraft
+    belong to ONE air-track fit whose projection to now lies well away from here (the fit
+    already carries this as the past part of its track)."""
+    fam = {k for ks in (cfg.get("families") or {}).values() for k in ks}
+    if not fam or any(k not in fam for k in pos_kinds):
+        return False
+    keys = set().union(*(sources.get(k, set()) for k in pos_kinds))
+    for ev in evidence:
+        if ev.kind != "air_track" or not ev.detail or not keys <= set(ev.source_keys):
+            continue
+        e = ev.detail["ellipse"]
+        if haversine_km(lat, lon, e["lat"], e["lon"]) > e["semi_major_km"] + float(
+                cfg.get("min_radius_km", 50)):
+            return True
+    return False
+
+
+def _air_multi(fit: dict | None, cfg: dict) -> bool:
+    if not fit:
+        return False
+    return (len(fit.get("aircraft") or []) >= int(cfg.get("air_multi_min_aircraft", 3))
+            and len(fit.get("types") or []) >= 2)
 
 
 def hypotheses(evidence: list[Evidence], surface: Surface, cfg: dict, *,
@@ -172,13 +214,28 @@ def hypotheses(evidence: list[Evidence], surface: Surface, cfg: dict, *,
         strengths = kind_strengths(evidence, shares, surface.weights, cfg)
         sources: dict[str, set[str]] = defaultdict(set)
         for i in shares:
-            sources[evidence[i].kind].add(evidence[i].source_key or f"#{i}")
-        conf, pos_kinds, indep = confidence(strengths, cfg, sources)
+            sources[evidence[i].kind] |= evidence[i].independence_keys(f"#{i}")
+        fit_i = max((i for i in contrib if evidence[i].kind == "air_track"
+                     and evidence[i].detail), key=lambda i: contrib[i], default=None)
+        fit = evidence[fit_i].detail if fit_i is not None else None
+        conf, pos_kinds, indep = confidence(strengths, cfg, sources,
+                                            air_multi=_air_multi(fit, cfg))
         if not pos_kinds:
             continue  # names/priors alone never make a hypothesis
+        if set(pos_kinds) <= set(cfg.get("supporting_kinds") or []):
+            continue  # tanker / patrol orbits alone support, never make, a hypothesis
+        if fit is None and _superseded(evidence, shares, sources, pos_kinds, lat, lon, cfg):
+            continue  # an earlier position of a ship whose air-track fit has moved on
+        basis = "evidence-density centroid"
+        if fit is not None and fit["ellipse"]["semi_major_km"] < radius:
+            # the moving-point fit is tighter than the density blob: centre on its projection
+            lat, lon = fit["ellipse"]["lat"], fit["ellipse"]["lon"]
+            radius = max(float(cfg.get("min_radius_km", 50)), fit["ellipse"]["semi_major_km"])
+            basis = "air-track fit projected to now"
         idx = sorted(contrib, key=lambda i: -contrib[i])
         top = idx[: int(cfg.get("max_evidence", 15))]
-        evs = [{**evidence[i].to_dict(), "contribution": round(contrib[i], 4),
+        evs = [{**{k: v for k, v in evidence[i].to_dict().items() if k != "detail"},
+                "contribution": round(contrib[i], 4),
                 "distance_km": round(haversine_km(lat, lon, evidence[i].lat, evidence[i].lon), 1)}
                for i in top]
         ts_all = [evidence[i].ts for i in idx if evidence[i].kind in positional]
@@ -192,6 +249,9 @@ def hypotheses(evidence: list[Evidence], surface: Surface, cfg: dict, *,
             "signal_first": min(ts_all).isoformat() if ts_all else None,
             "signal_last": max(ts_all).isoformat() if ts_all else None,
             "peak_density": round(max(ws), 4), "cells": len(comp),
+            "centre_basis": basis,
+            "ellipse": fit["ellipse"] if fit is not None else None,
+            "air_track": fit,
         })
     out.sort(key=lambda h: -h["confidence"])
     return out

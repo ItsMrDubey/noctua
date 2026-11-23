@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from osint.core.geo import utcnow
-from osint.naval import fusion, voids
+from osint.naval import fusion, trackfit, voids
 from osint.naval import indicators as I
 from osint.naval.config import NavalConfig
 from osint.naval.geo import Geo, get_geo
@@ -43,6 +43,7 @@ class CarrierJob:
         self.passes = 0
         self.last_error: str | None = None
         self.usni_error: str | None = None
+        self._fits: list[trackfit.TrackFit] = []
 
     @property
     def interval_s(self) -> float:
@@ -192,9 +193,11 @@ class CarrierJob:
     def gather(self, hours: int, now: datetime, geo: Geo) -> tuple[list[Evidence], dict]:
         start = now - timedelta(hours=hours)
         status: dict[str, dict] = {k: {"inputs": 0, "evidence": 0, "note": ""} for k in (
-            "sea_terminating_flight", "cvw_aircraft", "orbit", "support_ship", "nav_warning",
-            "traffic_void", "traffic_diversion", "news", "usni_prior")}
+            "sea_terminating_flight", "cvw_aircraft", "orbit", "support_orbit", "air_track",
+            "support_ship",
+            "nav_warning", "traffic_void", "traffic_diversion", "news", "usni_prior")}
         evidence: list[Evidence] = []
+        self._fits = []  # set by the air indicator (moving-point fits of air fixes)
 
         def run(label: str, fn: Callable[[], list[Evidence]]) -> None:
             try:
@@ -208,14 +211,27 @@ class CarrierJob:
                 status[e.kind]["evidence"] += 1
 
         def air() -> list[Evidence]:
-            rows = self._air_rows(start, now)
-            ids = sorted({r[0] for r in rows})
-            for k in ("sea_terminating_flight", "cvw_aircraft", "orbit"):
-                status[k]["inputs"] = len(ids)
+            ac = self.cfg.sec("aircraft")
+            fit_start = min(start, now - timedelta(hours=float(ac.get("lookback_h", 168))))
+            rows_all = self._air_rows(fit_start, now)
+            start_us = int(start.timestamp() * 1_000_000)
+            rows = [r for r in rows_all if r[1] >= start_us]
+            ids = sorted({r[0] for r in rows_all})
+            for k in ("sea_terminating_flight", "cvw_aircraft", "orbit", "support_orbit"):
+                status[k]["inputs"] = len({r[0] for r in rows})
                 if not rows:
                     status[k]["note"] = "no ADS-B positions in window"
             metas = self.store.get_tracks(ids) if ids else {}
-            return I.air_indicators(rows, metas, geo, self.cfg, window_start=start, now=now)
+            out = I.air_indicators(rows, metas, geo, self.cfg, window_start=start, now=now)
+            fixes = I.air_fixes(rows_all, metas, geo, self.cfg, window_start=fit_start, now=now)
+            tc = self.cfg.sec("trackfit")
+            self._fits = trackfit.fit_tracks(fixes, tc)
+            status["air_track"]["inputs"] = len(fixes)
+            status["air_track"]["fits"] = len(self._fits)
+            if not fixes:
+                status["air_track"]["note"] = (
+                    f"no launch/recovery/loiter fixes in the last {ac.get('lookback_h', 168)} h")
+            return out + trackfit.fit_evidence(self._fits, now, tc, geo.mask.is_ocean)
 
         def ships() -> list[Evidence]:
             cands = I.candidate_ship_ids(self.settings.sqlite_path, self.cfg)
@@ -286,8 +302,11 @@ class CarrierJob:
                 near = min(hyps, key=lambda x: abs(x["lat"] - h["lat"]) + abs(x["lon"] - h["lon"]),
                            default=None)
                 h["id"] = near["id"] if near else None
+            tc = self.cfg.sec("trackfit")
+            fits = [f.to_dict(now, tc, geo.mask.is_ocean) for f in self._fits]
             result = {
                 "generated_at": now.isoformat(), "hours": hours, "disclaimer": DISCLAIMER,
+                "air_tracks": fits,
                 "hypotheses": hyps, "surface": surface.cells_out(),
                 "evidence": [e.to_dict() for e in evidence], "indicator_status": status,
                 "eval": fusion.evaluate(usni, eval_hyps),
