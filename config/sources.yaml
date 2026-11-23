@@ -95,3 +95,61 @@ nga_msi:
   interval_s: 1800
   status: A        # active warnings only
   reemit_days: 30  # re-store a still-active warning after this long
+acled:                     # needs ACLED_EMAIL + ACLED_PASSWORD (myACLED login) in .env;
+  enabled: true            # idles with one log line without them
+  interval_s: 21600        # ACLED updates weekly; every 6 h is plenty
+  days: 14                 # first poll: events dated in the last N days; then by upload time
+  denied_backoff_h: 12     # "Access denied" (account tier) / rejected login: pause this long
+ucdp_candidate:            # UCDP Candidate Events (monthly), public CSVs, CC BY 4.0
+  enabled: true
+  interval_s: 21600
+  all_files: true          # newest month + the year-to-date file; false = newest month only
+telegram:
+  enabled: true
+  interval_s: 600
+  # t.me resolved to a blocking address on this network (2026-11-23); telegram.me serves the
+  # same public previews. Post links are always stored as canonical https://t.me/<ch>/<id>.
+  base_url: https://telegram.me
+  concurrency: 2           # requests in flight
+  min_interval_s: 1.0      # spacing between request starts
+  max_pages: 3             # pages read back per channel to catch up after a gap
+  # Public channels with a web preview (https://t.me/s/<name>), checked 2026-11-23: HTTP 200,
+  # posts within the last 48 h. Edit freely: {name, language, country}. Several are partisan
+  # or state outlets (marked); they are kept as perspective, and all Telegram posts count as
+  # one outlet (t.me) for multi-source status.
+  channels:
+    # --- Russia-Ukraine war
+    - {name: DeepStateUA, language: uk, country: UA}              # front-line map team
+    - {name: operativnoZSU, language: uk, country: UA}            # Ukrainian armed forces news
+    - {name: GeneralStaffZSU, language: uk, country: UA}          # General Staff of Ukraine (official)
+    - {name: Tsaplienko, language: uk, country: UA}               # war correspondent
+    - {name: ukrpravda_news, language: uk, country: UA}
+    - {name: kyivindependent_official, language: en, country: UA}
+    - {name: wartranslated, language: en, country: UA}            # translated war footage/claims
+    - {name: astrapress, language: ru, country: RU}               # independent; strikes inside Russia
+    - {name: meduzalive, language: ru, country: LV}
+    - {name: nexta_live, language: ru, country: PL}
+    - {name: moscowtimes_en, language: en, country: NL}
+    - {name: mod_russia, language: ru, country: RU}               # Russian MoD (official, state)
+    - {name: rybar, language: ru, country: RU}                    # pro-Kremlin milblogger
+    - {name: militarysummary, language: en, country: RU}          # pro-Russian aggregator
+    - {name: tass_agency, language: ru, country: RU}              # state news agency
+    # --- Middle East
+    - {name: Middle_East_Spectator, language: en, country: TR}
+    - {name: CIG_telegram, language: en, country: ""}             # Counter Intelligence Global
+    - {name: warfareanalysis, language: en, country: ""}
+    - {name: QudsNen, language: en, country: PS}                  # Quds News Network
+    - {name: englishabuali, language: en, country: IL}            # Abu Ali Express (Israeli)
+    - {name: idfofficial, language: en, country: IL}              # IDF (official)
+    - {name: ajanews, language: ar, country: QA}                  # Al Jazeera Arabic
+    - {name: alhadath, language: ar, country: AE}                 # Al Hadath (Saudi-owned)
+    - {name: presstv, language: en, country: IR}                  # Iranian state media
+    - {name: afintl, language: fa, country: GB}                   # Afghanistan International
+    # --- Africa / Caucasus
+    - {name: africaintel, language: en, country: ""}
+    - {name: AfricaFront, language: ru, country: RU}              # Russian-language Africa desk
+    - {name: armenpress, language: ru, country: AM}               # Armenian state news agency
+    # --- Global OSINT aggregators
+    - {name: OSINTdefender, language: en, country: ""}
+    - {name: clashreport, language: en, country: ""}
+    - {name: warmonitors, language: en, country: ""}
