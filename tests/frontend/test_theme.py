@@ -26,3 +26,8 @@ def _load(name):
 
 def test_contrast_and_palette_rules_pass(capsys):
     assert _load("check_contrast").main([str(THEME)]) == 0, capsys.readouterr().out
+
+
+def test_css_lint_clean():
+    found = _load("check_css").lint(ROOT / "frontend" / "css")
+    assert found == [], "\n".join(found)
