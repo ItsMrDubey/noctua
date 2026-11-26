@@ -137,6 +137,8 @@ class CountryPane {
     this.loadingN = 1; this.root.querySelector(".cx-filters").classList.add("cx-loading"); // stale counts read as dimmed until this lands
     this.lastTry = Date.now();
     if (this.sumErr) { this.sumErr = null; if (!this.summary) this.renderHead(); } // retry: back to loading
+    // backstop: never stuck on "Loading…"; armed only when a request starts (a hidden pane loads nothing)
+    if (!this.summary) settleLoading(this.root.querySelector(".cx-head"), SUMMARY_MS + 2000, "Summary unavailable");
     try {
       const s = await fetchJson("/api/country/" + encodeURIComponent(this.st.cc) + "/summary?" + summaryQuery(this.st, { allCats: this.allCats }), SUMMARY_MS);
       if (this.dead() || seq !== this.sumSeq) return;
@@ -158,7 +160,6 @@ class CountryPane {
     }
     if (!s) {
       el.innerHTML = stateHtml("loading", "Loading " + this.name(this.st.cc) + " summary…");
-      settleLoading(el, SUMMARY_MS + 2000, "Summary unavailable"); // backstop: never stuck on "Loading…"
       return;
     }
     const stale = this.sumErr ? '<div class="cx-stale" role="status">Showing last data · retrying</div>' : "";
