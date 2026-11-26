@@ -5,15 +5,21 @@ country's location set (inside or abroad, osint.store.country_sql) updated in th
 (default: the last 7 days). ``spark`` always covers the last 30 days by first-report day.
 ``threat`` is the Terror Watch official level + advisories (``board.threat_section``), or
 null when Terror Watch is unavailable. ``bbox`` comes from osint.core.countries; ``centroid``
-(the Natural Earth label point) is the fly-to fallback for countries without a polygon."""
+(the Natural Earth label point, else the GeoNames country point of the gazetteer index) is the
+fly-to fallback for countries without a polygon. ``migrated`` is false until the
+migrate_countries CLI has backfilled actor countries: abroad, involvement and counterparts are
+partial before that."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
+import threading
 from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse, Response
@@ -21,6 +27,7 @@ from fastapi.responses import JSONResponse, Response
 from osint.api import events as events_api
 from osint.api.events import _json, clamp_since, country_code, parse_since, unknown_country
 from osint.core import countries
+from osint.intel.context import _countries_migrated
 from osint.signals.countries import Countries, get_countries
 from osint.terror import board
 from osint.terror.store import get_store as terror_store
@@ -37,6 +44,42 @@ LIFECYCLES = ("developing", "active", "cooling", "closed")
 def _shapes() -> Countries:
     """Natural Earth country label points and outlines (the IODA overlay's source)."""
     return get_countries()
+
+
+# gazetteer index path -> {ISO2: (lat, lon)} of its COUNTRY rows (the median of the
+# country's cities15000 places), read once
+_gz_points: dict[str, dict[str, tuple[float, float]]] = {}
+_gz_lock = threading.Lock()
+
+
+def gazetteer_point(runtime, cc: str) -> tuple[float, float] | None:
+    """(lat, lon) of ``cc`` from the gazetteer index (data/gazetteer/index.sqlite), or None.
+    Natural Earth 1:50m has no polygon or label point for some territories (Gibraltar,
+    French Guiana, Reunion, ...); this keeps the pane's fly-to working for them. The
+    reference countries (osint.reference.loader.load_countries) read the same Natural Earth
+    file, so they cannot fill these gaps."""
+    settings = getattr(runtime, "settings", None)
+    if settings is None or getattr(settings, "data_dir", None) is None:
+        return None
+    path = Path(settings.data_dir) / "gazetteer" / "index.sqlite"
+    key = str(path)
+    with _gz_lock:
+        if key not in _gz_points:
+            pts: dict[str, tuple[float, float]] = {}
+            if path.is_file():
+                try:
+                    db = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+                    try:
+                        for c, lat, lon in db.execute(
+                                "SELECT cc, lat, lon FROM places WHERE feature = 'COUNTRY'"):
+                            if isinstance(c, str) and len(c) == 2 and lat is not None                                     and lon is not None:
+                                pts.setdefault(c.upper(), (float(lat), float(lon)))
+                    finally:
+                        db.close()
+                except sqlite3.Error:
+                    log.warning("gazetteer index unreadable: %s", path, exc_info=True)
+            _gz_points[key] = pts
+        return _gz_points[key].get(cc.upper())
 
 
 def _in_ring(lon: float, lat: float, ring: list[float]) -> bool:
@@ -161,11 +204,15 @@ def mount_country(app: FastAPI, runtime, *, now: Callable[[], datetime] | None =
         spark = await asyncio.to_thread(store.country_spark, code, spark_from)
         threat = await asyncio.to_thread(threat_for, runtime, code)
         point = (await asyncio.to_thread(_shapes)).point(code)
+        if point is None:  # no Natural Earth feature: the gazetteer's country point
+            point = await asyncio.to_thread(gazetteer_point, runtime, code)
         box = countries.bbox(code)
+        migrated = await asyncio.to_thread(_countries_migrated, runtime)
         return _json({"cc": code, "name": countries.name(code), "threat": threat,
                       **summarise(code, rows, spark, today),
                       "bbox": list(box) if box else None,
                       "centroid": [point[0], point[1]] if point else None,
+                      "migrated": migrated,
                       "since": lo.isoformat(), "until": hi.isoformat() if hi else None})
 
     @app.get("/api/country/at")

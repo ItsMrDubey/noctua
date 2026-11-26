@@ -146,3 +146,54 @@ def test_top_actor_country_normalised_before_migration():
     got = {a["name"]: a["country"] for a in top}
     assert got == {"Russian forces": "RU", "Ukrainian army": "UA", "Polish police": "PL",
                    "NATO": None, "Rebels": None}
+
+
+def test_migrated_flag_follows_the_country_migration_marker(tmp_path):
+    from osint.store.sqlite import COUNTRY_MIGRATION_STATE
+
+    store = build_store(tmp_path / "m.sqlite")
+    app = FastAPI()
+    mount_country(app, _RT(store, None), now=lambda: T0 + timedelta(hours=1))
+    c = TestClient(app)
+    try:
+        assert c.get("/api/country/UA/summary").json()["migrated"] is False
+        store.set_cursor(COUNTRY_MIGRATION_STATE, {"done": False})
+        assert c.get("/api/country/UA/summary").json()["migrated"] is False
+        store.set_cursor(COUNTRY_MIGRATION_STATE, {"done": True})
+        assert c.get("/api/country/UA/summary").json()["migrated"] is True
+    finally:
+        store.close()
+
+
+def test_centroid_falls_back_to_the_gazetteer_country_point(tmp_path, monkeypatch):
+    """No Natural Earth polygon / label point (Gibraltar): the GeoNames country point."""
+    import sqlite3
+
+    gz = tmp_path / "data" / "gazetteer"
+    gz.mkdir(parents=True)
+    db = sqlite3.connect(gz / "index.sqlite")
+    db.executescript(
+        "CREATE TABLE places(i INTEGER PRIMARY KEY, pid INTEGER, name TEXT, cc TEXT,"
+        " a1 TEXT, lat REAL, lon REAL, pop INTEGER, feature TEXT, precision TEXT);"
+        "INSERT INTO places VALUES (1, -1, 'Gibraltar', 'GI', '', 36.14474, -5.35257,"
+        " 100000000, 'COUNTRY', 'country');"
+        "INSERT INTO places VALUES (2, 7, 'Gibraltar', 'GI', '', 36.1, -5.3, 26544, 'PPLC',"
+        " 'city');")
+    db.commit()
+    db.close()
+    shapes = Countries(write_geojson(tmp_path / "ne.geojson"))
+    monkeypatch.setattr(country_api, "_shapes", lambda: shapes)
+    monkeypatch.setattr(countries, "bbox", lambda cc: None)
+    store = build_store(tmp_path / "g.sqlite")
+    rt = _RT(store, None)
+    rt.settings = type("S", (), {"data_dir": tmp_path / "data"})()
+    app = FastAPI()
+    mount_country(app, rt, now=lambda: T0 + timedelta(hours=1))
+    c = TestClient(app)
+    try:
+        gi = c.get("/api/country/GI/summary").json()
+        assert gi["bbox"] is None and gi["centroid"] == [36.14474, -5.35257]
+        assert c.get("/api/country/UA/summary").json()["centroid"] == [48.0, 31.0]  # NE first
+        assert c.get("/api/country/TK/summary").json()["centroid"] is None  # nowhere
+    finally:
+        store.close()
