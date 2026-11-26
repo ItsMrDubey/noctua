@@ -133,17 +133,21 @@ def _migrate(store: SqliteStore, rule_pass: RulePass, *, now: datetime, days: fl
     rows = store.event_countries()
     kinds: Counter[str] = Counter()
     unresolved: Counter[str] = Counter()
-    override: dict[str, str | None] = {}
+    override: dict[str, str | None] = {}  # home country for the rule pass's derivation
+    after: list[str | None] = []  # events.country as the migration leaves it
     changes: list[tuple[str | None, str]] = []
     for eid, origin, value in rows:
         cc, kind = normalise_country(eid, origin, value)
         kinds[kind] += 1
         if kind == "unresolved":
-            # the raw value is kept (never erased); only reported
+            # the raw value is kept in the column (never erased) and reported, but it is no
+            # country: derivation sees no home country (nothing is "foreign" to it)
             unresolved[str(value)] += 1
-            override[eid] = value
+            override[eid] = None
+            after.append(value)
             continue
         override[eid] = cc
+        after.append(cc)
         if cc != value:
             changes.append((cc, eid))
     if not dry_run and changes:
@@ -178,7 +182,7 @@ def _migrate(store: SqliteStore, rule_pass: RulePass, *, now: datetime, days: fl
     return {
         "dry_run": dry_run, "events": total,
         "before": _distribution([r[2] for r in rows]),
-        "after": _distribution(list(override.values())),
+        "after": _distribution(after),
         "rewritten": {"fips": kinds["fips"], "name": kinds["name"], "code": kinds["code"]},
         "kept": kinds["kept"], "empty": kinds["empty"],
         "unresolved": dict(unresolved.most_common(50)),

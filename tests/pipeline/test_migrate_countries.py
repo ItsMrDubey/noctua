@@ -179,6 +179,34 @@ def test_unresolved_country_is_kept_and_reported(store, lexicon):
     rep = migrate(store, rp, now=NOW)
     assert store.get_event("01NEWSODD")["country"] == "Atlantis"  # raw value not erased
     assert rep["unresolved"] == {"Atlantis": 1}
+    assert ["Atlantis", 1] in rep["after"]["top"]  # the report shows the column as left
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_an_unresolved_country_is_no_home_country_for_derivation(tmp_path, lexicon, dry_run,
+                                                                 monkeypatch):
+    """The raw value stays in the column but is not a country: an actor country cannot be
+    'foreign' relative to it."""
+    store = SqliteStore(tmp_path / "only.sqlite")
+    store.save_events([_ev("01NEWSODD", "Atlantis", actors=[
+        {"name": "Russia", "role": "source", "type": "RUS", "country": "RUS"}])])
+    rp = RulePass(store, lexicon=lexicon, rules=RuleSet.load())
+    seen = {}
+    real = rp.run
+
+    def spy(ids, **kw):
+        seen.update(kw.get("country_override") or {})
+        return real(ids, **kw)
+
+    monkeypatch.setattr(rp, "run", spy)
+    rep = migrate(store, rp, now=NOW, dry_run=dry_run)
+    assert seen["01NEWSODD"] is None
+    assert rep["foreign_share"] == 0.0 and rep["attributed_share"] == 1.0
+    ev = store.get_event("01NEWSODD")
+    assert ev["country"] == "Atlantis"
+    if not dry_run:
+        assert ev["actor_countries"] == ["RU"] and ev["foreign_involved"] == 0
+    store.close()
 
 
 def test_rebuild_marker_keeps_a_pending_cleanup_flag(store, lexicon):
