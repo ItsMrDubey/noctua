@@ -52,7 +52,8 @@ function pivot(spec, label, cls = "") {
   return '<a href="#" class="' + cls + '" data-pivot=\'' + esc(JSON.stringify(spec)) + "'>" + label + "</a>";
 }
 // "Country context" link: opens the country pane (country.js) beside the board, which stays its own pane
-const ctxLink = (cc) => (/^[A-Z]{2}$/.test(cc || "") ? ' <a href="#" class="tw-ctx" data-newpane="1" data-pivot=\'' + esc(JSON.stringify({ type: "country", cc })) + "'>Country context</a>" : "");
+// attr "pivot": board links (dossier browser, new pane); "open": the right-panel feed (TerrorPanel.open)
+const ctxLink = (cc, attr = "pivot") => (/^[A-Z]{2}$/.test(cc || "") ? ' <a href="#" class="tw-ctx"' + (attr === "pivot" ? ' data-newpane="1"' : "") + " data-" + attr + "='" + esc(JSON.stringify({ type: "country", cc })) + "'>Country context</a>" : "");
 const intelSpec = (i) => ({ type: "intel", kind: "event", id: i.event_id, label: i.title || i.event_id });
 
 // ------------------------------------------------------------------ globe layer
@@ -461,7 +462,7 @@ export class TerrorPanel {
         '<small class="tw-muted">' + esc(x.date) + " · " + esc(x.date_basis || "") + "</small></div></li>";
     }
     if (x.type === "level_change" || x.type === "advisory_change") {
-      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--ion)"></i><div><a href="#" data-open=\'' + esc(JSON.stringify({ type: "terror-country", cc: x.country })) + "'>" + esc(x.country + " · " + (x.authority || "US advisory") + ": " + (x.prev_level ?? "?") + " → " + (x.level ?? "?")) + "</a>" + ' <a href="#" class="tw-ctx" data-open=\'' + esc(JSON.stringify({ type: "country", cc: x.country })) + "'>Country context</a>" +
+      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--ion)"></i><div><a href="#" data-open=\'' + esc(JSON.stringify({ type: "terror-country", cc: x.country })) + "'>" + esc(x.country + " · " + (x.authority || "US advisory") + ": " + (x.prev_level ?? "?") + " → " + (x.level ?? "?")) + "</a>" + ctxLink(x.country, "open") +
         '<small class="tw-muted">detected ' + when(x.observed_at) + (x.as_of ? " · as of " + esc(x.as_of) : "") + "</small></div></li>";
     }
     return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--fg-2)"></i><div><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(x.title) + "</a>" +

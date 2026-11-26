@@ -94,11 +94,13 @@ export function installCountry(ctx) {
   window.addEventListener("keyup", (e) => {
     if (e.key === "Alt" && altOnGlobe) { altOnGlobe = false; e.preventDefault(); }
   });
+  // Alt+click then Alt+Tab: the keyup lands in another window, so forget the press
+  window.addEventListener("blur", () => { altOnGlobe = false; });
   // the hint: shown once per browser, on the first plain click on the globe
   if (hintDue(store())) {
     const hint = (e) => {
-      // a click, not the end of a camera drag
-      if (!hintTrigger(e) || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+      // a mouse click (Alt+click is a mouse gesture), not a tap or the end of a camera drag
+      if (e.pointerType !== "mouse" || !hintTrigger(e) || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
       canvas.removeEventListener("pointerup", hint);
       if (!hintDue(store())) return; // seen in another tab meanwhile
       markHintSeen(store());

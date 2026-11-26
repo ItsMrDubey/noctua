@@ -37,11 +37,11 @@ console.log(JSON.stringify(out));
 
 @pytest.mark.skipif(NODE is None, reason="node not installed")
 def test_state_helpers():
-    m = re.search(r"^export const stateHtml.*?^}\n", SRC, re.S | re.M)
+    m = re.search(r"^export const stateHtml.*?^}\n", SRC, re.DOTALL | re.MULTILINE)
     assert m, "stateHtml/settleLoading not found in ui.js"
     code = m.group(0).replace("export ", "")
     script = SCRIPT % code
-    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], check=False, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     out = json.loads(r.stdout.strip().splitlines()[-1])
     assert out["a"] == '<div class="state state-empty"><b>No &lt;b&gt;</b>x &amp; y</div>'
@@ -55,7 +55,7 @@ def test_state_helpers():
 @pytest.mark.skipif(NODE is None, reason="node not installed")
 def test_trail_state():
     src = (ROOT / "frontend" / "js" / "panels" / "inspector.js").read_text(encoding="utf-8")
-    m = re.search(r"^export function trailState.*?^}\n", src, re.S | re.M)
+    m = re.search(r"^export function trailState.*?^}\n", src, re.DOTALL | re.MULTILINE)
     assert m, "trailState not found in inspector.js"
     code = m.group(0).replace("export ", "")
     pts = "[{}, {}]"
@@ -69,12 +69,12 @@ const o = [
   trailState({ inFlight: false, pts: [] }),
   trailState({ inFlight: false, pts: null, error: "boom" }),
   trailState({ inFlight: false, pts: null }),
-  trailState({ inFlight: true, pts: %s }),
-  trailState({ inFlight: false, pts: %s, error: "x" }),
+  trailState({ inFlight: true, pts: __PTS__ }),
+  trailState({ inFlight: false, pts: __PTS__, error: "x" }),
 ];
 console.log(JSON.stringify(o));
-""" % (pts, pts)
-    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+""".replace("__PTS__", pts)
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], check=False, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "empty", "empty", "error", "empty", "empty", "error", "off", "ready", "ready"]
 
@@ -85,15 +85,15 @@ def test_trail_toggle_off_mid_request_settles():
     off while a request is in flight must end in 'off', never stay 'loading'."""
     tsrc = (ROOT / "frontend" / "js" / "trails.js").read_text(encoding="utf-8")
     isrc = (ROOT / "frontend" / "js" / "panels" / "inspector.js").read_text(encoding="utf-8")
-    ts = re.search(r"^export function trailState.*?^}\n", isrc, re.S | re.M).group(0).replace("export ", "")
-    cs = re.search(r"^  clearSelected\(\).*?\n", tsrc, re.M).group(0)
-    ss = re.search(r"^  async showSelected.*?^  }\n", tsrc, re.S | re.M).group(0)
+    ts = re.search(r"^export function trailState.*?^}\n", isrc, re.DOTALL | re.MULTILINE).group(0).replace("export ", "")
+    cs = re.search(r"^  clearSelected\(\).*?\n", tsrc, re.MULTILINE).group(0)
+    ss = re.search(r"^  async showSelected.*?^  }\n", tsrc, re.DOTALL | re.MULTILINE).group(0)
     script = ts + """
 let release; const fetchJson = () => new Promise((r) => { release = r; });
 class T { constructor() { this.sel = { removeAll() {} }; this.scene = { requestRender() {} }; this.selKey = null; this.lastSel = 0; }
   _draw() {}
-%s
-%s}
+__CS__
+__SS__}
 const t = new T(); let req = { inFlight: false, error: null }, pts = null;
 t.onState = (k, f, e) => { req = { inFlight: f, error: e }; };
 t.onPoints = (k, p) => { pts = p; req = { inFlight: false, error: null }; };
@@ -103,8 +103,8 @@ const during = trailState({ ...req, pts });
 t.clearSelected(); pts = null; req = { inFlight: false, error: null }; // app.js: clearSelected + inspector.resetTrail
 release({ points: [{}, {}] }); await p;
 console.log(JSON.stringify([during, trailState({ ...req, pts })]));
-""" % (cs, ss)
-    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+""".replace("__CS__", cs).replace("__SS__", ss)
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], check=False, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "off"]
 
@@ -114,12 +114,12 @@ def test_trail_periodic_refresh_does_not_flicker():
     """A throttled (non-forced) refresh of the same selected track must not re-emit onState(true);
     a forced call or a different track does."""
     tsrc = (ROOT / "frontend" / "js" / "trails.js").read_text(encoding="utf-8")
-    ss = re.search(r"^  async showSelected.*?^  }\n", tsrc, re.S | re.M).group(0)
+    ss = re.search(r"^  async showSelected.*?^  }\n", tsrc, re.DOTALL | re.MULTILINE).group(0)
     script = """
 const fetchJson = async () => ({ points: [{}, {}] });
 class T { constructor() { this.sel = { removeAll() {} }; this.scene = { requestRender() {} }; this.selKey = null; this.lastSel = 0; }
   _draw() {}
-%s}
+__SS__}
 const t = new T(); const ev = [];
 t.onState = (k, f) => ev.push(k + ":" + f); t.onPoints = () => {};
 const C = { Color: {} }; globalThis.colorFor = () => ({});
@@ -128,7 +128,7 @@ t.lastSel = 0; await t.showSelected("aircraft", "a1", {}, false);
 t.lastSel = 0; await t.showSelected("aircraft", "a1", {}, true);
 t.lastSel = 0; await t.showSelected("aircraft", "a2", {}, false);
 console.log(JSON.stringify(ev));
-""" % ss
-    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+""".replace("__SS__", ss)
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], check=False, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout.strip().splitlines()[-1]) == ["aircraft:a1:true", "aircraft:a1:true", "aircraft:a2:true"]
