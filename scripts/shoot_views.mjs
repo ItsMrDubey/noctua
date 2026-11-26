@@ -69,6 +69,7 @@ const VIEWS = [
   ["06-dossier-intel", "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i' }))"],
   ["07-timeline-replay", "(() => { window.__osint.dossier.minimise(); const s = document.getElementById('tl-slider'); s.value = String(Math.round(+s.max / 2)); s.dispatchEvent(new Event('input')); })()"],
   ["08-settings", "(() => { window.__osint.timeline.goLive(); document.getElementById('cfg-btn').click(); })()"],
+  ["09-crt", "(() => { document.getElementById('cfg-crt').click(); document.getElementById('cfg-btn').click(); })()"],
 ];
 for (const [name, js] of VIEWS) {
   try { if (js) await run(js); } catch (e) { console.warn("step " + name + " failed: " + e.message); }

@@ -80,3 +80,11 @@ def test_symbology_reads_theme_tokens_and_caches_cesium_colours():
     assert out["air"] == "#8fe8f5"  # not set by the mock: falls back
     assert out["ces"] == {"s": "#123456", "a": 0.5} and out["same"] is True
     assert out["plain"] == {"s": "#123456"}
+
+
+def test_crt_overlay_is_inert_and_toggle_wired():
+    css = THEME.read_text(encoding="utf-8")
+    m = re.search(r"body\.fx-crt::after\s*\{([^}]*)\}", css)
+    assert m and "pointer-events: none" in m.group(1)
+    js = (ROOT / "frontend" / "js" / "panels" / "settings.js").read_text(encoding="utf-8")
+    assert "noctua.fx.crt" in js and 'id="cfg-crt"' in js and '"fx-crt"' in js
