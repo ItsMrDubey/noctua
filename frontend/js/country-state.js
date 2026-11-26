@@ -144,3 +144,70 @@ export function controlSelector(ds) {
   if (ds.cp) return '[data-cp="' + q(ds.cp) + '"]';
   return null;
 }
+
+// ---- globe sync (country-globe.js) ----
+const wrapLon = (x) => ((((x + 180) % 360) + 360) % 360) - 180;
+// camera fit box [w, s, e, n] in degrees for a country bbox (w, s, e, n), padded by `pad` of each
+// span (at least 0.5 deg). w > e means the box crosses the antimeridian (RU, FJ, US, NZ): the span
+// is taken eastwards across it and the padded edges are wrapped into [-180, 180], so the result
+// may also have w > e, which is how Cesium.Rectangle spells "crosses the antimeridian". A padded
+// span of 360 deg or more becomes the whole longitude range. null for a malformed bbox.
+export function fitBox(bbox, pad = 0.08) {
+  if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every((v) => typeof v === "number" && isFinite(v))) return null;
+  const [w, s, e, n] = bbox;
+  if (n < s || Math.abs(s) > 90 || Math.abs(n) > 90) return null;
+  const spanX = e >= w ? e - w : e - w + 360;
+  const px = Math.max(0.5, spanX * pad), py = Math.max(0.5, (n - s) * pad);
+  const S = Math.max(-90, s - py), N = Math.min(90, n + py);
+  if (spanX + 2 * px >= 360) return [-180, S, 180, N];
+  let W = wrapLon(w - px), E = wrapLon(e + px);
+  if (E === -180 && W !== -180) E = 180; // an east edge landing exactly on the antimeridian
+  return [W, S, E, N];
+}
+
+// actor_countries as a list, whether the API sent a JSON string or an array
+function actorList(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string" && v) { try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch { return []; } }
+  return [];
+}
+// the globe's focus predicate for a country pane: true = drawn normally, false = dimmed. `ids` is
+// the pane's filtered set from /api/events?ids=true. When the server capped that set (truncated),
+// an event missing from it may still match, so only events that cannot be in any filtered set of
+// country `cc` (located elsewhere and without `cc` among their actor countries) are dimmed; an
+// event whose country fields are absent counts as unknown and stays undimmed.
+export function focusPredicate(ids, { truncated = false, cc = "" } = {}) {
+  if (!ids) return null;
+  if (!truncated) return (it) => ids.has(it.id);
+  return (it) => {
+    if (ids.has(it.id)) return true;
+    if (!("country" in it) && !("actor_countries" in it)) return true; // unknown
+    return it.country === cc || actorList(it.actor_countries).includes(cc);
+  };
+}
+
+// a polygon ring (flat [lon, lat, ...]) as the open polylines of its outline: the ring is closed
+// and cut wherever an edge runs along the antimeridian (Natural Earth splits RU / FJ / ... there,
+// and that seam is not a border). Each run is a flat [lon, lat, ...] array of >= 2 points.
+export function outlineRuns(ring) {
+  if (!Array.isArray(ring) || ring.length < 6) return [];
+  const pts = [];
+  for (let i = 0; i + 1 < ring.length; i += 2) pts.push([ring[i], ring[i + 1]]);
+  const a = pts[0], z = pts[pts.length - 1];
+  if (a[0] !== z[0] || a[1] !== z[1]) pts.push(a);
+  const seam = (p, q) => Math.abs(p[0]) >= 179.9999 && Math.abs(q[0]) >= 179.9999 && Math.sign(p[0]) === Math.sign(q[0]);
+  const runs = [];
+  let cur = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (seam(pts[i - 1], pts[i])) { if (cur.length > 1) runs.push(cur); cur = [pts[i]]; } else cur.push(pts[i]);
+  }
+  if (cur.length > 1) runs.push(cur);
+  // a closed ring cut somewhere: the last run continues into the first
+  if (runs.length > 1) {
+    const f = runs[0], l = runs[runs.length - 1];
+    if (f[0] === pts[0] && l[l.length - 1] === pts[pts.length - 1] && !seam(pts[pts.length - 2], pts[pts.length - 1])) {
+      runs[0] = l.concat(f.slice(1)); runs.pop();
+    }
+  }
+  return runs.map((r) => r.flat());
+}

@@ -385,14 +385,15 @@ export class Dossier {
   }
 
   // ---- visibility ----
-  show() { this.state = "open"; this.el.classList.remove("hidden"); this.chip.classList.add("hidden"); this._layout(); }
+  show() { this.state = "open"; this.el.classList.remove("hidden"); this.chip.classList.add("hidden"); this._layout(); this._notify(); }
   minimise() {
     if (!this.panes.length) return this.hide();
     this.state = "min"; this.el.classList.add("hidden");
     this.chip.classList.remove("hidden");
     this.chip.innerHTML = "<i></i>DOSSIER <b>" + this.panes.length + "</b>" + this.panes.slice(0, 4).map((p) => "<span>" + esc(p.title || "") + "</span>").join("");
+    this._notify();
   }
-  hide() { this.state = "closed"; this.el.classList.add("hidden"); this.chip.classList.add("hidden"); }
+  hide() { this.state = "closed"; this.el.classList.add("hidden"); this.chip.classList.add("hidden"); this._notify(); }
   toggle() { if (this.state === "open") this.minimise(); else this.show(); }
 
   // ---- panes ----
@@ -427,12 +428,12 @@ export class Dossier {
   navigate(pane, spec) {
     pane.hist = pane.hist.slice(0, pane.hi + 1);
     pane.hist.push(spec); pane.hi = pane.hist.length - 1;
-    pane.spec = spec; this._render(pane); this._save();
+    pane.spec = spec; this._render(pane); this._save(); this._notify();
   }
   history(pane, d) {
     const i = pane.hi + d;
     if (i < 0 || i >= pane.hist.length) return;
-    pane.hi = i; pane.spec = pane.hist[i]; this._render(pane);
+    pane.hi = i; pane.spec = pane.hist[i]; this._render(pane); this._notify();
   }
   close(pane, quiet) {
     const i = this.panes.indexOf(pane);
@@ -444,10 +445,16 @@ export class Dossier {
     if (this.focused) this.focused.el.classList.add("focus");
     this._layout();
     if (!quiet) this._save();
+    this._notify();
   }
   focus(pane) {
     for (const p of this.panes) p.el.classList.toggle("focus", p === pane);
     this.focused = pane;
+    this._notify();
+  }
+  // which pane has focus and what is open, for feature modules (country.js globe sync)
+  _notify() {
+    window.dispatchEvent(new CustomEvent("noctua:dossier", { detail: { state: this.state, focused: this.focused ? this.focused.spec : null, specs: this.panes.map((p) => p.spec) } }));
   }
   promote(pane) {
     const i = this.panes.indexOf(pane);

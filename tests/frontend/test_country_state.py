@@ -233,3 +233,59 @@ def test_control_selector_refinds_each_filter_control():
         '[data-cp="RU"]',
         None,
     ]
+
+
+def test_fit_box_pads_and_handles_the_antimeridian():
+    r = run(
+        "return [S.fitBox([22.1, 44.4, 40.2, 52.4]), S.fitBox([19.6, 41.2, -169.73, 81.85]),"
+        " S.fitBox([177, -18.3, -178.2, -16]), S.fitBox([-179.8, 10, -170, 20]),"
+        " S.fitBox([0, 0, 359, 1]), S.fitBox([7.41, 43.72, 7.44, 43.75]),"
+        " S.fitBox(null), S.fitBox([1, 2, 3]), S.fitBox([0, 10, 1, 5])];"
+    )
+    ua, ru, fj, near, world, mc, *bad = r
+    # UA: 8 % padding each side, no wrap
+    assert ua == pytest.approx([22.1 - 1.448, 44.4 - 0.64, 40.2 + 1.448, 52.4 + 0.64])
+    # RU crosses the antimeridian: w > e is kept (Cesium.Rectangle spans east across 180)
+    span = -169.73 - 19.6 + 360
+    assert ru == pytest.approx([19.6 - span * 0.08, 41.2 - 3.252, -169.73 + span * 0.08, 85.102])
+    assert ru[0] > ru[2]
+    # FJ: a small box across 180, min 0.5 deg padding
+    assert fj == pytest.approx([176.5, -18.8, -177.7, -15.5])
+    # a box that the padding pushes across the antimeridian wraps instead of clamping
+    assert near[0] == pytest.approx(179.416) and near[2] == pytest.approx(-169.216)
+    # padded span >= 360: the whole longitude range
+    assert world == pytest.approx([-180, -0.5, 180, 1.5])
+    assert mc == pytest.approx([6.91, 43.22, 7.94, 44.25])
+    assert bad == [None, None, None]
+
+
+def test_focus_predicate_exact_and_truncated():
+    r = run(
+        'const ids = new Set(["a"]);'
+        'const evs = [{id: "a", country: "RU"}, {id: "b", country: "UA"},'
+        ' {id: "c", country: "PL", actor_countries: ["UA"]},'
+        " {id: 'd', country: 'PL', actor_countries: '[\"UA\"]'},"
+        ' {id: "e", country: "PL", actor_countries: ["DE"]}, {id: "f", country: null}, {id: "g"}];'
+        "const ex = S.focusPredicate(ids, { cc: 'UA' }),"
+        " tr = S.focusPredicate(ids, { truncated: true, cc: 'UA' });"
+        "return [evs.map(ex), evs.map(tr), S.focusPredicate(null)];"
+    )
+    exact, trunc, none = r
+    assert exact == [True, False, False, False, False, False, False]
+    # capped set: anything that could belong to UA's filtered set is unknown, so not dimmed
+    assert trunc == [True, True, True, True, False, False, True]
+    assert none is None
+
+
+def test_outline_runs_close_rings_and_drop_the_antimeridian_seam():
+    r = run(
+        "return [S.outlineRuns([0, 0, 10, 0, 10, 10, 0, 10]),"
+        " S.outlineRuns([170, 0, 180, 0, 180, 10, 170, 10, 170, 0]),"
+        " S.outlineRuns([-180, 0, -170, 0, -170, 10, -180, 10, -180, 0]),"
+        " S.outlineRuns([0, 0, 1, 1]), S.outlineRuns(null)];"
+    )
+    square, east, west, short, none = r
+    assert square == [[0, 0, 10, 0, 10, 10, 0, 10, 0, 0]]
+    assert east == [[180, 10, 170, 10, 170, 0, 180, 0]]
+    assert west == [[-180, 0, -170, 0, -170, 10, -180, 10]]
+    assert short == [] and none == []

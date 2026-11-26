@@ -9,6 +9,11 @@ import { controlSelector, LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, PAGE, no
 
 const ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 14.5V2"/><path d="M3.5 2.5h9l-2.2 3 2.2 3h-9"/></svg>';
 const REFRESH_MS = 60000; // the live event poll's cadence (app.js)
+const IDS_MAX = 10000; // the API's MAX_LIMIT: the dimming set asks for all of it (truncated = capped)
+// globe sync (country-globe.js), installed by country.js: fit(cc, summary), setIds(cc, Set, truncated)
+const noop = () => {};
+let sink = { fit: noop, setIds: noop };
+export function setCountrySink(s) { sink = s || { fit: noop, setIds: noop }; }
 const SUMMARY_MS = 20000; // summary request timeout
 const EVENTS_MS = 20000; // event list request timeout
 const RETRY_MS = 10000; // a failed load retries sooner than the refresh (busy server at start-up)
@@ -47,7 +52,7 @@ class CountryPane {
     // event list: rows shown, more pages under the pin, last error, request in flight, seq guard;
     // pageAt / pageUntil pin the first load's window so "load more" pages through the same one, and
     // pageN counts the rows fetched under that pin (the next offset; rows a refresh adds don't shift it)
-    this.items = []; this.more = false; this.listErr = null; this.listLoading = true; this.listSeq = 0;
+    this.items = []; this.more = false; this.listErr = null; this.listLoading = true; this.listSeq = 0; this.idSeq = 0;
     this.pageAt = null; this.pageUntil = null; this.pageN = 0; this.moreBusy = false; this.listDirty = false; this.selId = null;
     body.innerHTML = '<div class="dk-root cx-pane"><div class="cx-head"></div><div class="cx-filters"></div><div class="cx-cp"></div><div class="cx-list"></div></div>';
     this.root = body.firstElementChild;
@@ -85,7 +90,19 @@ class CountryPane {
     if (this.wasHidden || !(Date.now() < due)) { this.wasHidden = false; this.load("refresh"); }
   }
   // every data source of the pane: "reset" after a filter change, "refresh" on the timer
-  load(mode) { return Promise.all([this.loadSummary(), this.loadList(mode)]); }
+  load(mode) { return Promise.all([this.loadSummary(), this.loadList(mode), this.loadIds()]); }
+  // the whole filtered set (not just the shown page) for the globe's dimming
+  async loadIds() {
+    const seq = ++this.idSeq, cc = this.st.cc;
+    try {
+      const r = await fetchJson("/api/events?" + eventsQuery(this.st, { limit: IDS_MAX, allCats: this.allCats, ids: true }), EVENTS_MS);
+      if (this.dead() || seq !== this.idSeq) return;
+      sink.setIds(cc, new Set(r.ids || []), !!r.truncated);
+    } catch (err) {
+      if (this.dead() || seq !== this.idSeq) return;
+      console.warn("country ids", err); // the globe keeps the previous set; the list shows the error
+    }
+  }
   renderAll() { this.paintSummary(); this.renderList(); }
   // pages of PAGE events, sorted by the server (lifecycle, then last update). "reset" starts over
   // (filter change) and pins the window; "more" appends the next page under that pin; "refresh"
@@ -278,6 +295,7 @@ class CountryPane {
       this.loadingN = 0;
       this.summary = s; this.sumErr = null; this.names = summaryNames(s);
       this.title(s);
+      sink.fit(this.st.cc, s);
       if (!this.items.length && !this.listLoading && !this.listErr) this.renderList(); // empty text names the country
     } catch (err) {
       if (this.dead() || seq !== this.sumSeq) return;
