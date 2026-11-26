@@ -175,8 +175,7 @@ export function setupImagery(viewer) {
   const scene = viewer.scene, layers = viewer.imageryLayers;
   // base layer goes in first (index 0), before any data layer or overlay
   const base = layers.addImageryProvider(makeImagery("base"), 0);
-  // intel-console tint: darker, desaturated, hue nudged towards amber so data and the accent pop
-  base.brightness = 0.55; base.contrast = 1.15; base.saturation = 0.35; base.hue = 0.03; base.gamma = 1.0;
+  // the base-layer look (dim/full) is owned by basemap.js (DIM/FULL presets); not set here
   // keep requesting frames until the first base tiles have arrived (requestRenderMode would
   // otherwise only repaint on the 2 s safety net)
   const t0 = performance.now();

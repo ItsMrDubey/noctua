@@ -18,7 +18,7 @@ const LABEL = { esri: "Esri World Imagery", bing: "Bing Maps Aerial", photo: "Go
  * ``onPhoto(on)`` is told when photorealistic tiles take over the surface. */
 export function installBasemap({ viewer, cfgP, onPhoto = () => {} }) {
   const scene = viewer.scene, layers = viewer.imageryLayers;
-  const st = { src: "esri", dim: false };
+  const st = { src: "esri", dim: true }; // dim is the default until the viewer stores a choice
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { /* storage disabled */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* ignore */ } };
 
