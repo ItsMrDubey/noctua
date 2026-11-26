@@ -217,7 +217,9 @@ class CountryPane {
     const it = this.items.find((x) => x.id === id);
     this.selId = id;
     this.root.querySelectorAll(".cx-row").forEach((r) => r.classList.toggle("sel", r.dataset.ev === id));
-    this.hooks.open({ type: "intel", kind: "event", id, label: (it && evTitle(it)) || id }, { focus: false });
+    // dock: the dossier opens beside this pane, never as the maximised console (which would hide
+    // it); the flag stays in the spec, so a restored pane stays docked too
+    this.hooks.open({ type: "intel", kind: "event", id, label: (it && evTitle(it)) || id, dock: 1 }, { focus: false, dock: true });
     this.hooks.select("events", id);
   }
   paintSummary() {

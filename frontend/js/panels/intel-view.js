@@ -758,7 +758,8 @@ export async function renderIntel(spec, body, hooks) {
   const kl = KIND_LABEL[spec.kind] || spec.kind;
   const isEv = spec.kind === "event";
   hooks.head({ title: spec.label || kl, sub: "INTEL // " + kl.toUpperCase(), icon: "intel", coord: spec.lat != null ? { lat: spec.lat, lon: spec.lon, alt: 6e4 } : null });
-  if (hooks.console && consolePref()) hooks.console(true);
+  // spec.dock: opened beside another pane (a country pane's event row): never as the console
+  if (hooks.console && consolePref() && !spec.dock) hooks.console(true);
   const tiles = tilesFor(spec.kind);
   body.innerHTML = '<div class="dk-root ip ic">' + '<div class="ic-hd"><div data-slot="head"><div class="dz-empty">Building intel picture…</div></div><div class="ic-metrics"></div><div class="ic-alertbar" hidden></div></div>' +
     '<div class="ic-grid">' + tiles.map((t, i) => tileShell(t, i)).join("") + "</div></div>";

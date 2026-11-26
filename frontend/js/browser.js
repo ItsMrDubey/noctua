@@ -401,10 +401,12 @@ export class Dossier {
   async openUrl(url, opts) { return this.open(await specForUrl(url), opts); }
   async navigateUrl(pane, url) { return this.navigate(pane, await specForUrl(url)); }
 
-  /** Open a spec in a new pane (or focus an identical open one). */
-  open(spec, { focus = true } = {}) {
+  /** Open a spec in a new pane (or focus an identical open one). dock: the pane opens beside the
+   *  others, never maximised: the intel console (or a zoomed pane) is left so both are visible. */
+  open(spec, { focus = true, dock = false } = {}) {
     const key = specKey(spec);
     const dup = this.panes.find((p) => specKey(p.spec) === key);
+    if (dock && this.zoomed) { if (this.max) this.console(this.zoomed, false); else this.zoom(this.zoomed); }
     if (dup) { this.show(); this.focus(dup); if (spec.tab && dup.spec.type === "entity") this._setTab(dup, spec.tab); return dup; }
     if (this.panes.length >= MAX_PANES) this.close(this.panes.find((p) => p !== this.focused && !p.pinned) || this.panes[0], true);
     const pane = { id: ++uid, spec, hist: [spec], hi: 0, title: "Loading…", sub: "", coord: null, el: document.createElement("article") };
