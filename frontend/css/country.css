@@ -10,6 +10,7 @@
 .cx-cc { font: 600 13px var(--f-mono); color: var(--amber); letter-spacing: .06em; }
 .cx-sep { color: var(--fg-2); }
 .cx-stale { font: 11px var(--f-mono); color: var(--amber); padding: 2px 0; }
+.cx-head > .cx-stale { grid-column: 1 / -1; } /* a full-width line under the id + threat row */
 .cx-name { font: 600 11px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-threat { --thr: var(--amber); display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border: 1px solid var(--line-2); background: transparent; color: var(--fg); font: 11px var(--f-mono); white-space: nowrap; cursor: pointer; }
 .cx-threat:hover { border-color: var(--thr); }

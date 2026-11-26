@@ -394,7 +394,7 @@ class CountryPane {
       const where = countryName(this.names, a.country);
       return '<span class="dk-chip" title="' + esc(nf(a.n) + " events" + (where ? " · " + where : "")) + '">' + esc(a.name) + (where && where !== a.name ? " · " + esc(where) : "") + "</span>";
     }).join("") + "</div>";
-    el.innerHTML = '<div class="cx-id">' + (flagOf(s.cc) ? '<span class="cx-flag" aria-hidden="true">' + flagOf(s.cc) + "</span>" : "") + '<b class="cx-cc">' + esc(s.cc) + '</b><span class="cx-sep" aria-hidden="true">·</span><span class="cx-name">' + esc(s.name) + "</span></div>" + stale + threat + spark + life + actors + adv;
+    el.innerHTML = '<div class="cx-id">' + (flagOf(s.cc) ? '<span class="cx-flag" aria-hidden="true">' + flagOf(s.cc) + "</span>" : "") + '<b class="cx-cc">' + esc(s.cc) + '</b><span class="cx-sep" aria-hidden="true">·</span><span class="cx-name">' + esc(s.name) + "</span></div>" + threat + stale + spark + life + actors + adv;
   }
   click(e) {
     const t = e.target.closest("button,[data-ev]");
