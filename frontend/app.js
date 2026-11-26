@@ -291,13 +291,21 @@ async function main() {
     else inspector.observation(selected.kind, it);
   }
   let detailErr = null; // {id, msg} when the full-record fetch for the selected event failed
-  async function loadDetail(kind, id) {
-    detail = null; detailErr = null;
+  let detailBusy = false;
+  // `retry`: a re-fetch after a failure; keeps the error showing (no flicker) until it succeeds
+  async function loadDetail(kind, id, retry) {
+    if (!retry) { detail = null; detailErr = null; }
     if (!isTrack(kind) && kind !== "events") return;
+    detailBusy = true;
     try {
       const d = await fetchJson((kind === "events" ? "/api/events/" : "/api/track/") + encodeURIComponent(id), 8000);
-      if (selected && selected.id === id) { detail = d; refreshSelected(); }
-    } catch (e) { /* older backend or unknown track: the list item is enough */ if (selected && selected.id === id) { detailErr = { id, msg: String((e && e.message) || e) }; refreshSelected(); } }
+      if (selected && selected.id === id) { detail = d; detailErr = null; refreshSelected(); }
+    } catch (e) { /* older backend or unknown track: the list item is enough */ if (selected && selected.id === id) { detailErr = { id, msg: String((e && e.message) || e), at: Date.now() }; refreshSelected(); } }
+    finally { detailBusy = false; }
+  }
+  // bounded retry (at most every 15 s) of a failed full-record fetch, driven by the 5 s refresh tick
+  function retryDetail() {
+    if (selected && selected.kind === "events" && detailErr && detailErr.id === selected.id && !detailBusy && Date.now() - detailErr.at >= 15000) loadDetail(selected.kind, selected.id, true);
   }
   // module-rendered selections (webcam, carrier hypothesis) own timers / labels: release them
   const mods = { wc: null, naval: null };
@@ -903,7 +911,7 @@ async function main() {
   poll("fires", 300000, ticks[2], onErr);
   poll("quakes", 300000, ticks[3], onErr);
   // refresh relative "last seen" in the inspector
-  setInterval(() => { if (selected) { refreshSelected(); if (!replayAt) trailSelected(false); } }, 5000);
+  setInterval(() => { if (selected) { refreshSelected(); retryDetail(); if (!replayAt) trailSelected(false); } }, 5000);
   // ---- Selection reticle + high-priority halos ----
   const reticle = new Reticle(scene);
   fx.setTarget = (fn, kind) => reticle.setTarget(fn, kind);
