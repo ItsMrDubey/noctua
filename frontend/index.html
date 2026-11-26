@@ -97,19 +97,19 @@
 
   <section class="grp" data-g="live">
     <header><h3>Tracks</h3><b id="g-live-n" class="num">–</b></header>
-    <label class="row"><input type="checkbox" id="t-aircraft" checked><span class="sw gl" style="--c:#9ff3ff"></span>Military aircraft<b id="c-aircraft" class="num">–</b></label>
-    <label class="row sub"><input type="checkbox" id="t-aircraft-hp"><span class="sw gl" style="--c:#ff4b55"></span>High-priority only</label>
-    <label class="row"><input type="checkbox" id="t-ships" checked><span class="sw hull" style="--c:#7fa8ff"></span>Ships<b id="c-ships" class="num">–</b></label>
-    <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw hull" style="--c:#ff4b55"></span>Military ships only</label>
-    <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw ln" style="--c:#9ff3ff"></span>Trails, all mil aircraft 1 h</label>
-    <label class="row" title="Nearest 250 tracks in view drawn as 3D models with dead-reckoned motion"><input type="checkbox" id="t-models3d" checked><span class="sw gl" style="--c:#d3dee8"></span>3D models <small>zoom &lt; 300 km</small></label>
+    <label class="row"><input type="checkbox" id="t-aircraft" checked><span class="sw gl" style="--c:var(--sym-air)"></span>Military aircraft<b id="c-aircraft" class="num">–</b></label>
+    <label class="row sub"><input type="checkbox" id="t-aircraft-hp"><span class="sw gl" style="--c:var(--sym-hp)"></span>High-priority only</label>
+    <label class="row"><input type="checkbox" id="t-ships" checked><span class="sw hull" style="--c:var(--sym-ship)"></span>Ships<b id="c-ships" class="num">–</b></label>
+    <label class="row sub"><input type="checkbox" id="t-ships-mil"><span class="sw hull" style="--c:var(--sym-ship-mil)"></span>Military ships only</label>
+    <label class="row"><input type="checkbox" id="t-miltrails"><span class="sw ln" style="--c:var(--sym-air)"></span>Trails, all mil aircraft 1 h</label>
+    <label class="row" title="Nearest 250 tracks in view drawn as 3D models with dead-reckoned motion"><input type="checkbox" id="t-models3d" checked><span class="sw gl" style="--c:var(--sym-air-civ)"></span>3D models <small>zoom &lt; 300 km</small></label>
     <label class="row" title="Where each track will be if it keeps its course and speed"><input type="checkbox" id="t-leaders"><span class="sw ln" style="--c:#ffa040"></span>Velocity leaders</label>
     <label class="row field sub">Leader horizon <select id="t-leader-min" class="mini"><option value="1">1 min</option><option value="5" selected>5 min</option><option value="10">10 min</option></select></label>
   </section>
 
   <section class="grp" data-g="events">
     <header><h3>Events &amp; stories</h3><b id="g-events-n" class="num">–</b></header>
-    <label class="row"><input type="checkbox" id="t-events" checked><span class="sw ring" style="--c:#a99bff"></span>News events<b id="c-events" class="num">–</b></label>
+    <label class="row"><input type="checkbox" id="t-events" checked><span class="sw ring" style="--c:var(--cat-other)"></span>News events<b id="c-events" class="num">–</b></label>
     <div id="ev-cats" class="chips"></div>
     <div id="ev-status" class="chips"></div>
     <label class="row field sub" title="Hide events below this confidence">Min confidence <input type="range" id="ev-conf" min="0" max="1" step="0.05" value="0"><output id="ev-conf-v" class="num">0.00</output></label>
@@ -129,8 +129,8 @@
 
   <section class="grp" data-g="sensors">
     <header><h3>Sensors</h3><b id="g-sensors-n" class="num">–</b></header>
-    <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:#ff6a1a"></span>Fires 24 h<b id="c-fires" class="num">–</b></label>
-    <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw ring" style="--c:#ffd24a"></span>Quakes 24 h<b id="c-quakes" class="num">–</b></label>
+    <label class="row"><input type="checkbox" id="t-fires" checked><span class="sw" style="--c:var(--sym-fire)"></span>Fires 24 h<b id="c-fires" class="num">–</b></label>
+    <label class="row"><input type="checkbox" id="t-quakes" checked><span class="sw ring" style="--c:var(--sym-quake)"></span>Quakes 24 h<b id="c-quakes" class="num">–</b></label>
     <label class="row" title="Only cameras whose operators openly publish them"><input type="checkbox" id="s-webcams"><span class="sw sq" style="--c:#5ee3ea"></span>Public webcams<b id="c-webcams" class="num"></b></label>
     <div id="wc-chips" class="chips"></div>
   </section>

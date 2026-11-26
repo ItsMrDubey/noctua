@@ -1,6 +1,46 @@
 // Glyph system: outline-wireframe map symbols for aircraft (by role) and ships (by type).
 // All glyphs are white strokes over a dark halo so Cesium's billboard colour tints them.
 
+// ---- palette: colours are CSS custom properties in css/theme.css (:root), read once at startup.
+// Module scripts run after the <head> stylesheets have loaded (source tree and dist bundle alike),
+// so getComputedStyle already sees theme.css. PALETTE_FALLBACK is used where there is no DOM (node
+// tests) or a token is missing; it must equal theme.css (tests/frontend/test_theme.py).
+export const PALETTE_FALLBACK = {
+  "--void": "#0a0a08", "--fg": "#f2e6c9", "--amber": "#ffb000", "--acc": "#ffb000", "--ion": "#7fb8c9", "--red": "#ff4d2e",
+  "--line-2": "rgba(255, 176, 0, .28)", "--globe-line": "rgba(255, 176, 0, .18)", "--globe-base": "#0c0b08",
+  "--cat-armed_conflict": "#ff4d4d", "--cat-air_activity": "#8fd3ff", "--cat-maritime_security": "#5b8cff",
+  "--cat-civil_unrest": "#ff7eb6", "--cat-disaster": "#ff7a1a", "--cat-infrastructure": "#45c9b0",
+  "--cat-political": "#b69cff", "--cat-economic": "#7fd16b", "--cat-cyber_outage": "#e36bff", "--cat-other": "#a89f8a",
+  "--st-reported": "#7d735f", "--st-multi-source": "#a39470", "--st-sensor-detected": "#c7ad6e",
+  "--st-sensor-corroborated": "#e6c35c", "--st-official": "#ffe066",
+  "--thr-0": "#8c8270", "--thr-1": "#c9a66b", "--thr-2": "#ff9f1c", "--thr-3": "#ff6a1f", "--thr-4": "#ff3b2b",
+  "--sym-air": "#8fe8f5", "--sym-air-civ": "#bdb6a5", "--sym-hp": "#ff4d2e", "--sym-ship": "#6f9cff",
+  "--sym-ship-mil": "#ff4d2e", "--sym-fire": "#ff7a1a", "--sym-quake": "#f2e45c",
+};
+let CS = null;
+try { CS = getComputedStyle(document.documentElement); } catch (e) { /* no DOM (node tests) */ }
+const readVar = (name) => (CS ? String(CS.getPropertyValue(name) || "").trim() : "");
+const PAL = {};
+for (const k of Object.keys(PALETTE_FALLBACK)) PAL[k] = readVar(k) || PALETTE_FALLBACK[k];
+// CSS colour string of a theme token ("" if unknown). Values are fixed at startup: replay's --acc
+// switch is CSS-only, so read "--amber" / "--ion" explicitly when a JS colour must follow a mode.
+export function cssColor(name) {
+  if (!Object.hasOwn(PAL, name)) PAL[name] = readVar(name);
+  return PAL[name];
+}
+// Cesium.Color for a token (optionally with alpha), cached: callers share the instance, never mutate it.
+const CESIUM_COLORS = new Map();
+export function cesiumColor(name, alpha) {
+  const key = name + "|" + (alpha == null ? "" : alpha);
+  let c = CESIUM_COLORS.get(key);
+  if (!c) {
+    c = globalThis.Cesium.Color.fromCssColorString(cssColor(name) || "#ffffff");
+    if (alpha != null) c = c.withAlpha(alpha);
+    CESIUM_COLORS.set(key, c);
+  }
+  return c;
+}
+
 const FIGHTER = new Set(["F15", "F16", "F18H", "F18S", "F35", "F22", "F5", "F86", "EUFI", "HAWK", "A10", "B1", "B2", "B52", "SB39", "SA37", "TOR", "AJET", "M339", "M346", "RFAL", "MIR2", "SU", "SU27", "SU30", "SU34", "SU35", "MG29", "MG31", "J10", "J11", "J20", "JF17", "F14", "AV8B", "HARR"]);
 const TANKER = new Set(["K35R", "K35E", "KC10", "KC46", "KC2", "KC39", "A332", "A33M", "MRTT", "IL78", "K135", "DC10"]);
 const TRANSPORT = new Set(["C17", "C5", "C5M", "C130", "C30J", "C2", "C27J", "C295", "C160", "A400", "CN35", "Y20", "IL76", "AN124", "A124", "AN12", "AN22", "AN26", "AN72", "C212", "DHC6", "CASA", "B748", "B77W", "B77L", "B752", "B737", "A321", "A342", "E135"]);
@@ -96,18 +136,20 @@ UI.fire = plain(FIRE_P); UI.quake = plain(QUAKE_P); UI.ref = plain(REF_P);
 
 // ---- news events: one outline glyph per category ----
 export const EVENT_CATS = {
-  armed_conflict: ["Armed conflict", "#ff4b55", '<path d="M16 3l2.6 7 6.6-3.4-3.4 6.6 7.2 2.6-7.2 2.6 3.4 6.6-6.6-3.4L16 29l-2.6-7-6.6 3.4 3.4-6.6L3 16l7.2-2.6-3.4-6.6 6.6 3.4z"/>'],
-  air_activity: ["Air activity", "#9ff3ff", '<path d="M16 3l9 25-9-5.5L7 28z"/>'],
-  maritime_security: ["Maritime security", "#7fa8ff", '<circle cx="16" cy="7" r="2.8"/><path d="M16 10v18M11 14h10M6 18c1 5 5 9 10 9s9-4 10-9"/>'],
-  civil_unrest: ["Civil unrest", "#ffb020", '<circle cx="16" cy="9" r="3"/><circle cx="7.5" cy="12" r="2.4"/><circle cx="24.5" cy="12" r="2.4"/><path d="M10.5 26v-6a5.5 5.5 0 0 1 11 0v6zM3 25v-4.5a4 4 0 0 1 5-3.8M29 25v-4.5a4 4 0 0 0-5-3.8"/>'],
-  disaster: ["Disaster", "#ff6a1a", '<path d="M16 4L29 27H3z"/><path d="M16 12v8M16 23.2v.6"/>'],
-  infrastructure: ["Infrastructure", "#d9b27c", '<path d="M5 28V13l11-7 11 7v15z"/><path d="M12 28v-8h8v8"/>'],
-  political: ["Political", "#a99bff", '<path d="M8 4v25M8 6h16l-4 5 4 5H8"/>'],
-  economic: ["Economic", "#4fdf8c", '<circle cx="16" cy="16" r="12"/><path d="M16 8.5v15M19.6 12c-1-1-2.3-1.5-3.6-1.5-2 0-3.5 1-3.5 2.6 0 3.6 7.2 1.8 7.2 5.2 0 1.6-1.6 2.6-3.7 2.6-1.4 0-2.7-.6-3.7-1.6"/>'],
-  cyber_outage: ["Cyber / outage", "#e86bff", '<path d="M18.5 3L7 18h8l-2 11 12-16h-8z"/>'],
+  armed_conflict: ["Armed conflict", cssColor("--cat-armed_conflict"), '<path d="M16 3l2.6 7 6.6-3.4-3.4 6.6 7.2 2.6-7.2 2.6 3.4 6.6-6.6-3.4L16 29l-2.6-7-6.6 3.4 3.4-6.6L3 16l7.2-2.6-3.4-6.6 6.6 3.4z"/>'],
+  air_activity: ["Air activity", cssColor("--cat-air_activity"), '<path d="M16 3l9 25-9-5.5L7 28z"/>'],
+  maritime_security: ["Maritime security", cssColor("--cat-maritime_security"), '<circle cx="16" cy="7" r="2.8"/><path d="M16 10v18M11 14h10M6 18c1 5 5 9 10 9s9-4 10-9"/>'],
+  civil_unrest: ["Civil unrest", cssColor("--cat-civil_unrest"), '<circle cx="16" cy="9" r="3"/><circle cx="7.5" cy="12" r="2.4"/><circle cx="24.5" cy="12" r="2.4"/><path d="M10.5 26v-6a5.5 5.5 0 0 1 11 0v6zM3 25v-4.5a4 4 0 0 1 5-3.8M29 25v-4.5a4 4 0 0 0-5-3.8"/>'],
+  disaster: ["Disaster", cssColor("--cat-disaster"), '<path d="M16 4L29 27H3z"/><path d="M16 12v8M16 23.2v.6"/>'],
+  infrastructure: ["Infrastructure", cssColor("--cat-infrastructure"), '<path d="M5 28V13l11-7 11 7v15z"/><path d="M12 28v-8h8v8"/>'],
+  political: ["Political", cssColor("--cat-political"), '<path d="M8 4v25M8 6h16l-4 5 4 5H8"/>'],
+  economic: ["Economic", cssColor("--cat-economic"), '<circle cx="16" cy="16" r="12"/><path d="M16 8.5v15M19.6 12c-1-1-2.3-1.5-3.6-1.5-2 0-3.5 1-3.5 2.6 0 3.6 7.2 1.8 7.2 5.2 0 1.6-1.6 2.6-3.7 2.6-1.4 0-2.7-.6-3.7-1.6"/>'],
+  cyber_outage: ["Cyber / outage", cssColor("--cat-cyber_outage"), '<path d="M18.5 3L7 18h8l-2 11 12-16h-8z"/>'],
 };
-const EVENT_FALLBACK = ["Event", "#a99bff", '<circle cx="16" cy="16" r="8"/>'];
+const EVENT_FALLBACK = ["Event", cssColor("--cat-other"), '<circle cx="16" cy="16" r="8"/>'];
 export const eventCat = (c) => EVENT_CATS[c] || EVENT_FALLBACK;
+// category colour (CSS string): --cat-<cat>, --cat-other for unknown categories
+export const catColor = (cat) => eventCat(cat)[1];
 // disaster events from hazard alerts (GDACS / EONET / ReliefWeb): subcategory = hazard type
 export const HAZARDS = {
   earthquake: ["Earthquake", QUAKE_P],
@@ -121,6 +163,10 @@ const innerGlyph = (cat, sub) => (cat === "disaster" && HAZARDS[sub] ? HAZARDS[s
 export const EVENT_STATUS = {
   "reported": "Reported", "multi-source": "Multi-source", "sensor-detected": "Sensor-detected", "sensor-corroborated": "Sensor-corroborated", "official": "Official",
 };
+// status colour (CSS string): brightness rises reported -> official; unknown = reported
+export const statusColor = (st) => cssColor("--st-" + (Object.hasOwn(EVENT_STATUS, st) ? st : "reported"));
+// threat scale 0..4 (dim sand -> amber-orange -> red), level clamped and rounded
+export const threatLevelColor = (level) => cssColor("--thr-" + Math.max(0, Math.min(4, Math.round(+level || 0))));
 // map glyph: white strokes (tinted by billboard colour) inside a status ring; country-level = hollow
 const ringSvg = (cat, status, hollow, sub) => {
   const inner = '<g transform="translate(20 20) scale(.5) translate(-16 -16)" fill="' + (hollow ? "none" : "#fff") + '" fill-opacity=".25" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">' + innerGlyph(cat, sub) + "</g>";
@@ -145,14 +191,17 @@ UI["e:"] = plain(EVENT_FALLBACK[2]);
 for (const [k, v] of Object.entries(HAZARDS)) UI["h:" + k] = plain(v[1]);
 
 // palette (CSS) for map + legend
-export const COLORS = { air: "#9ff3ff", airCiv: "#c8d4de", hp: "#ff4b55", ship: "#7fa8ff", shipMil: "#ff4b55", fire: "#ff6a1a", quake: "#ffd24a" };
+export const COLORS = {
+  air: cssColor("--sym-air"), airCiv: cssColor("--sym-air-civ"), hp: cssColor("--sym-hp"), ship: cssColor("--sym-ship"),
+  shipMil: cssColor("--sym-ship-mil"), fire: cssColor("--sym-fire"), quake: cssColor("--sym-quake"),
+};
 export function threatColor(kind, it) {
   if (kind === "aircraft") return it && it.high_priority ? COLORS.hp : it && it.is_mil ? COLORS.air : COLORS.airCiv;
   if (kind === "ships") return it && it.is_mil ? COLORS.shipMil : COLORS.ship;
   if (kind === "fires") return COLORS.fire;
   if (kind === "quakes") return (it && it.mag >= 5) ? COLORS.hp : COLORS.quake;
   if (kind === "events") return eventCat(it && it.category)[1];
-  return "#3ddcc2";
+  return cssColor("--ion");
 }
 export function glyphFor(kind, it) {
   if (kind === "aircraft") return aircraftGlyph(aircraftRole(it));

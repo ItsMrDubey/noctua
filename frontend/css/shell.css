@@ -164,7 +164,7 @@ label.row:has(input:disabled) { color: var(--dim); cursor: not-allowed; }
 input:disabled + .sw { opacity: .3; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 5px 21px; }
 .chip { font: 600 11px/1 var(--f-mono); text-transform: uppercase; letter-spacing: .06em; padding: 3px 6px; border: 1px solid var(--c); color: var(--c); background: transparent; opacity: .4; }
-.chip.on { opacity: 1; background: rgba(255, 255, 255, .05); }
+.chip.on { opacity: 1; background: rgba(255, 255, 255, .05); border-color: var(--c); color: var(--c); } /* beats the global button.on amber */
 .chip:hover { background: rgba(255, 255, 255, .08); }
 
 /* layer tree tools: filter box, "Active" view, preset chips */
@@ -248,7 +248,11 @@ input:disabled + .sw { opacity: .3; }
 /* ---- events: layer filters, scorecard chip ---- */
 #ev-cats .chip, #ev-status .chip { cursor: pointer; }
 #ev-status { padding-top: 0; }
-#ev-status .chip { --c: var(--fg-2); }
+#ev-status .chip[data-k="reported"] { --c: var(--st-reported); }
+#ev-status .chip[data-k="multi-source"] { --c: var(--st-multi-source); }
+#ev-status .chip[data-k="sensor-detected"] { --c: var(--st-sensor-detected); }
+#ev-status .chip[data-k="sensor-corroborated"] { --c: var(--st-sensor-corroborated); }
+#ev-status .chip[data-k="official"] { --c: var(--st-official); }
 .row.field input[type=range] { flex: 1; min-width: 0; margin: 0 6px; padding: 0; height: 14px; background: transparent; border: 0; appearance: none; -webkit-appearance: none; cursor: pointer; }
 .row.field input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line-2); }
 .row.field input[type=range]::-moz-range-track { height: 2px; background: var(--line-2); }

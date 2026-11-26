@@ -1,12 +1,12 @@
 // Primitive collections updated incrementally by id.
 const C = Cesium;
-import { aircraftRole, aircraftGlyph, shipClass, shipGlyph, COLORS } from "/static/js/symbology.js";
+import { aircraftRole, aircraftGlyph, shipClass, shipGlyph, cesiumColor } from "/static/js/symbology.js";
 
-const AIR_MIL = C.Color.fromCssColorString(COLORS.air);
-const AIR_CIV = C.Color.fromCssColorString(COLORS.airCiv);
-const AIR_RED = C.Color.fromCssColorString(COLORS.hp);
-const SHIP_BLUE = C.Color.fromCssColorString(COLORS.ship);
-const SHIP_RED = C.Color.fromCssColorString(COLORS.shipMil);
+const AIR_MIL = cesiumColor("--sym-air");
+const AIR_CIV = cesiumColor("--sym-air-civ");
+const AIR_RED = cesiumColor("--sym-hp");
+const SHIP_BLUE = cesiumColor("--sym-ship");
+const SHIP_RED = cesiumColor("--sym-ship-mil");
 // shared per-layer constants: never allocate these per item. Glyph layers (tracks, events) share
 // one distance scale / fade so a marker of a given importance reads the same size everywhere.
 export const GLYPH_SCALE = new C.NearFarScalar(5e5, 1.15, 2.5e7, 0.7);
@@ -19,7 +19,7 @@ const PT_SCALE = new C.NearFarScalar(1e6, 1.2, 2e7, 1.0);
 const PT_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.9);
 const Q_SCALE = new C.NearFarScalar(1e6, 1.3, 2e7, 1.0);
 const BLACK70 = C.Color.BLACK.withAlpha(0.7);
-const QUAKE = C.Color.fromCssColorString(COLORS.quake).withAlpha(0.85);
+const QUAKE = cesiumColor("--sym-quake", 0.85);
 const FIRE_RAMP = Array.from({ length: 11 }, (_, i) => C.Color.fromHsl(0.09 * (1 - i / 10), 1, 0.5, 0.9));
 
 function pos(lat, lon, altM) { return C.Cartesian3.fromDegrees(lon, lat, altM || 0); }
