@@ -114,6 +114,10 @@ def main(argv: list[str]) -> int:
             d = delta_e(rgb(t[a]), rgb(t[b]))
             check(d >= 20, f"dist  {a} vs {b} {d:5.1f} (>= 20)")
 
+    for a, b in (("--red", "--thr-2"),):  # terror incident status: confirmed (--red) vs reported (--thr-2)
+        d = delta_e(rgb(t[a]), rgb(t[b]))
+        check(d >= 20, f"dist  terror confirmed {a} vs reported {b} {d:5.1f} (>= 20)")
+
     st = [rgb(t["--st-" + s]) for s in STATUS_ORDER]
     ls = [lum(c) for c in st]
     sats = [colorsys.rgb_to_hls(*c)[2] for c in st]

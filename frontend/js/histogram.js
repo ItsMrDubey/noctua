@@ -8,7 +8,7 @@ import { cssColor } from "/static/js/symbology.js";
 import { fmtDate, fmtTime, fmtDateTime, tzOffset, tzLabel, utcTitle, onTzChange } from "/static/js/timefmt.js";
 
 // events (the dominant series) in amber; sensors / tracks keep their symbology colours; UCDP matches its layer swatch
-const COL = { fires: cssColor("--sym-fire"), quakes: cssColor("--sym-quake"), events: cssColor("--amber"), hist: "#8f86c9", air: cssColor("--sym-air"), sea: cssColor("--sym-ship") };
+const COL = { fires: cssColor("--sym-fire"), quakes: cssColor("--sym-quake"), events: cssColor("--amber"), hist: cssColor("--sym-hist"), air: cssColor("--sym-air"), sea: cssColor("--sym-ship") };
 const HOUR = 3600e3, DAY = 86400e3, CHUNK_H = 168;
 const SAMPLES = 12;
 

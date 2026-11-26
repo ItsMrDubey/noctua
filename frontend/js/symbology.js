@@ -16,6 +16,7 @@ export const PALETTE_FALLBACK = {
   "--thr-0": "#8c8270", "--thr-1": "#c9a66b", "--thr-2": "#ff9f1c", "--thr-3": "#ff6a1f", "--thr-4": "#ff3b2b",
   "--sym-air": "#8fe8f5", "--sym-air-civ": "#bdb6a5", "--sym-hp": "#ff4d2e", "--sym-ship": "#6f9cff",
   "--sym-ship-mil": "#ff4d2e", "--sym-fire": "#ff7a1a", "--sym-quake": "#f2e45c",
+  "--sym-hist": "#8f86c9", "--fg-2": "#b8a57e", "--dim": "#6e6450",
 };
 let CS = null;
 try { CS = getComputedStyle(document.documentElement); } catch (e) { /* no DOM (node tests) */ }

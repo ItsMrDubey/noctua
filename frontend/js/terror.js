@@ -20,10 +20,10 @@ import { sec, wireSections, chip } from "/static/js/panels/dossier-kit.js";
 import { cssColor } from "/static/js/symbology.js";
 
 const C = window.Cesium;
-export const TW_STATUS = { confirmed: cssColor("--red"), reported: cssColor("--thr-3"), possible: cssColor("--violet") || "#c792ea" };
+export const TW_STATUS = { confirmed: cssColor("--red"), reported: cssColor("--thr-2"), possible: cssColor("--violet") || "#c792ea" };
 export const TW_STATUS_TEXT = { confirmed: "Confirmed", reported: "Reported (unconfirmed)", possible: "Possible", excluded: "Excluded", context: "Context", pending: "Pending" };
 export const TW_ATTR_TEXT = { claimed: "Claimed", attributed_by_authorities: "Attributed by authorities", suspected: "Suspected (media)", unknown: "Unknown" };
-const ATTR_RING = { claimed: "#ffffff", attributed_by_authorities: cssColor("--ion"), suspected: "#c9d2dc", unknown: "#2a3440" };
+const ATTR_RING = { claimed: "#ffffff", attributed_by_authorities: cssColor("--ion"), suspected: cssColor("--fg-2"), unknown: cssColor("--dim") };
 const CLASS_TEXT = { attack: "Attack", plot: "Plot / foiled plot", arrest: "Arrest", prosecution: "Prosecution", threat: "Threat / hoax", ct_operation: "CT operation" };
 const LIST_TEXT = { us_fto: "US FTO", us_sdgt: "US SDGT", un_1267: "UN 1267", un_1988: "UN 1988", uk_proscribed: "UK proscribed", eu_terr: "EU terrorist list", eu_isil_aq: "EU ISIL/AQ" };
 const PREC_TEXT = { point: "exact site", city: "city", admin1: "province / region", country: "country only", unknown: "unknown" };
@@ -97,7 +97,7 @@ export class TerrorLayer {
       const pos = C.Cartesian3.fromDegrees(c.n > 1 ? c.lon : it.lon, c.n > 1 ? c.lat : it.lat, 0);
       this.pts.add({ position: pos, pixelSize: c.n > 1 ? Math.min(26, 12 + Math.log2(c.n) * 3) : size,
         color: C.Color.fromCssColorString(TW_STATUS[it.status] || TW_STATUS.possible).withAlpha(it.status === "possible" ? 0.55 : 0.92),
-        outlineColor: C.Color.fromCssColorString(c.n > 1 ? cssColor("--void") : ATTR_RING[(it.attribution_level || "unknown")] || "#2a3440"), outlineWidth: c.n > 1 ? 1.5 : 2,
+        outlineColor: C.Color.fromCssColorString(c.n > 1 ? cssColor("--void") : ATTR_RING[(it.attribution_level || "unknown")] || ATTR_RING.unknown), outlineWidth: c.n > 1 ? 1.5 : 2,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
         id: c.n > 1 ? { terror: true, cluster: c.ids.map((x) => byId.get(x)).filter(Boolean), lat: c.lat, lon: c.lon, w: c.w, s: c.s, e: c.e, nn: c.nn } : { terror: true, incident: it } });
       if (c.n > 1) this.labels.add({ position: pos, text: String(c.n), font: "600 11px Inter, sans-serif", fillColor: C.Color.WHITE,

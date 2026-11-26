@@ -3,14 +3,15 @@
 // grid-aggregated collection shown from high up when the set is large. Replay filters by time.
 import { fetchJson } from "/static/js/api.js";
 import { esc, nf, kv } from "/static/js/ui.js";
+import { cssColor } from "/static/js/symbology.js";
 
 const C = Cesium;
 const LIMIT = 10000;            // /api/events max page
 const AGG_MIN = 2500;           // aggregate above this many items...
 const AGG_EYE_M = 2.5e6;        // ...when the camera is higher than this
 const CELL_DEG = 2;
-const MUTED = C.Color.fromCssColorString("#8f86c9").withAlpha(0.6);
-const MUTED_CELL = C.Color.fromCssColorString("#8f86c9").withAlpha(0.42);
+const MUTED = C.Color.fromCssColorString(cssColor("--sym-hist")).withAlpha(0.6);
+const MUTED_CELL = C.Color.fromCssColorString(cssColor("--sym-hist")).withAlpha(0.42);
 const OUTLINE = C.Color.BLACK.withAlpha(0.5);
 const PT_SCALE = new C.NearFarScalar(3e5, 1.4, 1.5e7, 0.8);
 const tsOf = (s) => { const t = Date.parse(s); return isNaN(t) ? 0 : t; };

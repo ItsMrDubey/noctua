@@ -8,7 +8,7 @@
 /* status pills */
 .tw-st { display: inline-block; font: 600 11px/1 var(--f-head); letter-spacing: .12em; text-transform: uppercase; padding: 3px 6px; border: 1px solid var(--line-2); white-space: nowrap; }
 .tw-st-confirmed { color: var(--red-2); border-color: color-mix(in srgb, var(--red) 60%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
-.tw-st-reported { color: var(--sym-fire); border-color: color-mix(in srgb, var(--thr-3) 55%, transparent); border-style: dashed; }
+.tw-st-reported { color: var(--thr-2); border-color: color-mix(in srgb, var(--thr-2) 55%, transparent); border-style: dashed; }
 .tw-st-possible { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 50%, transparent); border-style: dotted; }
 .tw-st-excluded, .tw-st-context, .tw-st-pending { color: var(--dim); }
 
