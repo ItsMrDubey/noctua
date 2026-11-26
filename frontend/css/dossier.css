@@ -56,7 +56,7 @@
 /* location block */
 .dk-loc { display: grid; grid-template-columns: 1fr; gap: 0; margin: 8px 14px 0; padding: 5px 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, .25); }
 .dk-loc > div { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 2px 0; }
-.dk-loc span { font: 600 11px var(--f-head); letter-spacing: .18em; color: var(--dim); flex: none; width: 34px; }
+.dk-loc span { font: 600 11px var(--f-head); letter-spacing: .18em; color: var(--dim); flex: none; min-width: 34px; width: auto; }
 .dk-loc b { font: 500 11px var(--f-mono); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dk-copy { margin-left: auto; padding: 1px 4px; font: 11px var(--f-mono); letter-spacing: 0; text-transform: none; color: var(--dim); background: none; border: 1px solid transparent; flex: none; }
 .dk-copy:hover { color: var(--acc); border-color: var(--line-2); background: none; }
