@@ -61,6 +61,42 @@ def test_patterns_per_language(rules, text, field, value):
     assert (hit[0] if hit else None) == value
 
 
+@pytest.mark.parametrize(("text", "field", "value"), [
+    # a number followed by a unit is a distance / weight / share / age, never a count: the
+    # space-grouped reading is rejected and only the leading group can stand
+    ("Strike killed 5 200 km north of Kyiv", "killed", 5),
+    ("Shelling injures 12 300 metres from the front", "injured", 12),
+    ("Strike killed 200 km north of Kyiv", "killed", None),
+    ("Strike killed 200km north of Kyiv", "killed", None),
+    ("Blast injures 40 kg of explosives", "injured", None),
+    ("killed 3 miles away", "killed", None),
+    ("killed 50 percent of the herd", "killed", None),
+    ("killed 50 % of the herd", "killed", None),
+    ("killed 20 years ago", "killed", None),
+    ("убиты 5 км от города", "killed", None),
+    ("загинули 300 метрів від лінії фронту", "killed", None),
+    ("погибли 1 200 метров", "killed", 1),
+    ("tué 3 kilomètres plus loin", "killed", None),
+    ("mató a 10 kilómetros", "killed", None),
+    ("مقتل 5 كم شمال المدينة", "killed", None),
+    # counts still read
+    ("Strike killed 5 people near Kyiv", "killed", 5),
+    ("1 200 killed", "killed", 1200),
+    ("12 killed 5 km north of Kyiv", "killed", 12),
+    ("Missile kills 7 in Kharkiv", "killed", 7)])
+def test_numbers_followed_by_a_unit_are_not_counts(rules, text, field, value):
+    hit = rules.doc_value(field, text)
+    assert (hit[0] if hit else None) == value
+
+
+def test_units_are_configured():
+    from osint.enrich.rules.casualties import CasualtyRules
+    cfg = {"killed": {"en": [r"\bkilled\s+{n}\b"]}, "units": ["furlongs"]}
+    r = CasualtyRules(cfg)
+    assert r.doc_value("killed", "killed 3 furlongs away") is None
+    assert r.doc_value("killed", "killed 3 km away")[0] == 3  # only the configured units
+
+
 def test_median_over_distinct_domains_ignoring_silent_documents(rules):
     docs = [ExtractDoc("a", "Strike kills 10", url="https://a.example/1", published_at="1"),
             ExtractDoc("b", "12 killed in strike", url="https://b.example/1", published_at="2"),

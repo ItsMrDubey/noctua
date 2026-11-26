@@ -32,9 +32,16 @@ class CasualtyRules:
         # Digit groups: NBSP / narrow NBSP / comma / plain space (the latter only as exact
         # groups of three, "1 200"). Number words need a left guard: not after a word
         # character or hyphen ("twenty-one" must not read as "one").
+        # A number followed by a unit (``units``: "5 200 km", "300 metres", "40 kg", "50 %")
+        # is a distance / weight / share / age, never a count; a space-grouped number so
+        # rejected falls back to its leading group ("killed 5 200 km" -> 5).
+        units = sorted({unicodedata.normalize("NFC", str(u)).casefold().strip()
+                        for u in cfg.get("units") or ()} - {""}, key=len, reverse=True)
+        unit_alt = "|".join(re.escape(u).replace(r"\ ", r"\s+") for u in units)
         num = (r"(?P<n>\d{1,3}(?:[,   ]\d{3})+|\d+"
                + (rf"|(?<![\w-])(?:{alt})" if alt else "")
-               + r")(?![\d%-]|[.,]\d)")
+               + r")(?![\d%-]|[.,]\d)"
+               + (rf"(?![\s  ]*(?:{unit_alt})(?!\w))" if unit_alt else ""))
         tens = [unicodedata.normalize("NFC", str(w)).casefold() for w in cfg.get("tens_words") or ()]
         self._after_tens = (re.compile(
             r"(?<![\w-])(?:" + "|".join(re.escape(w) for w in tens) + r")(?:\s+(?:y|et|и|та|і))?[\s-]+$")

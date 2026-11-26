@@ -112,6 +112,28 @@ casualties:
                setenta, ochenta, noventa, двадцать, тридцать, сорок, пятьдесят, шестьдесят,
                семьдесят, восемьдесят, девяносто, двадцять, тридцять, п'ятдесят, шістдесят,
                сімдесят, вісімдесят, дев'яносто]
+  # Units: a number followed by one of these (optional space, whole word, case-folded;
+  # a space inside a unit matches any whitespace) is a distance / weight / share / age /
+  # duration, never a casualty count ("killed 5 200 km north" is not 5200; "200 km" is
+  # no count at all).
+  units: [km, kms, kilometre, kilometres, kilometer, kilometers, m, metre, metres, meter,
+          meters, mi, mile, miles, kg, kgs, kilogram, kilograms, t, ton, tons, tonne, tonnes,
+          "%", percent, per cent, year, years, yr, yrs, hour, hours, hr, hrs, h, day, days,
+          mm, cm, nm, nautical mile, nautical miles,
+          # ru
+          км, километр, километра, километров, м, метр, метра, метров, кг, т, тонн, тонны,
+          мм, см, лет, года, год, часов, часа, час, дней, дня, суток, процентов, процента,
+          # uk
+          кілометр, кілометри, кілометрів, метри, метрів, тонни, років, роки, рік, годин,
+          години, днів, дні, відсотків, відсотки,
+          # fr
+          kilomètre, kilomètres, mètre, mètres, kilo, kilos, tonne, ans, heures, jours,
+          pour cent,
+          # es
+          kilómetro, kilómetros, metro, metros, toneladas, años, horas, días, por ciento,
+          # ar
+          كم, كيلومتر, كيلومترا, كيلومترات, متر, مترا, أمتار, كغ, كلغ, كيلوغرام, طن, أطنان,
+          عاما, عام, سنة, سنوات, ساعة, ساعات, يوما, أيام, بالمئة, بالمائة, "٪"]
   killed:
     en:
       - '\b(?:killed|kills|killing|kill)\s+(?:at\s+least\s+|some\s+|about\s+|around\s+|nearly\s+|more\s+than\s+|over\s+)?{n}\b'
