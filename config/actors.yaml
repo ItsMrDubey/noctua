@@ -1,0 +1,236 @@
+# Actor lexicon (osint.enrich.actors): actor phrase -> home country (ISO2) and actor class.
+# Matching is whole-word on case-, diacritic- and punctuation-folded text; the longest phrase
+# wins; hand-written entries beat terror-group homes, which beat generated phrases.
+# Quote every country code ("NO" is a YAML boolean otherwise). country: null names an actor
+# with no home country; its phrases still block shorter generated matches inside them.
+#
+# classes: state_military | state_police | state_government | non_state_armed |
+#          protesters | rioters | civilians | other
+
+generated:
+  # "<demonym | extra adjective | country name> <noun>": "Russian forces", "Ukraine army"
+  nouns:
+    state_military: [forces, force, troops, soldiers, army, navy, "air force", military,
+                     "armed forces", marines, "special forces", "border guards", "coast guard"]
+    state_police: [police, "security forces", "border police"]
+    state_government: [government, ministry, authorities, officials, "foreign ministry",
+                       "defence ministry", "defense ministry", "interior ministry"]
+  # "<demonym | extra adjective> <noun>" only: after a country name these words usually
+  # name the target ("Ukraine drone strikes"), after a demonym the attacker
+  demonym_nouns:
+    state_military: [drone, drones, missile, missiles, strike, strikes, airstrike, airstrikes,
+                     "air strike", "air strikes", shelling, artillery, warplane, warplanes, jets,
+                     "fighter jets", warship, warships, attack, attacks, offensive, raid, raids]
+  # ACLED / UCDP state side names: "Military Forces of Sudan (2019-)", "Government of Ukraine"
+  of_country:
+    state_military: ["military forces of", "armed forces of"]
+    state_police: ["police forces of"]
+    state_government: ["government of"]
+  # ACLED "<role> (<country>)" names: "Protesters (Kenya)", "Civilians (Sudan)"
+  country_suffix:
+    protesters: [protesters]
+    rioters: [rioters]
+    civilians: [civilians]
+  # no "<country name> <noun>" forms: "Georgia police" is usually the US state,
+  # "Jersey police" New Jersey
+  skip_name_forms: ["GE", "JE"]
+
+# adjectives beyond the demonyms in config/countries.yaml
+extra_adjectives:
+  "US": ["US", "U.S.", "United States"]
+  "GB": ["UK", "U.K."]
+  "AE": ["UAE"]
+  "CD": ["DRC"]
+  "KP": ["DPRK"]
+  "NZ": ["New Zealand"]
+  "HK": ["Hong Kong"]
+
+# config/terror_groups.yaml group id -> home country (class non_state_armed unless given);
+# groups without a single home country (Islamic State core, al-Qaeda core, AQIS, online
+# networks) are not listed
+terror_group_homes:
+  iskp: "AF"
+  iswap: "NG"
+  is_sahel: "ML"
+  is_somalia: "SO"
+  is_mozambique: "MZ"
+  is_drc_adf: "CD"
+  is_sinai: "EG"
+  is_libya: "LY"
+  is_philippines: "PH"
+  is_bangladesh: "BD"
+  aqap: "YE"
+  aqim: "DZ"
+  jnim: "ML"
+  alshabaab: "SO"
+  hurras_al_din: "SY"
+  hts: "SY"
+  boko_haram: "NG"
+  ansaru: "NG"
+  ttp: "PK"
+  taliban: {country: "AF", class: state_government}
+  haqqani: "AF"
+  let: "PK"
+  trf: "IN"
+  jem: "PK"
+  bla: "PK"
+  hamas: "PS"
+  pij: "PS"
+  pflp: "PS"
+  hezbollah: "LB"
+  houthis: "YE"
+  kataib_hezbollah: "IQ"
+  aah: "IQ"
+  nujaba: "IQ"
+  pkk: "TR"
+  tak: "TR"
+  dhkpc: "TR"
+  eln: "CO"
+  farc_dissidents: "CO"
+  shining_path: "PE"
+  npa: "PH"
+  cpi_maoist: "IN"
+  ltte: "LK"
+  babbar_khalsa: "IN"
+  new_ira: "GB"
+  atomwaffen: "US"
+  the_base: "US"
+  nrm: "SE"
+  rim: "RU"
+  national_action: "GB"
+  com_764: "US"
+  fai_fri: "IT"
+  palestine_action: "GB"
+  muslim_brotherhood: "EG"
+  irgc: {country: "IR", class: state_military}
+  sinaloa: "MX"
+  cjng: "MX"
+  tren_de_aragua: "VE"
+  ms13: "SV"
+  viv_ansanm: "HT"
+  comando_vermelho: "BR"
+  pcc: "BR"
+
+entries:
+  # ---- state forces and agencies
+  - match: ["Russian forces", "Russian army", "Russian Armed Forces", "Russian military",
+            "VKS", "Russian Aerospace Forces", "Russian Navy", "Black Sea Fleet", "Africa Corps",
+            "Военно-космические силы", "ВКС России", "ВС РФ", "Вооружённые силы России",
+            "армия России", "російські окупанти", "окупанти", "рашисти"]
+    name: Russian forces
+    country: "RU"
+    class: state_military
+  - match: ["Kremlin", "Кремль"]
+    name: Russian government
+    country: "RU"
+    class: state_government
+  - match: ["Wagner Group", "Wagner PMC", "Wagner mercenaries", "ЧВК Вагнер", "группа Вагнера"]
+    name: Wagner Group
+    country: "RU"
+    class: non_state_armed
+  - match: ["Armed Forces of Ukraine", "Ukrainian Armed Forces", "AFU", "ZSU", "ЗСУ", "ВСУ",
+            "Збройні сили України", "Вооруженные силы Украины", "SBU", "СБУ", "HUR", "ГУР",
+            "Ukrainian military intelligence"]
+    name: Ukrainian forces
+    country: "UA"
+    class: state_military
+  - match: ["IDF", "Israel Defense Forces", "Israel Defence Forces", "Israeli army",
+            "Israeli military", "Israeli Air Force", "Tsahal", "ЦАХАЛ", "جيش الاحتلال",
+            "جيش الاحتلال الإسرائيلي", "الجيش الإسرائيلي"]
+    name: Israel Defense Forces
+    country: "IL"
+    class: state_military
+  - match: ["Shin Bet", "Mossad"]
+    name: Israeli security services
+    country: "IL"
+    class: state_government
+  - match: ["Pentagon", "US Central Command", "CENTCOM", "AFRICOM", "US Africa Command",
+            "US Navy", "US Air Force", "US Army", "US Marines", "US Marine Corps"]
+    name: American forces
+    country: "US"
+    class: state_military
+  - match: ["White House", "State Department", "US State Department"]
+    name: American government
+    country: "US"
+    class: state_government
+  - match: ["Royal Navy", "Royal Air Force", "RAF", "British Army"]
+    name: British forces
+    country: "GB"
+    class: state_military
+  - match: ["Basij", "Quds Force", "Iranian Revolutionary Guards", "سپاه قدس", "بسیج"]
+    name: Iranian forces
+    country: "IR"
+    class: state_military
+  - match: ["PLA", "People's Liberation Army", "PLA Navy", "China Coast Guard",
+            "Chinese coast guard"]
+    name: Chinese forces
+    country: "CN"
+    class: state_military
+  - match: ["KPA", "Korean People's Army"]
+    name: North Korean forces
+    country: "KP"
+    class: state_military
+  - match: ["Turkish Armed Forces", "TSK"]
+    name: Turkish forces
+    country: "TR"
+    class: state_military
+  - match: ["Sudanese Armed Forces", "SAF", "Sudanese army"]
+    name: Sudanese forces
+    country: "SD"
+    class: state_military
+  - match: ["Rapid Support Forces", "RSF", "Janjaweed", "قوات الدعم السريع", "الدعم السريع"]
+    name: Rapid Support Forces
+    country: "SD"
+    class: non_state_armed
+  - match: ["FARDC", "Armed Forces of the Democratic Republic of the Congo"]
+    name: Congolese forces
+    country: "CD"
+    class: state_military
+  - match: ["M23", "March 23 Movement", "AFC/M23", "Alliance Fleuve Congo"]
+    name: M23
+    country: "CD"
+    class: non_state_armed
+  - match: ["Tatmadaw", "Myanmar military", "Myanmar army", "junta forces"]
+    name: Burmese forces
+    country: "MM"
+    class: state_military
+  - match: ["Arakan Army", "Kachin Independence Army", "Ta'ang National Liberation Army",
+            "Myanmar National Democratic Alliance Army", "MNDAA", "TNLA"]
+    name: Myanmar ethnic armed organisations
+    country: "MM"
+    class: non_state_armed
+  - match: ["ENDF", "Ethiopian National Defense Force"]
+    name: Ethiopian forces
+    country: "ET"
+    class: state_military
+  - match: ["Fano", "Fano militia", "TPLF", "Tigray Defense Forces", "Tigray Defence Forces",
+            "Oromo Liberation Army"]
+    name: Ethiopian armed groups
+    country: "ET"
+    class: non_state_armed
+  - match: ["LNA", "Libyan National Army", "Haftar forces"]
+    name: Libyan National Army
+    country: "LY"
+    class: non_state_armed
+  - match: ["SDF", "Syrian Democratic Forces", "YPG", "People's Protection Units"]
+    name: Syrian Democratic Forces
+    country: "SY"
+    class: non_state_armed
+  - match: ["Saudi-led coalition", "Saudi-led coalition forces"]
+    name: Saudi forces
+    country: "SA"
+    class: state_military
+  - match: ["FAMa", "Malian Armed Forces"]
+    name: Malian forces
+    country: "ML"
+    class: state_military
+  - match: ["Somali National Army"]
+    name: Somali forces
+    country: "SO"
+    class: state_military
+  # ---- international actors without a home country (block shorter generated matches)
+  - match: ["NATO", "UN peacekeepers", "UNIFIL", "MONUSCO", "KFOR", "African Union forces",
+            "AUSSOM", "ATMIS", "EU naval force", "EUNAVFOR", "Operation Aspides"]
+    name: International forces
+    country: null
+    class: other
