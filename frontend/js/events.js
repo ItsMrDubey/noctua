@@ -12,6 +12,10 @@ for (const k of Object.keys(EVENT_CATS)) {
 }
 const DEFAULT = cesiumColor("--cat-other");
 const DEFAULT_FAINT = cesiumColor("--cat-other", 0.5);
+// country pane focus (country-globe.js): glyphs outside the pane's filtered set at 25 %
+const DIM = 0.25, COLOR_DIM = {}, COLOR_FAINT_DIM = {};
+for (const [k, c] of Object.entries(COLOR)) { COLOR_DIM[k] = c.withAlpha(DIM); COLOR_FAINT_DIM[k] = c.withAlpha(0.5 * DIM); }
+const DEFAULT_DIM = DEFAULT.withAlpha(DIM), DEFAULT_FAINT_DIM = DEFAULT.withAlpha(0.5 * DIM);
 export const STATUSES = ["reported", "multi-source", "sensor-detected", "sensor-corroborated", "official"];
 const isHollow = (it) => it.precision === "country";
 const tsOf = (s) => { const t = Date.parse(s); return isNaN(t) ? 0 : t; };
@@ -25,6 +29,7 @@ export class EventLayer extends Layer {
     this.minConf = 0;
     this.replayAt = null;
     this.lastUpdated = null;
+    this.focus = null; // (it) => bool from the country pane: false = dimmed, never hidden
     this.filter = (it) => {
       if (!it) return false;
       if (!this.cats.has(it.category) && Object.hasOwn(EVENT_CATS, it.category)) return false;
@@ -45,16 +50,37 @@ export class EventLayer extends Layer {
     }
     return super.upsert(list);
   }
-  key(it) { return it.lat + "|" + it.lon + "|" + it.category + "|" + it.subcategory + "|" + it.status + "|" + it.precision + "|" + it.confidence; }
+  key(it) { return it.lat + "|" + it.lon + "|" + it.category + "|" + it.subcategory + "|" + it.status + "|" + it.precision + "|" + it.confidence + (this.focus && !this.focus(it) ? "|dim" : ""); }
   apply(p, it) {
     p.position = C.Cartesian3.fromDegrees(it.lon, it.lat, 0);
     const img = eventGlyph(it.category, it.status, isHollow(it), it.subcategory);
     if (p.image !== img) p.image = img;
-    const hollow = isHollow(it);
-    p.color = (hollow ? COLOR_FAINT : COLOR)[it.category] || (hollow ? DEFAULT_FAINT : DEFAULT);
+    this.tint(p, it);
     p.width = p.height = Math.round(18 + 16 * Math.min(1, Math.max(0, it.confidence || 0)));
   }
+  // category colour; dimmed to 25 % (hollow: 12.5 %) when the country focus rejects the event
+  tint(p, it) {
+    const hollow = isHollow(it), dim = !!this.focus && !this.focus(it);
+    const pal = dim ? (hollow ? COLOR_FAINT_DIM : COLOR_DIM) : (hollow ? COLOR_FAINT : COLOR);
+    p.color = pal[it.category] || (dim ? (hollow ? DEFAULT_FAINT_DIM : DEFAULT_DIM) : (hollow ? DEFAULT_FAINT : DEFAULT));
+  }
   setReplay(at) { this.replayAt = at ? at.getTime() : null; this.refilter(); }
+  // dim (not hide) every glyph the predicate rejects; null restores the normal colours. Only the
+  // colour of glyphs whose dim state flipped is touched (no rebuild, no position recompute);
+  // upsert() re-applies it to events that arrive later, since key() carries the focus bit.
+  // Returns the number of glyphs recoloured.
+  setFocus(pred) {
+    this.focus = pred || null;
+    let n = 0;
+    for (const [id, p] of this.map) {
+      const it = this.items.get(id), k = this.key(it);
+      if (p._k === k) continue;
+      if (p._k == null) this.apply(p, it); else this.tint(p, it);
+      p._k = k; n++;
+    }
+    if (n && this.onChange) this.onChange();
+    return n;
+  }
   sortedVisible() { return this.visibleItems(); }
 }
 

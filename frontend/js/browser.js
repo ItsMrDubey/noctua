@@ -22,6 +22,7 @@
 import { esc } from "/static/js/ui.js";
 import { fmtDateTime, utcTitle } from "/static/js/timefmt.js";
 import { fetchJson } from "/static/js/api.js";
+import { wantsNewPane } from "/static/js/country-entry.js";
 import { renderIntel, intelKey } from "/static/js/panels/intel-view.js";
 import { renderStoryline, storyKey } from "/static/js/panels/storyline-view.js";
 
@@ -289,6 +290,11 @@ export class Dossier {
     this.max = false;
     this._build();
     this._intercept();
+    // panes restored before their feature module registered (country.js, terror.js) render
+    // once it has: modules fire "noctua:panels" after registering
+    window.addEventListener("noctua:panels", () => {
+      for (const p of this.panes) if (p._pendingExt && (window.__noctuaPanes || {})[p.spec.type]) { p._pendingExt = false; this._render(p); }
+    });
     this._restore();
   }
 
@@ -380,24 +386,27 @@ export class Dossier {
   }
 
   // ---- visibility ----
-  show() { this.state = "open"; this.el.classList.remove("hidden"); this.chip.classList.add("hidden"); this._layout(); }
+  show() { this.state = "open"; this.el.classList.remove("hidden"); this.chip.classList.add("hidden"); this._layout(); this._notify(); }
   minimise() {
     if (!this.panes.length) return this.hide();
     this.state = "min"; this.el.classList.add("hidden");
     this.chip.classList.remove("hidden");
     this.chip.innerHTML = "<i></i>DOSSIER <b>" + this.panes.length + "</b>" + this.panes.slice(0, 4).map((p) => "<span>" + esc(p.title || "") + "</span>").join("");
+    this._notify();
   }
-  hide() { this.state = "closed"; this.el.classList.add("hidden"); this.chip.classList.add("hidden"); }
+  hide() { this.state = "closed"; this.el.classList.add("hidden"); this.chip.classList.add("hidden"); this._notify(); }
   toggle() { if (this.state === "open") this.minimise(); else this.show(); }
 
   // ---- panes ----
   async openUrl(url, opts) { return this.open(await specForUrl(url), opts); }
   async navigateUrl(pane, url) { return this.navigate(pane, await specForUrl(url)); }
 
-  /** Open a spec in a new pane (or focus an identical open one). */
-  open(spec, { focus = true } = {}) {
+  /** Open a spec in a new pane (or focus an identical open one). dock: the pane opens beside the
+   *  others, never maximised: the intel console (or a zoomed pane) is left so both are visible. */
+  open(spec, { focus = true, dock = false } = {}) {
     const key = specKey(spec);
     const dup = this.panes.find((p) => specKey(p.spec) === key);
+    if (dock && this.zoomed) { if (this.max) this.console(this.zoomed, false); else this.zoom(this.zoomed); }
     if (dup) { this.show(); this.focus(dup); if (spec.tab && dup.spec.type === "entity") this._setTab(dup, spec.tab); return dup; }
     if (this.panes.length >= MAX_PANES) this.close(this.panes.find((p) => p !== this.focused && !p.pinned) || this.panes[0], true);
     const pane = { id: ++uid, spec, hist: [spec], hi: 0, title: "Loading…", sub: "", coord: null, el: document.createElement("article") };
@@ -422,12 +431,12 @@ export class Dossier {
   navigate(pane, spec) {
     pane.hist = pane.hist.slice(0, pane.hi + 1);
     pane.hist.push(spec); pane.hi = pane.hist.length - 1;
-    pane.spec = spec; this._render(pane); this._save();
+    pane.spec = spec; this._render(pane); this._save(); this._notify();
   }
   history(pane, d) {
     const i = pane.hi + d;
     if (i < 0 || i >= pane.hist.length) return;
-    pane.hi = i; pane.spec = pane.hist[i]; this._render(pane);
+    pane.hi = i; pane.spec = pane.hist[i]; this._render(pane); this._notify();
   }
   close(pane, quiet) {
     const i = this.panes.indexOf(pane);
@@ -439,10 +448,16 @@ export class Dossier {
     if (this.focused) this.focused.el.classList.add("focus");
     this._layout();
     if (!quiet) this._save();
+    this._notify();
   }
   focus(pane) {
     for (const p of this.panes) p.el.classList.toggle("focus", p === pane);
     this.focused = pane;
+    this._notify();
+  }
+  // which pane has focus and what is open, for feature modules (country.js globe sync)
+  _notify() {
+    window.dispatchEvent(new CustomEvent("noctua:dossier", { detail: { state: this.state, focused: this.focused ? this.focused.spec : null, specs: this.panes.map((p) => p.spec) } }));
   }
   promote(pane) {
     const i = this.panes.indexOf(pane);
@@ -519,7 +534,9 @@ export class Dossier {
         let spec = null;
         try { spec = JSON.parse(t.dataset.pivot); } catch (err) { return; }
         if (e.target.closest("[data-fly]") && t.dataset.fly && !e.shiftKey) { const [la, lo] = t.dataset.fly.split(",").map(Number); this.flyTo(la, lo, 2.5e4); }
-        if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec);
+        // Shift / Ctrl, or a link marked data-newpane="1" (e.g. "Country context"), opens beside
+        e.preventDefault(); // href="#" links: no hash change, and Ctrl+click opens a pane, not a browser tab
+        if (wantsNewPane(e, t.dataset)) this.open(spec); else this.navigate(pane, spec);
       } else if (t.dataset.sel) this.select("events", t.dataset.sel);
       else if (t.dataset.qid) { const spec = { type: "entity", qid: t.dataset.qid }; if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec); }
       else if (t.dataset.tab) this._setTab(pane, t.dataset.tab);
@@ -564,9 +581,12 @@ export class Dossier {
         await renderStoryline(spec, body, { head: (h) => this._head(pane, h), stale, highlight: this.highlight, flyTo: this.flyTo,
           overlay: st.overlay || { show: noop, fit: noop, setTime: noop, clear: noop }, replay: st.replay,
           intelEvent: (id, label) => this.open({ type: "intel", kind: "event", id, label: label || id }) });
-      } else if ((window.__noctuaPanes || {})[spec.type]) { // panes registered by feature modules (e.g. terror.js)
-        await window.__noctuaPanes[spec.type].render(spec, body, { head: (h) => this._head(pane, h), stale, flyTo: this.flyTo, highlight: this.highlight });
-      }
+      } else if ((window.__noctuaPanes || {})[spec.type]) { // panes registered by feature modules (terror.js, country.js)
+        await window.__noctuaPanes[spec.type].render(spec, body, { head: (h) => this._head(pane, h), stale, flyTo: this.flyTo, highlight: this.highlight,
+          select: this.select, open: (s, o) => this.open(s, o),
+          // a pane that keeps its own state in its spec (country.js) updates it in place: persisted, no re-render
+          setSpec: (s) => { pane.spec = s; pane.hist[pane.hi] = s; this._save(); } });
+      } else pane._pendingExt = true; // its module has not registered yet: rendered on "noctua:panels"
     } catch (err) {
       if (stale()) return;
       this._head(pane, { title: pane.title === "Loading…" ? "Error" : pane.title, sub: spec.url || spec.qid || "", icon: spec.type, ext: spec.url });
@@ -712,6 +732,9 @@ function specKey(s) {
   if (s.type === "story") return storyKey(s);
   const ext = (window.__noctuaPanes || {})[s.type];
   if (ext && ext.key) return ext.key(s);
+  // a feature pane restored before its module registered: keyed by its whole spec, so two of them
+  // (UA and RU country panes, two Terror Watch panes) are not taken for duplicates of each other
+  if (s.type !== "resolve") return "x:" + JSON.stringify(s);
   return "r:" + [s.q, s.icao, s.lat, s.lon].join("|");
 }
 const tab = (id, label, disabled) => '<button data-tab="' + id + '"' + (disabled ? " disabled" : "") + ">" + label + "</button>";

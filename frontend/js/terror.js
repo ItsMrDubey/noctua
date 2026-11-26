@@ -51,6 +51,9 @@ function groupLink(g) {
 function pivot(spec, label, cls = "") {
   return '<a href="#" class="' + cls + '" data-pivot=\'' + esc(JSON.stringify(spec)) + "'>" + label + "</a>";
 }
+// "Country context" link: opens the country pane (country.js) beside the board, which stays its own pane
+// attr "pivot": board links (dossier browser, new pane); "open": the right-panel feed (TerrorPanel.open)
+const ctxLink = (cc, attr = "pivot") => (/^[A-Z]{2}$/.test(cc || "") ? ' <a href="#" class="tw-ctx"' + (attr === "pivot" ? ' data-newpane="1"' : "") + " data-" + attr + "='" + esc(JSON.stringify({ type: "country", cc })) + "'>Country context</a>" : "");
 const intelSpec = (i) => ({ type: "intel", kind: "event", id: i.event_id, label: i.title || i.event_id });
 
 // ------------------------------------------------------------------ globe layer
@@ -284,7 +287,7 @@ async function renderCountry(spec, body, hooks) {
       '<div class="tw-sub">US designations (FTO, last 365 d, official dates)</div>' + desigRows(((b.us.designations_365d || {}).fto) || []), { meta: "NTAS · DOJ · FTO / SDGT" });
   }
   body.innerHTML = '<div class="dk-root tw-pane">' +
-    '<div class="tw-disclaimer">Indicators &amp; warnings with stated baselines, not predictions. Definition ' + esc(b.definition_version || "") + " · " + pivot({ type: "terror-def" }, "definition &amp; sources") + "</div>" +
+    '<div class="tw-disclaimer">Indicators &amp; warnings with stated baselines, not predictions. Definition ' + esc(b.definition_version || "") + " · " + pivot({ type: "terror-def" }, "definition &amp; sources") + " ·" + ctxLink(cc) + "</div>" +
     sec("tw-posture", "Threat posture (composite index)", postureHtml(b.posture), { meta: "documented formula" }) +
     sec("tw-levels", "Official threat levels & advisories", levelsHtml(b.official_levels, b.advisory)) + us +
     sec("tw-ind", "Indicators vs baselines", indicatorsTable(ind)) +
@@ -302,10 +305,10 @@ async function renderGlobal(spec, body, hooks) {
   const [b, st] = await Promise.all([fetchJson("/api/terror/board/global", 30000), fetchJson("/api/terror/status", 15000).catch(() => null)]);
   if (hooks.stale()) return;
   const ind = b.indicators || {};
-  const hot = (b.hotspots_ucdp || []).map((h) => "<tr><td>" + pivot({ type: "terror-country", cc: h.country }, esc(h.name)) + "</td><td>" + nf(h.events) + "</td><td>" + nf(h.deaths) + "</td><td>" + verdictChip(h.tempo_verdict) + "</td><td><small>" +
+  const hot = (b.hotspots_ucdp || []).map((h) => "<tr><td>" + pivot({ type: "terror-country", cc: h.country }, esc(h.name)) + ctxLink(h.country) + "</td><td>" + nf(h.events) + "</td><td>" + nf(h.deaths) + "</td><td>" + verdictChip(h.tempo_verdict) + "</td><td><small>" +
     h.groups.map((g) => esc(g.name)).join(", ") + "</small></td></tr>").join("");
-  const news = (b.news_attacks_30d_by_country || []).map((c) => "<li>" + pivot({ type: "terror-country", cc: c.country }, esc(c.name)) + " " + nf(c.attacks) + "</li>").join("");
-  const levels = (b.levels || []).map((lv) => "<tr><td>" + pivot({ type: "terror-country", cc: lv.country }, esc(lv.country)) + "</td><td><b>" + esc(lv.level) + "</b>" + (lv.scope && lv.scope !== "national" ? '<br><small class="tw-muted">' + esc(lv.scope) + "</small>" : "") + "</td><td>" + esc(lv.authority) + "</td><td>" + esc(lv.as_of || "–") + "</td></tr>").join("");
+  const news = (b.news_attacks_30d_by_country || []).map((c) => "<li>" + pivot({ type: "terror-country", cc: c.country }, esc(c.name)) + " " + nf(c.attacks) + ctxLink(c.country) + "</li>").join("");
+  const levels = (b.levels || []).map((lv) => "<tr><td>" + pivot({ type: "terror-country", cc: lv.country }, esc(lv.country)) + ctxLink(lv.country) + "</td><td><b>" + esc(lv.level) + "</b>" + (lv.scope && lv.scope !== "national" ? '<br><small class="tw-muted">' + esc(lv.scope) + "</small>" : "") + "</td><td>" + esc(lv.authority) + "</td><td>" + esc(lv.as_of || "–") + "</td></tr>").join("");
   const srcs = st && st.sources ? st.sources.map((s) => '<span class="tw-src ' + (s.ok ? "ok" : "bad") + '" title="' + esc(s.error || "") + '">' + esc(s.source_id) + "</span>").join("") : "";
   body.innerHTML = '<div class="dk-root tw-pane"><div class="tw-disclaimer">Indicators &amp; warnings, not predictions · ' + pivot({ type: "terror-def" }, "definition, sources &amp; evaluation") + " · " + pivot({ type: "terror-groups" }, "groups") + " · " + pivot({ type: "terror-country", cc: "US" }, "US posture") + "</div>" +
     sec("tw-g-ind", "Global indicators vs baselines", indicatorsTable(ind)) +
@@ -329,7 +332,7 @@ async function renderGroup(spec, body, hooks) {
   const lists = Object.entries(g.designations || {}).map(([lid, d]) => "<tr><td>" + esc(LIST_TEXT[lid] || lid) + "</td><td>" + (d.status === "listed" ? chip("listed", "warn") : chip(d.status)) + "</td><td><small>" +
     d.entries.filter((e) => !e.kind || e.kind === "organisation").slice(0, 4).map((e) => esc(e.name) + (e.listed_on ? " (" + esc(e.listed_on) + ")" : "") + (e.delisted_on ? " delisted " + esc(e.delisted_on) : "")).join("; ") +
     (d.persons_or_assets ? " · +" + nf(d.persons_or_assets) + " linked persons/assets" : "") + '</small></td><td><small class="tw-muted">' + esc((d.entries[0] || {}).group_basis || "") + "</small></td></tr>").join("");
-  const areas = (g.areas_of_operation || []).map((a) => "<tr><td>" + pivot({ type: "terror-country", cc: a.country }, esc(a.name)) + "</td><td>" + nf(a.ucdp_events) + "</td><td>" + nf(a.ucdp_deaths) + "</td><td>" + nf(a.incidents) + "</td></tr>").join("");
+  const areas = (g.areas_of_operation || []).map((a) => "<tr><td>" + pivot({ type: "terror-country", cc: a.country }, esc(a.name)) + ctxLink(a.country) + "</td><td>" + nf(a.ucdp_events) + "</td><td>" + nf(a.ucdp_deaths) + "</td><td>" + nf(a.incidents) + "</td></tr>").join("");
   const fam = (g.family || []).filter((f) => f.id !== G.id).map((f) => pivot({ type: "terror-group", id: f.id }, esc(f.name), "dk-chip")).join("");
   const docs = (g.docs || []).map((d) => '<li><a href="' + esc(d.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(d.title) + '</a> <small class="tw-muted">' + esc(d.source) + " · " + when(d.published_at || d.first_seen) + "</small></li>").join("");
   body.innerHTML = '<div class="dk-root tw-pane">' +
@@ -459,7 +462,7 @@ export class TerrorPanel {
         '<small class="tw-muted">' + esc(x.date) + " · " + esc(x.date_basis || "") + "</small></div></li>";
     }
     if (x.type === "level_change" || x.type === "advisory_change") {
-      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--ion)"></i><div><a href="#" data-open=\'' + esc(JSON.stringify({ type: "terror-country", cc: x.country })) + "'>" + esc(x.country + " · " + (x.authority || "US advisory") + ": " + (x.prev_level ?? "?") + " → " + (x.level ?? "?")) + "</a>" +
+      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--ion)"></i><div><a href="#" data-open=\'' + esc(JSON.stringify({ type: "terror-country", cc: x.country })) + "'>" + esc(x.country + " · " + (x.authority || "US advisory") + ": " + (x.prev_level ?? "?") + " → " + (x.level ?? "?")) + "</a>" + ctxLink(x.country, "open") +
         '<small class="tw-muted">detected ' + when(x.observed_at) + (x.as_of ? " · as of " + esc(x.as_of) : "") + "</small></div></li>";
     }
     return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--fg-2)"></i><div><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(x.title) + "</a>" +

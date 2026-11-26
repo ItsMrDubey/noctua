@@ -320,12 +320,14 @@ function exposure(X) {
 }
 
 // ---- country context ----
+// the full country context pane (country.js), opened beside the intel pane
+const countryLink = (cc) => (/^[A-Z]{2}$/.test(cc || "") ? '<a href="#" class="cx-link" data-newpane="1"' + pivot({ type: "country", cc }) + ">Country context →</a>" : "");
 function country(C) {
   if (!C) return "";
   if (C.error) return empty(C.error);
   const H = C.history || {}, T = C.tempo || {};
   const months = Object.entries(H.months || {}), max = Math.max(1, ...months.map(([, v]) => v.events));
-  let h = '<div class="ic-kv"><div><b>' + nf(T.last7) + "</b><span>events, last 7 d</span></div><div class=\"" + (T.ratio >= 2 ? "hot" : "") + '" title="' + esc(T.basis || "") + '"><b>' + (T.ratio != null ? "×" + nf(T.ratio, 2) : "–") + "</b><span>vs baseline" + (T.ratio == null ? " (platform data since " + esc(T.first_day || "–") + ")" : "") + "</span></div><div><b>" + nf(H.total) + "</b><span>UCDP events " + esc(months.length ? months[0][0].slice(0, 4) : "") + "</span></div><div><b>" + nf(H.fatalities_best) + "</b><span>UCDP fatalities</span></div></div>";
+  let h = countryLink(C.cc) + '<div class="ic-kv"><div><b>' + nf(T.last7) + "</b><span>events, last 7 d</span></div><div class=\"" + (T.ratio >= 2 ? "hot" : "") + '" title="' + esc(T.basis || "") + '"><b>' + (T.ratio != null ? "×" + nf(T.ratio, 2) : "–") + "</b><span>vs baseline" + (T.ratio == null ? " (platform data since " + esc(T.first_day || "–") + ")" : "") + "</span></div><div><b>" + nf(H.total) + "</b><span>UCDP events " + esc(months.length ? months[0][0].slice(0, 4) : "") + "</span></div><div><b>" + nf(H.fatalities_best) + "</b><span>UCDP fatalities</span></div></div>";
   h += '<div class="ic-chart" title="Platform events in ' + esc(C.name || C.cc) + ' per day, last 37 days">' + area(T.days || [], { cls: "tempo" }) + "<span>−37 d</span><span>today</span></div>";
   const cats = Object.entries(T.categories_7d || {});
   if (cats.length) h += '<div class="ip-types">' + cats.map(([k, n]) => chip(eventCat(k)[0] + " " + n, "src")).join("") + "</div>";
@@ -756,7 +758,8 @@ export async function renderIntel(spec, body, hooks) {
   const kl = KIND_LABEL[spec.kind] || spec.kind;
   const isEv = spec.kind === "event";
   hooks.head({ title: spec.label || kl, sub: "INTEL // " + kl.toUpperCase(), icon: "intel", coord: spec.lat != null ? { lat: spec.lat, lon: spec.lon, alt: 6e4 } : null });
-  if (hooks.console && consolePref()) hooks.console(true);
+  // spec.dock: opened beside another pane (a country pane's event row): never as the console
+  if (hooks.console && consolePref() && !spec.dock) hooks.console(true);
   const tiles = tilesFor(spec.kind);
   body.innerHTML = '<div class="dk-root ip ic">' + '<div class="ic-hd"><div data-slot="head"><div class="dz-empty">Building intel picture…</div></div><div class="ic-metrics"></div><div class="ic-alertbar" hidden></div></div>' +
     '<div class="ic-grid">' + tiles.map((t, i) => tileShell(t, i)).join("") + "</div></div>";

@@ -1,20 +1,24 @@
 """Events API: map list, detail, stats (GDELT scorecard v1) and KML for Google Earth Pro."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from xml.sax.saxutils import escape
 
 import msgspec
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from osint.api import kml
+from osint.core import countries
 from osint.core.sensor_status import SIGNAL_DETECTORS, detection_kinds, sensor_label
 from osint.enrich.rules import RULE_FIELDS
+from osint.store.country_sql import INVOLVEMENTS, LOCATIONS
 from osint.translate import english
 from osint.translate import job as translate_job
 
 MAX_LIMIT = 10000
+COUNTRY_WINDOW = timedelta(days=7)  # default time window of the country view
+MAX_COUNTRY_WINDOW = timedelta(days=365)  # the widest window a country query may span
 IMPACT_LIMIT = 3000
 KML_LIMIT = 5000
 _ENCODER = msgspec.json.Encoder()
@@ -59,6 +63,30 @@ def parse_since(raw: str | None) -> datetime | None:
 
 def _json(obj: object) -> Response:
     return Response(_ENCODER.encode(obj), media_type="application/json")
+
+
+def country_code(raw: str | None) -> str | None:
+    """A known ISO 3166-1 alpha-2 code in any case -> upper-case ISO2; anything else -> None."""
+    if not raw or not raw.strip():
+        return None
+    return countries.to_iso2(raw.strip().upper(), hint="iso2")
+
+
+def unknown_country() -> JSONResponse:
+    return JSONResponse({"error": "unknown_country"}, status_code=400)
+
+
+def _bad(error: str) -> JSONResponse:
+    return JSONResponse({"error": error}, status_code=400)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def clamp_since(since: datetime, until: datetime) -> datetime:
+    """``since`` no earlier than ``until`` minus MAX_COUNTRY_WINDOW (bounds country queries)."""
+    return max(since, until - MAX_COUNTRY_WINDOW)
 
 
 def events_kml(items: list[dict]) -> str:
@@ -215,19 +243,72 @@ def mount_events(app: FastAPI, runtime) -> None:
         limit: int = Query(1000, ge=1, le=MAX_LIMIT),
         all_: bool = Query(False, alias="all"),
         include_unlocated: bool = False,
+        until: str | None = None,
+        offset: int = Query(0, ge=0),
+        country: str | None = None,
+        location: str = "all",
+        involvement: str = "all",
+        counterpart: str | None = None,
+        ids: bool = False,
     ) -> Response:
         """Map view by default: multi-source / sensor-corroborated / official events, or
         reported ones with city/point precision and confidence >= 0.5; located only.
-        ``all=true`` returns everything; ``include_unlocated=true`` adds unlocated events."""
-        items = await asyncio.to_thread(
-            store.list_events, bbox=parse_bbox(bbox), since=parse_since(since),
-            category=category, status=status, min_confidence=min_confidence, limit=limit,
-            include_unlocated=all_ or include_unlocated,
-            map_default=not all_ and not status)
+        ``all=true`` returns everything; ``include_unlocated=true`` adds unlocated events.
+
+        ``country`` (ISO2) is the country context view (spec B 2.1): ``location``,
+        ``involvement`` and ``counterpart`` narrow it, every item carries ``ctx``
+        ({location, involvement}), and items are ordered by lifecycle, then last update.
+        Errors (HTTP 400): unknown country/counterpart -> {"error": "unknown_country"};
+        bad location/involvement -> {"error": "bad_location"} / {"error": "bad_involvement"};
+        counterpart == country -> {"error": "bad_counterpart"}. The window is always bounded:
+        ``since`` defaults to now - 7 days and ``until`` to now, and the envelope then also reports the effective
+        ``since``/``until`` (ISO) so a client paging with ``offset`` can pass the first page's
+        ``until`` back and get a stable window. ``ids=true`` returns only the matching ids
+        (the globe's dimming set; most recently updated first, rows are not decoded), ``as_of``
+        (when the set was read) plus ``truncated`` (true when as many ids as ``limit`` came
+        back, so more may exist). ``since`` is clamped to at most 365 days before ``until``. Without ``country`` the response is unchanged."""
+        since_dt, until_dt = parse_since(since), parse_since(until)
+        cc = cp = None
+        if country:
+            cc = country_code(country)
+            if cc is None:
+                return unknown_country()
+            if counterpart:
+                cp = country_code(counterpart)
+                if cp is None:
+                    return unknown_country()
+                if cp == cc:
+                    return _bad("bad_counterpart")
+            if location not in LOCATIONS:
+                return _bad("bad_location")
+            if involvement not in INVOLVEMENTS:
+                return _bad("bad_involvement")
+            now = _utcnow()
+            if until_dt is None:
+                until_dt = now  # pins the window, so offset paging is stable
+            if since_dt is None:
+                since_dt = now - COUNTRY_WINDOW
+            since_dt = clamp_since(since_dt, until_dt)
+        filters = {"bbox": parse_bbox(bbox), "since": since_dt, "until": until_dt,
+                   "category": category, "status": status, "min_confidence": min_confidence,
+                   "include_unlocated": all_ or include_unlocated,
+                   "map_default": not all_ and not status, "country": cc,
+                   "location": location, "involvement": involvement, "counterpart": cp}
+        if ids:  # ids only: no row decoding, ctx, annotations or lifecycle sort
+            as_of = _utcnow()  # events updated after this may be missing from the set
+            got = await asyncio.to_thread(store.list_event_ids, limit=limit, offset=offset,
+                                          **filters)
+            return _json({"layer": "events", "count": len(got), "ids": got,
+                          "truncated": len(got) >= limit, "as_of": as_of.isoformat()})
+        items = await asyncio.to_thread(store.list_events, limit=limit, offset=offset, **filters)
         await asyncio.to_thread(add_corroboration, store, items)
         await asyncio.to_thread(add_impacts, store, items)
         await asyncio.to_thread(add_english, items)
-        return _json({"layer": "events", "count": len(items), "items": items})
+        out: dict = {"layer": "events", "count": len(items), "items": items}
+        if cc:
+            out["since"] = since_dt.isoformat() if since_dt else None
+            out["until"] = until_dt.isoformat() if until_dt else None
+        return _json(out)
 
     @app.get("/api/events/impacts")
     async def impacts_layer(bbox: str | None = None, since: str | None = None,

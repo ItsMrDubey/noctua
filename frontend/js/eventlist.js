@@ -18,6 +18,13 @@ export const relTime = (ts) => {
 const evTimes = (it) => [["First report", it.t_start], ["Latest report", it.t_end], ["Processed", it.updated_at]]
   .map(([k, t]) => k + " " + (t ? fmtDateTime(t, { zone: true }) + " (" + utcTitle(t) + ")" : "?")).join("\n");
 export const statusPill = (st) => '<span class="pill st-' + esc(String(st).replace(/[^a-z-]/g, "")) + '">' + esc(EVENT_STATUS[st] || st || "?") + "</span>";
+// one event row's inner markup (glyph, title, status, outlets, place, age); the country pane's
+// list (panels/country-view.js) reuses it with extra badges after the status pill
+export function eventRowInner(it, extra = "") {
+  const c = threatColor("events", it);
+  return '<div class="g" style="color:' + c + '">' + uiGlyph("events", it) + '</div><div class="t">' + esc(evTitle(it) || it.id) + (trPending(it) ? " " + TR_TAG : "") + "</div>" +
+    '<div class="m">' + statusPill(it.status) + extra + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc(evTimes(it)) + '">' + relTime(activeAt(it)) + "</time></div>";
+}
 
 export class EventList {
   constructor(layer, onPick, isActive) {
@@ -74,10 +81,7 @@ export class EventList {
     for (let i = a; i < b; i++) {
       const it = this.rows[i];
       const cls = "erow" + (i === this.active ? " act" : "") + (it.id === this.selId ? " sel" : "");
-      const c = threatColor("events", it);
-      html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + 'px;--c:' + c + '" title="' + esc(eventCat(it.category)[0]) + '">' +
-        '<div class="g" style="color:' + c + '">' + uiGlyph("events", it) + '</div><div class="t">' + esc(evTitle(it) || it.id) + (trPending(it) ? " " + TR_TAG : "") + "</div>" +
-        '<div class="m">' + statusPill(it.status) + "<span>" + (it.source_diversity || 0) + " outlet" + (it.source_diversity === 1 ? "" : "s") + "</span><span>" + esc(it.place_name || it.precision || "") + '</span><time title="' + esc(evTimes(it)) + '">' + relTime(activeAt(it)) + "</time></div></div>";
+      html += '<div class="' + cls + '" data-i="' + i + '" data-id="' + esc(it.id) + '" style="top:' + i * ROW_H + 'px;--c:' + threatColor("events", it) + '" title="' + esc(eventCat(it.category)[0]) + '">' + eventRowInner(it) + "</div>";
     }
     if (html !== this._painted) { this._painted = html; this.space.innerHTML = html; }
   }

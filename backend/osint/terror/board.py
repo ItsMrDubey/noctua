@@ -121,6 +121,22 @@ def country_board(store, kb, cc: str, *, now: datetime, cfg, coverage_days: floa
     }
 
 
+def threat_section(store, cc: str) -> dict:
+    """The official threat level and travel advisories of ``cc``: the levels / advisory parts
+    of ``country_board`` alone (the same store reads), for the country context pane.
+    ``level`` is the national-scope level ranked highest on its own scale; None when no
+    monitored authority publishes one."""
+    levels = store.levels(cc)
+    national = [lv for lv in levels if (lv.get("scope") or "national") == "national"] or levels
+    best = max(national, default=None,
+               key=lambda lv: (lv.get("rank") or 0) / (lv.get("scale_max") or 1)) or {}
+    advisories = [{k: a.get(k) for k in ("level", "label", "title", "url", "updated",
+                                         "terrorism")} for a in store.advisories(cc)]
+    return {"level": best.get("level"), "source": best.get("authority"),
+            "rank": best.get("rank"), "scale_max": best.get("scale_max"),
+            "as_of": best.get("as_of"), "advisories": advisories}
+
+
 def _slim(i: dict) -> dict:
     k = ((i.get("casualties") or {}).get("killed") or {})
     return {"id": i["id"], "event_id": i["event_id"], "title": i.get("title"),

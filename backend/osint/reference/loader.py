@@ -159,6 +159,16 @@ def load_boundaries(path: Path) -> dict:
     return {"type": "FeatureCollection", "features": feats}
 
 
+def _iso2(p: dict) -> str | None:
+    """ISO 3166-1 alpha-2 of a Natural Earth admin-0 feature (ISO_A2, else ISO_A2_EH: some
+    countries carry -99 in ISO_A2)."""
+    for key in ("ISO_A2", "ISO_A2_EH"):
+        v = str(p.get(key) or "")
+        if len(v) == 2 and v.isalpha():
+            return v.upper()
+    return None
+
+
 def load_countries(path: Path) -> list[dict]:
     gj = _geojson(path)
     out = []
@@ -168,7 +178,7 @@ def load_countries(path: Path) -> list[dict]:
         if lon is None or lat is None:
             continue
         out.append({"name": p.get("NAME") or p.get("ADMIN") or "", "iso_a3": p.get("ISO_A3") or p.get("ADM0_A3"),
-                    "lon": round(lon, 3), "lat": round(lat, 3)})
+                    "iso_a2": _iso2(p), "lon": round(lon, 3), "lat": round(lat, 3)})
     return out
 
 
