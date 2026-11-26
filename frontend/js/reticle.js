@@ -1,14 +1,15 @@
 // Selection reticle (animated corner brackets + expanding pulse ring) and pulsing halos
 // under high-priority aircraft. Animates at a capped tick rate in request-render mode.
 import { REDUCED } from "/static/js/ui.js";
+import { cesiumColor } from "/static/js/symbology.js";
 
 const C = Cesium;
 const svg = (body) => "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="square">' + body + "</svg>");
 const BRACKETS = svg('<path d="M4 18V4h14M46 4h14v14M60 46v14H46M18 60H4V46"/><path d="M32 2v6M32 56v6M2 32h6M56 32h6" stroke-width="1.4"/>');
 const RING = svg('<circle cx="32" cy="32" r="28" stroke-width="2"/>');
 const TICK_MS = 70; // ~14 Hz: smooth enough for a pulse, cheap in request-render mode
-const ION = C.Color.fromCssColorString("#5ee3ea"), AMBER = C.Color.fromCssColorString("#f2ad3d"), TEAL = C.Color.fromCssColorString("#3ddcc2");
-const HALO = C.Color.fromCssColorString("#ff4b55");
+const ION = cesiumColor("--ion"), AMBER = cesiumColor("--amber"), TEAL = C.Color.fromCssColorString("#3ddcc2");
+const HALO = cesiumColor("--sym-hp");
 
 export class Reticle {
   constructor(scene) {
@@ -61,7 +62,7 @@ export class Reticle {
       const p = this.target();
       if (p) {
         const replay = document.body.classList.contains("replay");
-        const col = replay ? AMBER : this.kind === "ref" ? TEAL : ION;
+        const col = replay ? ION : this.kind === "ref" ? TEAL : AMBER; // amber = live selection, cyan = replay
         this.br.position = p; this.ring.position = p;
         this.br.show = true; this.br.color = col;
         // brackets snap in, then breathe slightly; ring expands + fades every 1.6 s

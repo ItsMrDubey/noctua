@@ -4,6 +4,7 @@
 import { fetchJson } from "/static/js/api.js";
 import { esc } from "/static/js/ui.js";
 import { airportMaxDist, portMaxDist } from "/static/js/lod.js";
+import { cesiumColor } from "/static/js/symbology.js";
 
 const C = Cesium;
 const FONT = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
@@ -109,7 +110,7 @@ export class ReferenceLayers {
             const id = { ref: true, kind: "boundary", item: { lat: p[0][1], lon: p[0][0], name: (f.properties && f.properties.name) || name + " boundary", layer: name } };
             inst.push(new C.GeometryInstance({
               geometry: land ? new C.SimplePolylineGeometry({ positions }) : new C.PolylineGeometry({ positions, width: 1.3, vertexFormat: C.PolylineMaterialAppearance.VERTEX_FORMAT }),
-              attributes: land ? { color: C.ColorGeometryInstanceAttribute.fromColor(col(CYAN, 0.5)) } : undefined,
+              attributes: land ? { color: C.ColorGeometryInstanceAttribute.fromColor(cesiumColor("--globe-line")) } : undefined,
               id,
             }));
           }

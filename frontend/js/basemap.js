@@ -10,8 +10,8 @@ const C = Cesium;
 const KEY = "noctua.basemap";
 const PHOTO_MAX_EYE = 60e3;
 const BING_AERIAL = 2; // Cesium ion asset ids
-const DIM = { brightness: 0.78, contrast: 1.1, saturation: 0.6 };
-const FULL = { brightness: 1.0, contrast: 1.0, saturation: 1.0 };
+const DIM = { brightness: 0.55, contrast: 1.15, saturation: 0.35, hue: 0.03 };
+const FULL = { brightness: 1.0, contrast: 1.0, saturation: 1.0, hue: 0 };
 const LABEL = { esri: "Esri World Imagery", bing: "Bing Maps Aerial", photo: "Google Photorealistic 3D" };
 
 /** Mounts the controls under the Imagery heading. ``cfgP`` resolves to /api/config;
