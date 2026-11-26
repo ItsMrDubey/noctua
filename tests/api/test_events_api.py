@@ -231,6 +231,28 @@ def test_rule_values_without_a_supported_extraction():
     assert empty["extracted"]["weapons_platforms"] == [] and empty["extracted"]["headline"] is None
 
 
+def test_a_malformed_stored_rule_count_is_no_value():
+    rows = [{"field": "casualties.killed", "value": "12a", "doc_id": "d", "quote": "x"},
+            {"field": "casualties.injured", "value": "", "doc_id": "d", "quote": "x"}]
+    out = field_precedence(rows, None)
+    assert out["extracted"]["casualties"] == {"killed": None, "injured": None}
+    assert out["field_source"]["casualties.killed"] is None
+
+
+def test_llm_counts_are_coerced_and_a_missing_one_falls_back_to_the_rule():
+    rows = [{"field": "casualties.injured", "value": "7", "doc_id": "d", "quote": "7 hurt"}]
+    out = field_precedence(rows, _ext("supported", casualties={"killed": "12",
+                                                               "injured": None}))
+    assert out["extracted"]["casualties"] == {"killed": 12, "injured": 7}
+    assert out["field_source"]["casualties.killed"] == "llm"
+    assert out["field_source"]["casualties.injured"] == "rule"
+    bad = field_precedence(rows, _ext("supported", casualties={"killed": "many",
+                                                               "injured": "lots"}))
+    assert bad["extracted"]["casualties"] == {"killed": None, "injured": 7}
+    assert bad["field_source"]["casualties.killed"] is None
+    assert bad["field_source"]["casualties.injured"] == "rule"
+
+
 class _Ext:
     def __init__(self, recs):
         self.recs = recs

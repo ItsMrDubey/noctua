@@ -145,6 +145,18 @@ def impact_layer_item(rec: dict) -> dict:
                       for a in rec["areas"]]}
 
 
+def _count(value: object) -> int | None:
+    """A casualty count as a non-negative int ("12" -> 12, 12.0 -> 12); anything else (None,
+    bool, "many", "12a", -1) -> None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        n = int(value) if isinstance(value, int | float) else int(str(value).strip())
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return n if n >= 0 else None
+
+
 def field_precedence(rule_rows: list[dict], extraction: dict | None) -> dict:
     """Extracted fields of an event (deterministic extraction spec §2.4): a value of an LLM
     extraction whose verdict is ``supported`` outranks the rule value
@@ -159,8 +171,8 @@ def field_precedence(rule_rows: list[dict], extraction: dict | None) -> dict:
         res = rec.get("result") or {}
         cas = res.get("casualties") or {}
         llm = {"summary": str(res.get("summary") or "").strip() or None,
-               "casualties.killed": cas.get("killed"),
-               "casualties.injured": cas.get("injured"),
+               "casualties.killed": _count(cas.get("killed")),
+               "casualties.injured": _count(cas.get("injured")),
                "weapons_platforms": sorted({str(w) for w in res.get("weapons_platforms") or []
                                             if w}) or None}
     values: dict[str, object] = {}
@@ -176,7 +188,8 @@ def field_precedence(rule_rows: list[dict], extraction: dict | None) -> dict:
         elif f == "weapons_platforms":
             values[f], source[f] = sorted({r["value"] for r in rows}), "rule"
         elif f.startswith("casualties."):
-            values[f], source[f] = int(rows[0]["value"]), "rule"
+            n = _count(rows[0]["value"])  # a malformed stored value is no value, not a 500
+            values[f], source[f] = n, "rule" if n is not None else None
         else:
             values[f], source[f] = rows[0]["value"], "rule"
     return {"extracted": {"headline": values["headline"], "summary": values["summary"],
