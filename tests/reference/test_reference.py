@@ -1,3 +1,4 @@
+import json
 import math
 
 from osint.reference import loader
@@ -115,3 +116,19 @@ def test_chokepoints_closed_rings():
     for c in cps:
         assert c["ring"][0] == c["ring"][-1] and len(c["ring"]) >= 4
         assert c["name"] and c["note"]
+
+
+def test_countries_carry_iso2(tmp_path):
+    def feat(name, a2, eh, x, y):
+        return {"type": "Feature", "geometry": None,
+                "properties": {"NAME": name, "ISO_A2": a2, "ISO_A2_EH": eh,
+                               "ISO_A3": "-99", "LABEL_X": x, "LABEL_Y": y}}
+
+    p = tmp_path / "c.geojson"
+    p.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        feat("Ukraine", "UA", "UA", 31.0, 48.0),
+        feat("Norway", "-99", "NO", 9.0, 61.0),      # Natural Earth's -99 quirk
+        feat("N. Cyprus", "-99", "-99", 33.5, 35.2)]}), encoding="utf-8")
+    out = loader.load_countries(p)
+    assert [(c["name"], c["iso_a2"]) for c in out] == [
+        ("Ukraine", "UA"), ("Norway", "NO"), ("N. Cyprus", None)]

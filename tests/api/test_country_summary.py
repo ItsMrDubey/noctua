@@ -111,3 +111,23 @@ def test_antimeridian_bbox_is_preserved(cclient, monkeypatch, cc):
     monkeypatch.setattr(countries, "bbox", _REAL_BBOX)  # the real, unmocked registry
     b = cclient.get(f"/api/country/{cc}/summary").json()["bbox"]
     assert b is not None and b[0] > b[2]  # west > east: it wraps the date line
+
+
+def test_shape(cclient):
+    r = cclient.get("/api/country/ua/shape")
+    assert r.status_code == 200 and r.headers["cache-control"] == "max-age=86400"
+    s = r.json()
+    assert s["cc"] == "UA" and len(s["polygons"]) == 1 and len(s["polygons"][0]) == 2
+    assert s["polygons"][0][0][:4] == [22.0, 44.0, 40.0, 44.0]
+    assert cclient.get("/api/country/FR/shape").json()["polygons"] == []
+    assert cclient.get("/api/country/ZZ/shape").status_code == 400
+
+
+def test_country_at_point(cclient):
+    assert cclient.get("/api/country/at?lat=48&lon=31").json() == {
+        "cc": "UA", "name": countries.name("UA")}
+    assert cclient.get("/api/country/at?lat=52&lon=18").json()["cc"] == "PL"
+    for lat, lon in ((46.5, 31.0), (0.0, 0.0)):  # inside UA's hole, open sea
+        r = cclient.get(f"/api/country/at?lat={lat}&lon={lon}")
+        assert r.status_code == 404 and r.json() == {"error": "no_country"}
+    assert cclient.get("/api/country/at?lat=95&lon=0").status_code == 422

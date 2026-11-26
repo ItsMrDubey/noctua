@@ -15,8 +15,8 @@ from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 
-from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi import FastAPI, Query
+from fastapi.responses import JSONResponse, Response
 
 from osint.api import events as events_api
 from osint.api.events import _json, clamp_since, country_code, parse_since, unknown_country
@@ -37,6 +37,40 @@ LIFECYCLES = ("developing", "active", "cooling", "closed")
 def _shapes() -> Countries:
     """Natural Earth country label points and outlines (the IODA overlay's source)."""
     return get_countries()
+
+
+def _in_ring(lon: float, lat: float, ring: list[float]) -> bool:
+    """Even-odd ray cast over a flat [lon, lat, ...] ring."""
+    inside = False
+    k = len(ring) // 2
+    j = k - 1
+    for i in range(k):
+        xi, yi, xj, yj = ring[2 * i], ring[2 * i + 1], ring[2 * j], ring[2 * j + 1]
+        if (yi > lat) != (yj > lat) and lon < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def country_at(shapes: Countries, lat: float, lon: float) -> str | None:
+    """ISO2 of the country polygon containing the point (in the outer ring, not in a hole).
+    Polygon bboxes are indexed once per Countries object."""
+    index = getattr(shapes, "_pip_index", None)
+    if index is None:
+        index = []
+        for cc, polys in shapes.shapes.items():
+            for poly in polys:
+                if not poly or len(poly[0]) < 6:
+                    continue
+                xs, ys = poly[0][0::2], poly[0][1::2]
+                index.append((cc, poly, min(xs), min(ys), max(xs), max(ys)))
+        shapes._pip_index = index
+    for cc, poly, w, s, e, n in index:
+        if not (w <= lon <= e and s <= lat <= n):
+            continue
+        if _in_ring(lon, lat, poly[0]) and not any(_in_ring(lon, lat, h) for h in poly[1:]):
+            return cc
+    return None
 
 
 def summarise(cc: str, rows: list[dict], spark_rows: list[tuple[str, int]],
@@ -124,3 +158,24 @@ def mount_country(app: FastAPI, runtime, *, now: Callable[[], datetime] | None =
                       "bbox": list(box) if box else None,
                       "centroid": [point[0], point[1]] if point else None,
                       "since": lo.isoformat(), "until": hi.isoformat() if hi else None})
+
+    @app.get("/api/country/at")
+    async def country_at_point(lat: float = Query(..., ge=-90, le=90),
+                               lon: float = Query(..., ge=-180, le=180)) -> Response:
+        """The country under a globe point (Alt+click on the globe)."""
+        shapes = await asyncio.to_thread(_shapes)
+        cc = await asyncio.to_thread(country_at, shapes, lat, lon)
+        code = country_code(cc) if cc else None
+        if code is None:
+            return JSONResponse({"error": "no_country"}, status_code=404)
+        return _json({"cc": code, "name": countries.name(code)})
+
+    @app.get("/api/country/{cc}/shape")
+    async def country_shape(cc: str) -> Response:
+        """Outline polygons (flat [lon, lat, ...] rings, outer first) for the globe sync."""
+        code = country_code(cc)
+        if code is None:
+            return unknown_country()
+        shapes = await asyncio.to_thread(_shapes)
+        return JSONResponse({"cc": code, "polygons": shapes.shape(code)},
+                            headers={"Cache-Control": "max-age=86400"})
