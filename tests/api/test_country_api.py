@@ -81,7 +81,8 @@ def test_window_paging_ids_and_category(client):
     assert ids(client.get(Q + "&limit=2")) == ["E1", "E2"]
     assert ids(client.get(Q + "&limit=2&offset=2")) == ["E6", "E3"]
     j = client.get(Q + "&ids=true").json()
-    assert j == {"layer": "events", "count": 5, "ids": ["E1", "E2", "E6", "E3", "E4"],
+    # ids only: most recently updated first (no lifecycle sort)
+    assert j == {"layer": "events", "count": 5, "ids": ["E1", "E2", "E3", "E4", "E6"],
                  "truncated": False}
     assert "E4" not in ids(client.get(Q + "&category=armed_conflict"))
     assert client.get(Q + "&until=never").status_code == 422
@@ -132,3 +133,41 @@ def test_ids_truncated_flag(client):
     cut = client.get(Q + f"&ids=true&limit={full['count']}").json()
     assert cut["truncated"] is True
     assert client.get(Q + "&ids=true&limit=1").json()["truncated"] is True
+
+
+@pytest.mark.parametrize("extra", [
+    "", "&location=inside", "&location=abroad", "&involvement=domestic",
+    "&involvement=foreign", "&involvement=unattributed", "&location=inside&involvement=foreign",
+    "&counterpart=RU", "&category=disaster", "&category=armed_conflict&location=abroad",
+    "&since=2026-11-21T11:25:00Z&until=2026-11-21T11:45:00Z",
+])
+def test_ids_form_matches_the_full_query(client, extra):
+    full = ids(client.get(Q + extra))
+    got = client.get(Q + extra + "&ids=true").json()
+    assert set(got["ids"]) == set(full) and got["count"] == len(full)
+    assert got["truncated"] is False
+
+
+def test_ids_form_skips_row_decoding_and_ctx(client, monkeypatch):
+    """ids=true reads only ids: no _event_out / event_ctx / annotation per row."""
+    from osint.store import sqlite as sqlite_mod
+
+    def boom(*_a, **_k):
+        raise AssertionError("ids=true must not decode rows")
+
+    monkeypatch.setattr(sqlite_mod, "_event_out", boom)
+    monkeypatch.setattr(sqlite_mod, "event_ctx", boom)
+    monkeypatch.setattr(events_api, "add_corroboration", boom)
+    got = client.get(Q + "&ids=true")
+    assert got.status_code == 200 and len(got.json()["ids"]) == 5
+
+
+def test_ids_query_orders_by_update_without_lifecycle_sort(store):
+    """The ids query sorts by updated_at only (the events_updated index), never by the
+    lifecycle CASE, so it needs no temp b-tree for its ORDER BY."""
+    sql, params = store.event_ids_sql(country="UA", since=T0 - timedelta(days=7), until=T0,
+                                      limit=10)
+    assert "CASE" not in sql.split("ORDER BY", 1)[1]
+    plan = " | ".join(r[3] for r in store._db.execute("EXPLAIN QUERY PLAN " + sql, params))
+    assert "TEMP B-TREE" not in plan, plan
+    assert store.list_event_ids(country="UA", since=T0 - timedelta(days=7), limit=2) == ["E1", "E2"]

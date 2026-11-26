@@ -645,6 +645,58 @@ class SqliteStore:
         by ``location`` / ``involvement`` / ``counterpart`` (store.country_sql). Each item then
         also carries ``actor_countries``, ``attributed``, ``lifecycle`` and ``ctx``, and the
         order is lifecycle (developing first), then most recently updated."""
+        where, params = self._event_filters(
+            bbox=bbox, since=since, category=category, status=status,
+            min_confidence=min_confidence, include_unlocated=include_unlocated,
+            map_default=map_default, origin=origin, until=until, country=country,
+            location=location, involvement=involvement, counterpart=counterpart)
+        cols = ", ".join(SLIM_EVENT_COLUMNS) if slim else "*"
+        if country and slim:
+            cols += "".join(f", {c}" for c in COUNTRY_COLUMNS if c not in SLIM_EVENT_COLUMNS)
+        sql = f"SELECT {cols} FROM events"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        order = f"{LIFECYCLE_RANK_SQL}, " if country else ""
+        sql += f" ORDER BY {order}updated_at DESC, id DESC LIMIT ? OFFSET ?"
+        params += [max(0, int(limit)), max(0, int(offset))]
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        out = [_event_out(r) for r in rows]
+        if country:
+            for it in out:
+                it["actor_countries"] = as_list(it.get("actor_countries"))
+                it["ctx"] = event_ctx(country, it.get("country"), it["actor_countries"],
+                                      it.get("attributed"))
+        return out
+
+    def event_ids_sql(self, *, limit: int = 1000, offset: int = 0, **filters
+                      ) -> tuple[str, list[object]]:
+        """SQL + parameters of ``list_event_ids`` (exposed for its query-plan test)."""
+        where, params = self._event_filters(**filters)
+        sql = "SELECT id FROM events"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        # updated_at only: the events_updated index gives the order, no lifecycle CASE sort
+        sql += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        return sql, params + [max(0, int(limit)), max(0, int(offset))]
+
+    def list_event_ids(self, *, limit: int = 1000, offset: int = 0, **filters) -> list[str]:
+        """Ids of the events ``list_events`` would match with the same filters (the country
+        pane's globe dimming set), most recently updated first; no row decoding, no ctx."""
+        sql, params = self.event_ids_sql(limit=limit, offset=offset, **filters)
+        with self._lock:
+            return [r[0] for r in self._db.execute(sql, params).fetchall()]
+
+    @staticmethod
+    def _event_filters(*, bbox: tuple[float, float, float, float] | None = None,
+                       since: datetime | None = None, category: str | None = None,
+                       status: str | None = None, min_confidence: float | None = None,
+                       include_unlocated: bool = True, map_default: bool = False,
+                       origin: str | None = None, until: datetime | None = None,
+                       country: str | None = None, location: str = "all",
+                       involvement: str = "all", counterpart: str | None = None
+                       ) -> tuple[list[str], list[object]]:
+        """WHERE clauses (ANDed) and parameters shared by list_events / list_event_ids."""
         where: list[str] = []
         params: list[object] = []
         if not include_unlocated:
@@ -683,24 +735,7 @@ class SqliteStore:
             cw, cp = country_where(country, location, involvement, counterpart)
             where += cw
             params += cp
-        cols = ", ".join(SLIM_EVENT_COLUMNS) if slim else "*"
-        if country and slim:
-            cols += "".join(f", {c}" for c in COUNTRY_COLUMNS if c not in SLIM_EVENT_COLUMNS)
-        sql = f"SELECT {cols} FROM events"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        order = f"{LIFECYCLE_RANK_SQL}, " if country else ""
-        sql += f" ORDER BY {order}updated_at DESC, id DESC LIMIT ? OFFSET ?"
-        params += [max(0, int(limit)), max(0, int(offset))]
-        with self._lock:
-            rows = self._db.execute(sql, params).fetchall()
-        out = [_event_out(r) for r in rows]
-        if country:
-            for it in out:
-                it["actor_countries"] = as_list(it.get("actor_countries"))
-                it["ctx"] = event_ctx(country, it.get("country"), it["actor_countries"],
-                                      it.get("attributed"))
-        return out
+        return where, params
 
     def search_events(self, q: str, *, since: datetime | None = None, limit: int = 200
                       ) -> list[dict]:
