@@ -288,3 +288,46 @@ def test_ttl_cache_expiry():
     for i in range(6):
         c.put(i, i)
     assert len(c._d) <= 5
+
+
+def test_resolve_cc_trusts_event_country_only_after_the_migration(rt):
+    from osint.store.sqlite import COUNTRY_MIGRATION_STATE
+
+    s = {"kind": "event", "event": {"country": "GM"}, "lat": 47.70, "lon": 40.21}
+    assert context.resolve_cc(rt, s) == "RU"  # unmigrated "GM" may be FIPS: lat/lon wins
+    assert context.resolve_cc(rt, {"kind": "event",
+                                   "event": {"country": "Russia (Soviet Union)"}}) == "RU"
+    rt.store.set_cursor(COUNTRY_MIGRATION_STATE, {"done": True})
+    assert context.resolve_cc(rt, s) == "GM"
+
+
+def test_countries_migrated_caches_only_a_positive_answer():
+    from osint.store.sqlite import COUNTRY_MIGRATION_STATE
+
+    class _Store:
+        def __init__(self):
+            self.calls, self.state = 0, None
+
+        def get_cursor(self, name):
+            assert name == COUNTRY_MIGRATION_STATE
+            self.calls += 1
+            return self.state
+
+    st = _Store()
+    rt = SimpleNamespace(store=st)
+    assert context._countries_migrated(rt) is False
+    assert context._countries_migrated(rt) is False
+    assert st.calls == 2  # a negative is re-read: the marker may flip any time
+    st.state = {"done": True}
+    assert context._countries_migrated(rt) is True
+    st.state = None
+    assert context._countries_migrated(rt) is True  # the marker only flips once
+    assert st.calls == 3
+    other = _Store()
+    assert context._countries_migrated(SimpleNamespace(store=other)) is False  # per store
+
+
+def test_country_history_counts_iso2_normalised_rows(rt, subj):
+    rt.store.save_events([_ev("ucdp-3", 47.9, 39.95, datetime(2026, 5, 20, tzinfo=UTC),
+                              status="historical", country="RU", origin="historical")])
+    assert context.section_country(rt, subj, NOW)["history"]["total"] == 3

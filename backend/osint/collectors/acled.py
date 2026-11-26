@@ -34,8 +34,10 @@ import h3
 import httpx
 
 from osint.core.collector import CollectorContext, PollCollector, register
+from osint.core.countries import to_iso2
 from osint.core.geo import h3_cells, utcnow, valid_coord
 from osint.core.models import Batch, clip_snippet
+from osint.enrich.actors import default_lexicon, derive, resolve_actors
 from osint.store.sqlite import HISTORICAL_STATUS
 
 log = logging.getLogger(__name__)
@@ -136,16 +138,18 @@ def map_row(row: dict[str, Any], now: datetime) -> dict[str, Any] | None:
     event_id, doc_id = f"acled-{uid}", f"acled:{uid}"
     t = _iso(day)
     t_end = _iso(day + timedelta(days=1) - timedelta(milliseconds=1))
+    cc = to_iso2(country, "name") if country else None
+    actors = resolve_actors({"id": event_id, "actors": [a for a in (
+        {"name": actor1, "role": "actor1", "type": _s(row, "inter1"), "source": SOURCE},
+        {"name": actor2, "role": "actor2", "type": _s(row, "inter2"), "source": SOURCE})
+        if a["name"]]}, (), default_lexicon())
     event = {
         "id": event_id, "category": cat,
         "subcategory": (sub_type or event_type).casefold() or None, "cameo_root": None,
         "title": title, "summary": notes,
-        "actors": [a for a in (
-            {"name": actor1, "role": "actor1", "type": _s(row, "inter1"), "country": ""},
-            {"name": actor2, "role": "actor2", "type": _s(row, "inter2"), "country": ""})
-            if a["name"]],
+        "actors": actors,
         "lat": lat, "lon": lon, "precision": prec, "place_name": location or admin1 or None,
-        "country": country or None, "geo_confidence": geo_conf,
+        "country": cc, "geo_confidence": geo_conf,
         "h3_3": h3.int_to_str(c3), "h3_5": h3.int_to_str(c5), "h3_7": h3.int_to_str(c7),
         "t_start": t, "t_end": t_end, "status": HISTORICAL_STATUS, "origin": "historical",
         "confidence": confidence(geo_prec, time_prec), "version": 1,
@@ -154,6 +158,7 @@ def map_row(row: dict[str, Any], now: datetime) -> dict[str, Any] | None:
         "cluster_state": {"source": SOURCE, "acled_id": uid,
                           "acled_timestamp": _int(row.get("timestamp")),
                           "imported_at": _iso(now)},
+        **derive(actors, cc),
     }
     document = {
         "event_id": event_id, "doc_id": doc_id, "source": SOURCE,

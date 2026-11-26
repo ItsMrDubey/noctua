@@ -111,3 +111,14 @@ def test_type_mismatch_is_applied_as_unsupported():
     assert v.verdict == "mismatch" and effective_verdict(v.verdict, v.reasons) == "unsupported"
     assert effective_verdict("mismatch", ["place: X is 400 km from Y"]) == "mismatch"
     assert effective_verdict("supported", []) == "supported"
+
+
+def test_extracted_country_is_checked_against_the_registry():
+    def country(value):
+        where = {"place_name": "Kharkiv", "admin1": None, "country": value,
+                 "precision": "city"}
+        return normalise(raw(where=where), TEXT)["where"]["country"]
+
+    assert country("ua") == "UA"
+    assert country("XX") is None
+    assert country("UK") == "GB"  # not ISO2: read as a name/alias

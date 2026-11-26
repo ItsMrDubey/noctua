@@ -170,3 +170,12 @@ verification:
   unsupported_cap: 0.2
   mismatch_penalty: 0.25
   supported_bonus: 0.1
+
+# Event lifecycle (osint.pipeline.lifecycle), from the newest linked article's published
+# time (sensor events: when the signal was last seen); refreshed every builder pass
+lifecycle:
+  developing_h: 6           # newest report at most this old ...
+  developing_min_docs: 2    # ... and at least this many reports within developing_h
+  active_h: 48              # newest report at most this old
+  cooling_d: 7              # at most this old; older -> closed
+  max_open_per_pass: 20000  # open (not closed) events re-scanned per pass, by id

@@ -65,6 +65,7 @@ from urllib.parse import urlsplit
 import h3
 import numpy as np
 
+from osint.core.countries import to_iso2
 from osint.core.geo import haversine_km, valid_coord
 from osint.enrich.gazetteer import fold
 from osint.pipeline.minhash import LSHIndex, MinHasher, jaccard
@@ -278,16 +279,19 @@ class ClusterDoc:
                 place_words |= title_tokens(str(t or ""), limit=64)
         return title_tokens(self.title) - place_words
 
-    def actors(self) -> list[dict[str, str]]:
+    def actors(self) -> list[dict[str, Any]]:
+        """GDELT actors: the CAMEO country code becomes ISO2 (kept as ``cameo``)."""
         if not self.is_gdelt:
             return []
         out = []
         for n, role in ((1, "source"), (2, "target")):
             name = str(self.attrs.get(f"actor{n}") or "").strip()
             if name:
+                cameo = str(self.attrs.get(f"actor{n}_country") or "").strip().upper()
                 out.append({"name": name.title(), "role": role,
                             "type": str(self.attrs.get(f"actor{n}_code") or ""),
-                            "country": str(self.attrs.get(f"actor{n}_country") or "")})
+                            "country": to_iso2(cameo, "cameo") if cameo else None,
+                            "cameo": cameo, "source": "gdelt"})
         return out
 
 
@@ -341,7 +345,7 @@ class EventState:
     summary: str = ""
     subcategory: str | None = None
     cameo_root: str | None = None
-    actors: list[dict[str, str]] = field(default_factory=list)
+    actors: list[dict[str, Any]] = field(default_factory=list)
     lat: float | None = None
     lon: float | None = None
     precision: str | None = None
@@ -1113,11 +1117,13 @@ class Clusterer:
 
     @staticmethod
     def _country(doc: ClusterDoc) -> str | None:
+        """ISO2 of the document's place: GDELT ActionGeo codes are FIPS 10-4 (``GM`` is
+        Germany); gazetteer hits are ISO2 already and are checked against the registry."""
         if doc.is_gdelt:
-            return str(doc.attrs.get("geo_country") or "") or None  # FIPS 10-4
+            return to_iso2(str(doc.attrs.get("geo_country") or ""), "fips")
         for p in doc.places:
             if p.get("name") == doc.place_name and p.get("country"):
-                return str(p["country"])
+                return to_iso2(str(p["country"]), "iso2")
         return None
 
     @staticmethod

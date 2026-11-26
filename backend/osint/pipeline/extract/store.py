@@ -44,9 +44,16 @@ def _dump(v) -> str | None:
 
 
 class ExtractionStore:
-    def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: Path, *, read_only: bool = False) -> None:
+        """``read_only``: URI ``mode=ro`` connection, no schema creation (report-only runs
+        against a live database, e.g. ``migrate_countries --dry-run``)."""
         self._lock = threading.Lock()
+        if read_only:
+            self._db = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True,
+                                       check_same_thread=False)
+            self._db.row_factory = sqlite3.Row
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")

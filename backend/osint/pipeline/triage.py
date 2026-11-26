@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from osint.config import ROOT
+from osint.core.countries import to_iso2
 from osint.core.geo import valid_coord
 from osint.core.models import Document, PlaceHit, TriageResult
 from osint.enrich.gazetteer import LazyGazetteer, best_place, fold
@@ -344,7 +345,8 @@ class Triage:
                 and valid_coord(lat, lon) and not (lat == 0 and lon == 0):
             precision = GDELT_GEO_PRECISION.get(geo_type, "country")
             places.append(PlaceHit(
-                name=str(a.get("geo_name") or ""), country=str(a.get("geo_country") or ""),
+                name=str(a.get("geo_name") or ""),
+                country=to_iso2(str(a.get("geo_country") or ""), "fips") or "",
                 lat=float(lat), lon=float(lon), precision=precision,
                 confidence={"city": 0.7, "admin1": 0.6}.get(precision, 0.5),
                 matched="gdelt:ActionGeo", feature=f"gdelt:{geo_type}"))

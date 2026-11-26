@@ -1,0 +1,178 @@
+# Deterministic rule extractors (osint.enrich.rules), written to event_fields with
+# source='rule'. A value from an LLM extraction whose verdict is supported outranks these
+# in the API (field_source).
+
+summary_max_chars: 280   # the summary is the picked document's snippet cut at a sentence end
+
+# Per-event cost bound (osint.pipeline.rule_pass): the extractors and the actor resolution
+# see at most the event's primary document(s), the document of its stored rule headline
+# and its newest max_docs_per_event documents. The casualty median, the weapon list and
+# the headline pick are therefore computed over that capped set, not every document.
+max_docs_per_event: 50
+
+# Weapons / platforms: canonical label -> phrases (whole words on case-, diacritic- and
+# punctuation-folded text; the longest phrase wins; a trailing * makes the last word a
+# prefix). Quote phrases with * or punctuation.
+weapons:
+  drone: [drone, drones, uav, uavs, "unmanned aerial vehicle*", "kamikaze drone*",
+          "attack drone*", "loitering munition*", "fpv drone*", "shahed*", "geran*", "шахед*",
+          "герань*", "беспилотник*", "бпла", "дрон*", "безпілотник*", "طائرة مسيرة",
+          "طائرات مسيرة", "طائرة بدون طيار", "طائرات بدون طيار", "مسيرة مفخخة", "dron",
+          "drones kamikazes"]
+  naval drone: ["sea drone*", "naval drone*", "unmanned surface vessel*", usv, usvs,
+                "морской дрон*", "морський дрон*"]
+  ballistic missile: ["ballistic missile*", "iskander*", "kn-23", "fateh-110", "atacms",
+                      "баллистическая ракета", "баллистической ракетой", "баллистические ракеты",
+                      "баллистических ракет", "балістична ракета", "балістичні ракети",
+                      "балістичних ракет", "صاروخ باليستي", "صواريخ باليستية",
+                      "missile balistique", "missiles balistiques", "misil balístico",
+                      "misiles balísticos"]
+  cruise missile: ["cruise missile*", "kalibr*", "kh-101", "kh-555", "х-101", "tomahawk*",
+                   "storm shadow*", "scalp", "крылатая ракета", "крылатые ракеты",
+                   "крылатых ракет", "крилата ракета", "крилаті ракети", "крилатих ракет",
+                   "صاروخ كروز", "صواريخ كروز", "missile de croisière", "missiles de croisière",
+                   "misil de crucero", "misiles de crucero"]
+  missile: [missile, missiles, ракета, ракеты, ракет, ракетой, ракети, ракетами, صاروخ,
+            صواريخ, misil, misiles]
+  rocket: [rocket, rockets, "roquette*", "cohete*"]
+  MLRS: [mlrs, "multiple rocket launcher*", "himars", "grad", "smerch", "uragan", "tornado-s",
+         "рсзо", "град", "ураган", "смерч", "راجمة صواريخ", "راجمات صواريخ"]
+  artillery: [artillery, shelling, shells, "howitzer*", "артиллери*", "артобстрел*",
+              "артилері*", "артобстріл*", "قصف مدفعي", "مدفعية", "artillerie", "obus",
+              "artillería"]
+  mortar: ["mortar*", "миномет*", "мінометн*", "قذائف هاون", "هاون", "mortier*", "mortero*"]
+  airstrike: ["airstrike*", "air strike*", "air raid*", "aerial bombardment",
+              "aerial bombing", "авиаудар*", "авиационный удар", "авіаудар*", "غارة جوية",
+              "غارات جوية", "غارة", "غارات", "frappe aérienne", "frappes aériennes",
+              "bombardement aérien", "ataque aéreo", "ataques aéreos", "bombardeo aéreo"]
+  IED: [ied, ieds, "improvised explosive device*", "roadside bomb*",
+        "самодельное взрывное устройство", "сву", "عبوة ناسفة", "عبوات ناسفة",
+        "engin explosif improvisé", "artefacto explosivo improvisado"]
+  VBIED: [vbied, vbieds, "car bomb*", "vehicle-borne ied*", "vehicle borne ied*", "truck bomb*",
+          "suicide car bomb*", "سيارة مفخخة", "voiture piégée", "coche bomba"]
+  tank: [tank, tanks, "танк*", دبابة, دبابات]
+  frigate: ["frigate*", "фрегат*", فرقاطة, "frégate*", "fragata*"]
+  destroyer: ["destroyer*", "эсминец", "эсминца", "есмінець", مدمرة]
+  corvette: ["corvette*", "корвет*", "corbeta*"]
+  submarine: ["submarine*", "подводная лодка", "подводной лодки", "подводную лодку",
+              "подлодк*", "підводний човен", "підводного човна", غواصة, "sous-marin*",
+              "submarino*"]
+  aircraft carrier: ["aircraft carrier*", "авианос*", "авіанос*", "حاملة طائرات",
+                     "porte-avions", "portaaviones"]
+  landing ship: ["landing ship*", "amphibious assault ship*", "большой десантный корабль",
+                 "бдк", "десантний корабель"]
+  patrol boat: ["patrol boat*", "patrol vessel*", "fast attack craft", "патрульный катер",
+                "сторожевой корабль", "زورق دورية"]
+  warship: ["warship*", "naval vessel*", "military vessel*", "военный корабль",
+            "военные корабли", "военного корабля", "військовий корабель", "бойовий корабель",
+            "سفينة حربية", "سفن حربية", "navire de guerre", "buque de guerra"]
+# a generic label is dropped when a more specific one is found in the same event
+weapons_subsumed:
+  missile: [ballistic missile, cruise missile]
+  drone: [naval drone]
+  rocket: [MLRS]
+  IED: [VBIED]
+  warship: [frigate, destroyer, corvette, submarine, aircraft carrier, landing ship, patrol boat]
+# phrases that contain a weapon word but are not weapons
+weapons_ignore: ["think tank*", "oil tank*", "fuel tank*", "water tank*", "storage tank*",
+                 "septic tank*", "gas tank*"]
+
+# Casualties: regex templates per field and language, matched on the case-folded title and
+# snippet; {n} is a number (digits, "1,200", Arabic-Indic digits, or a number word below).
+# Per document the largest number counts; per event the lower median over distinct domains.
+casualties:
+  max_value: 100000
+  number_words:
+    en: {one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+         ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+         sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20}
+    fr: {un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8,
+         neuf: 9, dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15,
+         seize: 16, dix-sept: 17, dix-huit: 18, dix-neuf: 19, vingt: 20}
+    # "once" (11) is left out: it is an English word
+    es: {uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8,
+         nueve: 9, diez: 10, doce: 12, trece: 13, catorce: 14, quince: 15, dieciséis: 16,
+         diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20}
+    ru: {один: 1, одна: 1, два: 2, две: 2, три: 3, четыре: 4, пять: 5, шесть: 6, семь: 7,
+         восемь: 8, девять: 9, десять: 10, одиннадцать: 11, двенадцать: 12, тринадцать: 13,
+         четырнадцать: 14, пятнадцать: 15, шестнадцать: 16, семнадцать: 17,
+         восемнадцать: 18, девятнадцать: 19, двадцать: 20}
+    uk: {один: 1, одна: 1, два: 2, дві: 2, три: 3, чотири: 4, "п'ять": 5, шість: 6, сім: 7,
+         вісім: 8, "дев'ять": 9, десять: 10, одинадцять: 11, дванадцять: 12, тринадцять: 13,
+         чотирнадцять: 14, "п'ятнадцять": 15, шістнадцять: 16, сімнадцять: 17,
+         вісімнадцять: 18, "дев'ятнадцять": 19, двадцять: 20}
+    ar: {واحد: 1, اثنان: 2, اثنين: 2, ثلاثة: 3, ثلاث: 3, أربعة: 4, أربع: 4, خمسة: 5, خمس: 5,
+         ستة: 6, ست: 6, سبعة: 7, سبع: 7, ثمانية: 8, ثماني: 8, تسعة: 9, تسع: 9, عشرة: 10,
+         عشر: 10, أحد عشر: 11, اثنا عشر: 12, ثلاثة عشر: 13, أربعة عشر: 14, خمسة عشر: 15,
+         ستة عشر: 16, سبعة عشر: 17, ثمانية عشر: 18, تسعة عشر: 19, عشرون: 20, عشرين: 20}
+  # Tens words: a number word right after one of these ("thirty two", "двадцать один") is part
+  # of a compound above twenty, which is not extracted (no value, never the units word).
+  tens_words: [thirty, forty, fifty, sixty, seventy, eighty, ninety, vingt, trente, quarante,
+               cinquante, soixante, veinte, veinti, treinta, cuarenta, cincuenta, sesenta,
+               setenta, ochenta, noventa, двадцать, тридцать, сорок, пятьдесят, шестьдесят,
+               семьдесят, восемьдесят, девяносто, двадцять, тридцять, п'ятдесят, шістдесят,
+               сімдесят, вісімдесят, дев'яносто]
+  # Units: a number followed by one of these (optional space, whole word, case-folded;
+  # a space inside a unit matches any whitespace) is a distance / weight / share / age /
+  # duration, never a casualty count ("killed 5 200 km north" is not 5200; "200 km" is
+  # no count at all).
+  units: [km, kms, kilometre, kilometres, kilometer, kilometers, m, metre, metres, meter,
+          meters, mi, mile, miles, kg, kgs, kilogram, kilograms, t, ton, tons, tonne, tonnes,
+          "%", percent, per cent, year, years, yr, yrs, hour, hours, hr, hrs, h, day, days,
+          mm, cm, nm, nautical mile, nautical miles,
+          # ru
+          км, километр, километра, километров, м, метр, метра, метров, кг, т, тонн, тонны,
+          мм, см, лет, года, год, часов, часа, час, дней, дня, суток, процентов, процента,
+          # uk
+          кілометр, кілометри, кілометрів, метри, метрів, тонни, років, роки, рік, годин,
+          години, днів, дні, відсотків, відсотки,
+          # fr
+          kilomètre, kilomètres, mètre, mètres, kilo, kilos, tonne, ans, heures, jours,
+          pour cent,
+          # es
+          kilómetro, kilómetros, metro, metros, toneladas, años, horas, días, por ciento,
+          # ar
+          كم, كيلومتر, كيلومترا, كيلومترات, متر, مترا, أمتار, كغ, كلغ, كيلوغرام, طن, أطنان,
+          عاما, عام, سنة, سنوات, ساعة, ساعات, يوما, أيام, بالمئة, بالمائة, "٪"]
+  killed:
+    en:
+      - '\b(?:killed|kills|killing|kill)\s+(?:at\s+least\s+|some\s+|about\s+|around\s+|nearly\s+|more\s+than\s+|over\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:more|other|others|people|persons|civilians|soldiers|servicemen|troops|militants|fighters|children|women|police(?:\s+officers)?|officers|workers|migrants|passengers|residents))?(?:\s+(?:were|was|are|have\s+been|has\s+been|had\s+been|reportedly))*\s+(?:killed|dead|died|confirmed\s+dead)\b'
+      - '\bdeath\s+toll\s+(?:has\s+)?(?:rises|rose|risen|climbs|climbed|reaches|reached|stands|stood|of|is|at|to)(?:\s+(?:to|at))?\s+(?:at\s+least\s+)?{n}\b'
+      - '\b{n}\s+deaths?\b'
+    fr:
+      - '\b{n}(?:\s+(?:personnes|civils|soldats|militaires|enfants))?(?:\s+(?:ont\s+été|ont\s+ete|sont|auraient\s+été))?\s+(?:morts?|tués?|tuées?|décédés?|décès)\b'
+      - '\b(?:tué|tuant|tue)\s+(?:au\s+moins\s+|plus\s+de\s+|près\s+de\s+)?{n}\b'
+      - '\bbilan\s+(?:de|est\s+de|s''élève\s+à|grimpe\s+à|passe\s+à)\s+(?:au\s+moins\s+)?{n}\s+morts?\b'
+    es:
+      - '\b{n}(?:\s+(?:personas|civiles|soldados|militares|niños|mujeres))?(?:\s+(?:fueron|han\s+sido|resultaron))?\s+(?:muertos?|muertas?|fallecidos?|fallecidas?|asesinados?|asesinadas?)\b'
+      - '\b(?:mató|matando|mata)\s+a\s+(?:al\s+menos\s+|más\s+de\s+)?{n}\b'
+      - '\b(?:murieron|mueren|fallecieron)\s+(?:al\s+menos\s+)?{n}\b'
+    ru:
+      - '(?<!\w)(?:погибли|погибло|погиб|погибла|убиты|убито|убит)\s+(?:по\s+меньшей\s+мере\s+|не\s+менее\s+|как\s+минимум\s+|более\s+|около\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:человек|человека|людей|мирных\s+жителей|военных|военнослужащих|детей))?\s+(?:погибли|погибло|погибших|убиты|убито|убитых)\b'
+    uk:
+      - '(?<!\w)(?:загинули|загинуло|загинув|загинула|вбито|убито|вбиті)\s+(?:щонайменше\s+|принаймні\s+|понад\s+|близько\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:людей|людини|осіб|особи|цивільних|військових|дітей))?\s+(?:загинули|загинуло|загиблих|вбито|убито)\b'
+    ar:
+      - '(?<!\w)و?(?:مقتل|قتل|استشهاد|سقوط|ارتفاع\s+عدد\s+القتلى\s+إلى|ارتفاع\s+حصيلة\s+القتلى\s+إلى)\s+{n}(?!\w)'
+      - '(?<!\w){n}\s+(?:قتلى|قتيلا|قتيلاً|قتيل|شهداء|شهيدا|شهيداً|شهيد)'
+  injured:
+    en:
+      - '\b(?:injuring|injured|injures|wounding|wounded|wounds)\s+(?:at\s+least\s+|some\s+|about\s+|around\s+|nearly\s+|more\s+than\s+|over\s+|another\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:more|other|others|people|persons|civilians|soldiers|servicemen|troops|children|women|police(?:\s+officers)?|officers|workers|passengers|residents))?(?:\s+(?:were|was|are|have\s+been|has\s+been|had\s+been|reportedly))*\s+(?:injured|wounded|hurt)\b'
+    fr:
+      - '\b{n}(?:\s+(?:personnes|civils|soldats|militaires|enfants))?(?:\s+(?:ont\s+été|sont))?\s+(?:blessés?|blessées?)\b'
+      - '\b(?:blessant|blessé)\s+(?:au\s+moins\s+|plus\s+de\s+)?{n}\b'
+    es:
+      - '\b{n}(?:\s+(?:personas|civiles|soldados|militares|niños))?(?:\s+(?:fueron|han\s+sido|resultaron))?\s+(?:heridos?|heridas?|lesionados?|lesionadas?)\b'
+      - '\b(?:hirió|hiriendo)\s+a\s+(?:al\s+menos\s+|más\s+de\s+)?{n}\b'
+    ru:
+      - '(?<!\w)(?:ранены|ранено|ранен|пострадали|пострадало|пострадал)\s+(?:по\s+меньшей\s+мере\s+|не\s+менее\s+|как\s+минимум\s+|более\s+|около\s+|ещё\s+|еще\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:человек|человека|людей|мирных\s+жителей|военных|детей))?\s+(?:ранены|ранено|раненых|пострадали|пострадавших)\b'
+    uk:
+      - '(?<!\w)(?:поранені|поранено|поранений|постраждали|постраждало|постраждав)\s+(?:щонайменше\s+|принаймні\s+|понад\s+|близько\s+|ще\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:людей|людини|осіб|особи|цивільних|військових|дітей))?\s+(?:поранені|поранено|поранених|постраждали|постраждалих)\b'
+    ar:
+      - '(?<!\w)و?(?:إصابة|اصابة|جرح|إصابات)\s+{n}(?!\w)'
+      - '(?<!\w){n}\s+(?:جرحى|جريحا|جريحاً|مصابين|مصابا|مصاباً|إصابات)'

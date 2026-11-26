@@ -182,3 +182,13 @@ def test_sports_articles_are_not_relevant(triage, title, snippet, url):
 def test_rial_still_counts_outside_sport(triage):
     r = triage.assess(_doc("سقوط ارزش ریال در برابر دلار به رکورد تازه رسید"))
     assert "economic" in r.categories
+
+
+def test_gdelt_coded_geo_country_is_iso2(triage):
+    r = triage.assess(_doc(
+        "Russia — Fight — Ukraine (190) in Kharkiv, Ukraine", "Kharkiv, Ukraine",
+        kind="gdelt_event", attrs={
+            "event_code": "190", "event_root_code": "19", "quad_class": 4,
+            "num_articles": 8, "geo_type": 4, "geo_lat": 49.98, "geo_lon": 36.25,
+            "geo_name": "Kharkiv, Kharkivs'ka Oblast', Ukraine", "geo_country": "UP"}))
+    assert r.best_place.country == "UA"

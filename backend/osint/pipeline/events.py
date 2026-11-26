@@ -34,6 +34,7 @@ import h3
 import yaml
 
 from osint.config import ROOT
+from osint.core import countries
 from osint.core.geo import utcnow
 from osint.core.metrics import Metrics
 from osint.enrich.gazetteer import fold
@@ -51,6 +52,8 @@ from osint.pipeline.cluster import (
 )
 from osint.pipeline.corroborate import CorroborationConfig, Corroborator
 from osint.pipeline.embed import EmbeddingConfig, build_embedder
+from osint.pipeline.lifecycle import LifecycleConfig, refresh_lifecycle
+from osint.pipeline.rule_pass import RulePass
 from osint.store.lake import FileLock, Lake
 from osint.store.sqlite import SqliteStore
 
@@ -123,6 +126,7 @@ class EventsConfig:
     recency_half_life_h: float = 24.0
     verification: dict[str, float] = field(default_factory=lambda: {
         "unsupported_cap": 0.2, "mismatch_penalty": 0.25, "supported_bonus": 0.1})
+    lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
 
     def window_h(self, category: str) -> float:
         return float(self.time_window_h.get(category, self.time_window_h.get("default", 24)))
@@ -214,6 +218,7 @@ class EventsConfig:
                                                base.recency_half_life_h)),
             verification={**base.verification, **{
                 str(k): float(v) for k, v in (d.get("verification") or {}).items()}},
+            lifecycle=LifecycleConfig.from_dict(d.get("lifecycle")),
         )
 
     @classmethod
@@ -372,6 +377,11 @@ class PassStats:
     sensor_corroborated: int = 0
     joins: dict[str, int] = field(default_factory=dict)  # join path -> documents
     merged: int = 0  # events folded into another (consolidation)
+    lifecycle_changed: int = 0  # events whose lifecycle state changed this pass
+    rule_events: int = 0  # events re-extracted by the rule pass
+    rule_fields: int = 0  # rule field values written
+    rule_errors: int = 0  # failed events + failed rule extractors (metric: RulePass, labelled)
+    unresolved_country: int = 0  # country values that did not resolve (source health)
     seconds: float = 0.0
 
 
@@ -383,6 +393,7 @@ class EventBuilder:
                  cameo_category: Callable[[str, str], str | None] | None = None,
                  embedder: Embedder | None = None,
                  corroborator: Corroborator | None = None,
+                 rule_pass: RulePass | None = None,
                  clock: Callable[[], datetime] = utcnow) -> None:
         self.store = store
         self.lake = lake
@@ -390,6 +401,8 @@ class EventBuilder:
         self.cfg = config or EventsConfig()
         self.clock = clock
         self.corroborator = corroborator
+        self.rule_pass = rule_pass  # deterministic extraction after each pass (wire())
+        self._verdict_ids: set[str] = set()  # events with newly applied LLM verdicts
         self.sensor_scores: dict[str, float] = (
             corroborator.scores if corroborator is not None else {})
         self.verifier: Any = None  # extraction store (pipeline.extract), set by wire()
@@ -401,6 +414,7 @@ class EventBuilder:
             lambda eid: self.verdicts.get(eid)),
                                    cameo_category=cameo_category, embedder=embedder)
         self._seen: dict[str, datetime] = {}  # doc id -> fetched_at (overlap window)
+        self._merge_survivors: set[str] = set()  # merge survivors since the last pass
         try:
             self._lake_time_window = "start" in inspect.signature(lake.query).parameters
         except (TypeError, ValueError):
@@ -421,16 +435,25 @@ class EventBuilder:
     @classmethod
     def from_settings(cls, settings: Any, store: SqliteStore, lake: Lake,
                       metrics: Metrics | None = None) -> EventBuilder:
+        from osint.enrich.actors import lexicon_for
+        from osint.enrich.rules import RuleSet
+
         cfg_dir = Path(settings.config_dir)
         metrics = metrics or Metrics()
         corroborator = Corroborator(
             store, lake, metrics,
             CorroborationConfig.from_file(cfg_dir / "corroboration.yaml"))
         cfg = EventsConfig.from_file(cfg_dir / "events.yaml")
+        embedder = build_embedder(cfg.embedding, Path(settings.data_dir))
+        # a lexicon that fails to load raises LexiconError here: fatal at startup (spec §3);
+        # the default config dir shares the ACLED / UCDP writers' default_lexicon()
+        rule_pass = RulePass(
+            store, lexicon=lexicon_for(cfg_dir),
+            rules=RuleSet.load(cfg_dir / "extract_rules.yaml"), lake=lake,
+            embedder=embedder, metrics=metrics)
         return cls(store, lake, metrics, cfg,
                    cameo_category=load_cameo_map(cfg_dir / "triage.yaml"),
-                   corroborator=corroborator,
-                   embedder=build_embedder(cfg.embedding, Path(settings.data_dir)))
+                   corroborator=corroborator, embedder=embedder, rule_pass=rule_pass)
 
     # ---------------------------------------------------------------- state
 
@@ -541,6 +564,10 @@ class EventBuilder:
             except Exception:  # consolidation must never stop event building
                 self.metrics.inc("event_merge_errors_total")
                 log.exception("event consolidation failed")
+        # events this pass created, added a document to, or merged into (spec §2.6)
+        # (ids are read from the store: one already evicted from the in-memory index counts)
+        touched = set(res.changed) | self._merge_survivors
+        self._merge_survivors = set()
         newest = max((d.fetched_at for d in docs if d.fetched_at), default=None)
         if newest is not None and (cursor is None or newest > cursor):
             cursor = newest
@@ -561,6 +588,29 @@ class EventBuilder:
         except Exception:  # impact upgrades must never stop event building
             self.metrics.inc("impact_errors_total")
             log.exception("applying impact sites failed")
+        lifecycle_changed = 0
+        try:  # touched events first (a closed event can reopen), then every open one
+            lifecycle_changed = refresh_lifecycle(self.store, now, self.cfg.lifecycle, touched)
+            lifecycle_changed += refresh_lifecycle(self.store, now, self.cfg.lifecycle)
+        except Exception:  # lifecycle must never stop event building
+            self.metrics.inc("lifecycle_errors_total")
+            log.exception("lifecycle refresh failed")
+        # touched + newly verdicted events, read from the store: an id evicted from the
+        # in-memory index is still re-extracted (it simply has no state to update)
+        verdict_ids = set(self._verdict_ids)
+        rule_ids = touched | verdict_ids
+        rstats = None
+        if self.rule_pass is None:
+            self._verdict_ids -= verdict_ids
+        elif rule_ids:
+            try:  # after the pass committed, same worker; LLM caps/priority unchanged
+                rstats = self.rule_pass.run(rule_ids, states=self.clusterer.events,
+                                            snippets={d.id: d.snippet for d in fresh})
+                self._verdict_ids -= verdict_ids  # kept for the next pass on failure
+            except Exception:  # rule extraction must never stop event building
+                self.metrics.inc("rule_pass_errors_total")
+                log.exception("rule extraction pass failed")
+        unresolved = sum(countries.drain_unresolved().values())
         cres = None
         if self.corroborator is not None:
             try:
@@ -579,7 +629,12 @@ class EventBuilder:
                           corroboration_evaluated=cres.evaluated if cres else 0,
                           sensor_corroborated=len(cres.newly_corroborated) if cres else 0,
                           verdicts_applied=verified, joins=dict(res.joins),
-                          merged=merged, seconds=time.perf_counter() - t0)
+                          merged=merged, lifecycle_changed=lifecycle_changed,
+                          rule_events=rstats.events if rstats else 0,
+                          rule_fields=rstats.fields if rstats else 0,
+                          rule_errors=rstats.errors if rstats else 0,
+                          unresolved_country=unresolved,
+                          seconds=time.perf_counter() - t0)
         self._record(stats)
         return stats
 
@@ -665,6 +720,7 @@ class EventBuilder:
         rows = [self.clusterer.events[e].to_row() for e in sorted(final)
                 if e in self.clusterer.events]
         n = self.store.merge_events(recs, rows)
+        self._merge_survivors |= final
         for m in merges:
             score = self.sensor_scores.pop(m.loser, None)
             if score is not None:
@@ -751,6 +807,7 @@ class EventBuilder:
         if verifs:
             self.store.save_events(rows, fields=fields)
             self.store.save_verifications(verifs)
+        self._verdict_ids |= {v["event_id"] for v in verifs}
         return len(verifs)
 
     def apply_impacts(self, now: datetime) -> int:
@@ -852,6 +909,8 @@ class EventBuilder:
         m.inc("events_created_total", s.created)
         m.inc("events_updated_total", s.updated)
         m.inc("documents_clustered_total", s.clustered)
+        m.inc("event_lifecycle_changes_total", s.lifecycle_changed)
+        m.inc("unresolved_country_total", s.unresolved_country)
         for path, n in s.joins.items():
             m.inc("documents_joined_total", n, path=path)
         emb = getattr(self.clusterer.embedder, "stats", None)
@@ -1144,6 +1203,8 @@ def wire(runtime: Runtime) -> EventBuilder:
         from osint.pipeline.extract.job import get_store
 
         builder.verifier = get_store(runtime)
+        if builder.rule_pass is not None:
+            builder.rule_pass.extractions = builder.verifier  # LLM actor names (step 4)
     except Exception:
         log.exception("extraction store unavailable; verdicts not merged")
     try:  # merged non-English events keep a title whose translation is already cached
