@@ -9,7 +9,8 @@ import { LIFECYCLES, normState, summaryQuery, flagEmoji, sparkPath, threatTier, 
 const ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 14.5V2"/><path d="M3.5 2.5h9l-2.2 3 2.2 3h-9"/></svg>';
 const REFRESH_MS = 60000; // the live event poll's cadence (app.js)
 const SUMMARY_MS = 20000; // summary request timeout
-const RETRY_MS = 10000; // a header that never loaded retries sooner than the refresh (busy server at start-up)
+const RETRY_MS = 10000; // a failed load retries sooner than the refresh (busy server at start-up)
+const TICK_MS = 2000; // visibility / due check; nothing is fetched while the pane is hidden
 let REGION = null;
 try { REGION = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" }); } catch { /* old engine: codes stay codes */ }
 // Windows has no flag glyphs: a regional-indicator pair renders as the two letters, so skip it there
@@ -45,6 +46,8 @@ class CountryPane {
     this.root.addEventListener("click", (e) => this.click(e));
   }
   dead() { return this.hooks.stale() || !this.body.isConnected; }
+  // minimised / closed dossier or inactive tab: display:none ancestors give offsetParent null
+  hidden() { return this.body.offsetParent === null; }
   name(cc) { return countryName(this.names, cc) || cc; }
   title(s) {
     this.hooks.head({ title: (flagOf(this.st.cc) + " " + (s ? s.name : this.name(this.st.cc))).trim(), sub: this.st.cc + " · COUNTRY CONTEXT", icon: "country",
@@ -53,14 +56,22 @@ class CountryPane {
   async start() {
     this.title(null);
     this.renderAll();
-    this.timer = setInterval(() => { if (this.dead()) clearInterval(this.timer); else this.load("refresh"); }, REFRESH_MS);
-    await this.load("reset");
+    this.wasHidden = this.hidden();
+    this.timer = setInterval(() => this.tick(), TICK_MS);
+    if (!this.wasHidden) await this.load("reset");
+  }
+  tick() {
+    if (this.dead()) { clearInterval(this.timer); return; } // disposed / replaced: stop the timer now
+    if (this.hidden()) { this.wasHidden = true; return; }
+    const due = this.lastTry + (this.sumErr ? RETRY_MS : REFRESH_MS);
+    if (this.wasHidden || !(Date.now() < due)) { this.wasHidden = false; this.load("refresh"); }
   }
   load() { return this.loadSummary(); }
   renderAll() { this.paintSummary(); }
   paintSummary() { this.renderHead(); }
   async loadSummary() {
     const seq = ++this.sumSeq;
+    this.lastTry = Date.now();
     if (this.sumErr) { this.sumErr = null; if (!this.summary) this.renderHead(); } // retry: back to loading
     try {
       const s = await fetchJson("/api/country/" + encodeURIComponent(this.st.cc) + "/summary?" + summaryQuery(this.st, { allCats: this.allCats }), SUMMARY_MS);
@@ -70,7 +81,6 @@ class CountryPane {
     } catch (err) {
       if (this.dead() || seq !== this.sumSeq) return;
       this.sumErr = err && err.name === "AbortError" ? "No answer within " + SUMMARY_MS / 1000 + " s." : String((err && err.message) || err);
-      if (!this.summary) { clearTimeout(this.retryT); this.retryT = setTimeout(() => { if (!this.dead() && !this.summary && seq === this.sumSeq) this.loadSummary(); }, RETRY_MS); }
     }
     this.paintSummary();
   }
@@ -92,7 +102,7 @@ class CountryPane {
         (t.source ? "<small>" + esc(t.source) + "</small>" : "") + '<span class="cx-n">' + nf(advs.length) + " advisor" + (advs.length === 1 ? "y" : "ies") + "</span></button>"
       : '<span class="cx-threat off" title="Terror Watch threat data could not be read">Threat level unavailable</span>';
     const adv = t && this.advOpen ? '<ul class="cx-adv">' + (advs.length ? advs.map((a) => "<li><b>" + esc(a.label || "Level " + a.level) + "</b> " +
-      (a.url ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(a.title || "advisory") + "</a>" : esc(a.title || "")) +
+      (/^https?:\/\//i.test(a.url || "") ? '<a href="' + esc(a.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(a.title || "advisory") + "</a>" : esc(a.title || "")) +
       (a.updated ? " <small>" + esc(a.updated) + "</small>" : "") + (a.terrorism ? ' <span class="cx-terr">terrorism</span>' : "") + "</li>").join("")
       : "<li>No travel advisories for " + esc(s.name || this.name(s.cc)) + ".</li>") + "</ul>" : "";
     const days = s.spark || [], total = days.reduce((a, d) => a + (d.n || 0), 0);
