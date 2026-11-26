@@ -4,6 +4,12 @@
 
 summary_max_chars: 280   # the summary is the picked document's snippet cut at a sentence end
 
+# Per-event cost bound (osint.pipeline.rule_pass): the extractors and the actor resolution
+# see at most the event's primary document(s), the document of its stored rule headline
+# and its newest max_docs_per_event documents. The casualty median, the weapon list and
+# the headline pick are therefore computed over that capped set, not every document.
+max_docs_per_event: 50
+
 # Weapons / platforms: canonical label -> phrases (whole words on case-, diacritic- and
 # punctuation-folded text; the longest phrase wins; a trailing * makes the last word a
 # prefix). Quote phrases with * or punctuation.

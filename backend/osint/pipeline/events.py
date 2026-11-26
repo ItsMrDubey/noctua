@@ -380,7 +380,7 @@ class PassStats:
     lifecycle_changed: int = 0  # events whose lifecycle state changed this pass
     rule_events: int = 0  # events re-extracted by the rule pass
     rule_fields: int = 0  # rule field values written
-    rule_errors: int = 0  # failed actor resolutions + failed rule extractors
+    rule_errors: int = 0  # failed events + failed rule extractors (metric: RulePass, labelled)
     unresolved_country: int = 0  # country values that did not resolve (source health)
     seconds: float = 0.0
 
@@ -597,13 +597,16 @@ class EventBuilder:
             log.exception("lifecycle refresh failed")
         # touched + newly verdicted events, read from the store: an id evicted from the
         # in-memory index is still re-extracted (it simply has no state to update)
-        rule_ids = touched | self._verdict_ids
-        self._verdict_ids = set()
+        verdict_ids = set(self._verdict_ids)
+        rule_ids = touched | verdict_ids
         rstats = None
-        if self.rule_pass is not None and rule_ids:
+        if self.rule_pass is None:
+            self._verdict_ids -= verdict_ids
+        elif rule_ids:
             try:  # after the pass committed, same worker; LLM caps/priority unchanged
                 rstats = self.rule_pass.run(rule_ids, states=self.clusterer.events,
                                             snippets={d.id: d.snippet for d in fresh})
+                self._verdict_ids -= verdict_ids  # kept for the next pass on failure
             except Exception:  # rule extraction must never stop event building
                 self.metrics.inc("rule_pass_errors_total")
                 log.exception("rule extraction pass failed")
@@ -907,7 +910,6 @@ class EventBuilder:
         m.inc("events_updated_total", s.updated)
         m.inc("documents_clustered_total", s.clustered)
         m.inc("event_lifecycle_changes_total", s.lifecycle_changed)
-        m.inc("rule_extraction_errors_total", s.rule_errors)
         m.inc("unresolved_country_total", s.unresolved_country)
         for path, n in s.joins.items():
             m.inc("documents_joined_total", n, path=path)

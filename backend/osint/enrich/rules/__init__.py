@@ -25,6 +25,7 @@ from osint.enrich.rules.weapons import WeaponLexicon, weapons
 log = logging.getLogger(__name__)
 
 DEFAULT_RULES = ROOT / "config" / "extract_rules.yaml"
+MAX_DOCS_PER_EVENT = 50  # primary + stored headline document + the newest N (rule_pass)
 RULE_FIELDS = ("headline", "summary", "casualties.killed", "casualties.injured",
                "weapons_platforms")
 Extractor = Callable[[Mapping[str, Any], Sequence[ExtractDoc]], list[FieldValue]]
@@ -35,6 +36,7 @@ class RuleSet:
     summary_max_chars: int
     weapons: WeaponLexicon
     casualties: CasualtyRules
+    max_docs_per_event: int = MAX_DOCS_PER_EVENT  # documents fed to the extractors
 
     @classmethod
     def load(cls, path: Path = DEFAULT_RULES) -> RuleSet:
@@ -44,7 +46,9 @@ class RuleSet:
         if not len(lex):
             raise ValueError(f"{path}: empty weapons lexicon")
         return cls(summary_max_chars=int(cfg.get("summary_max_chars", SUMMARY_MAX)),
-                   weapons=lex, casualties=CasualtyRules(cfg.get("casualties") or {}))
+                   weapons=lex, casualties=CasualtyRules(cfg.get("casualties") or {}),
+                   max_docs_per_event=int(cfg.get("max_docs_per_event",
+                                                  MAX_DOCS_PER_EVENT)))
 
     def extractors(self) -> list[tuple[str, Extractor]]:
         return [("headline_summary", partial(headline_summary,

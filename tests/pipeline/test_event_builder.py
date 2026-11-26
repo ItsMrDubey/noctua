@@ -423,3 +423,55 @@ def test_new_verdicts_re_run_rule_extraction(tmp_path):
     assert store.get_event(ev["id"])["actor_countries"] == ["RU"]
     assert b.run_once().rule_events == 0  # an unchanged verdict is not re-applied
     store.close()
+
+
+def test_a_failing_extractor_counts_one_rule_error_per_pass(tmp_path, monkeypatch):
+    from osint.enrich.actors import ActorLexicon
+    from osint.enrich.rules import RuleSet
+    from osint.pipeline.rule_pass import RulePass
+
+    def boom(event, docs):
+        raise RuntimeError("bad document")
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    lake.write("documents", [_row(1, "Russian shelling of Kyiv kills 3 civilians",
+                                  fetched=NOW - timedelta(minutes=50))])
+    b = _builder(store, lake, lambda: NOW)
+    rules = RuleSet.load()
+    good = rules.extractors()
+    monkeypatch.setattr(rules, "extractors", lambda: [("boom", boom), *good])
+    b.rule_pass = RulePass(store, lexicon=ActorLexicon.load(), rules=rules, lake=lake,
+                           metrics=b.metrics)
+    assert b.run_once().rule_errors == 1
+    total = sum(v for (n, _), v in b.metrics._counters.items()
+                if n == "rule_extraction_errors_total")
+    assert total == 1 and b.metrics.get("rule_extraction_errors_total", extractor="boom") == 1
+    store.close()
+
+
+def test_verdict_ids_survive_a_failed_rule_pass(tmp_path, monkeypatch):
+    from osint.enrich.actors import ActorLexicon
+    from osint.enrich.rules import RuleSet
+    from osint.pipeline.rule_pass import RulePass
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    b = _builder(store, lake, lambda: NOW)
+    b.rule_pass = RulePass(store, lexicon=ActorLexicon.load(), rules=RuleSet.load())
+    calls = []
+    real = b.rule_pass.run
+
+    def flaky(ids, **kw):
+        calls.append(set(ids))
+        if len(calls) == 1:
+            raise RuntimeError("store busy")
+        return real(ids, **kw)
+
+    monkeypatch.setattr(b.rule_pass, "run", flaky)
+    b._verdict_ids = {"E1"}
+    b.run_once()
+    assert b._verdict_ids == {"E1"} and b.metrics.get("rule_pass_errors_total") == 1
+    b.run_once()
+    assert calls == [{"E1"}, {"E1"}] and b._verdict_ids == set()
+    store.close()

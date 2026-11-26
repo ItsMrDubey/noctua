@@ -211,6 +211,21 @@ def _write_derived(db: sqlite3.Connection, rows: list[dict]) -> int:
     return n
 
 
+def _replace_rule_fields(db: sqlite3.Connection, event_ids: list[str],
+                         fields: list[dict]) -> None:
+    """DELETE the ``source='rule'`` rows of ``event_ids`` and INSERT ``fields``; caller holds
+    the store lock and the transaction."""
+    rows = [(f["event_id"], f["field"], str(f["value"]), f["doc_id"],
+             f.get("quote") or "", RULE_SOURCE) for f in fields]
+    for i in range(0, len(event_ids), 800):
+        chunk = event_ids[i: i + 800]
+        db.execute(f"DELETE FROM event_fields WHERE source = ? AND event_id IN "
+                   f"({','.join('?' * len(chunk))})", (RULE_SOURCE, *chunk))
+    if rows:
+        db.executemany("INSERT OR IGNORE INTO event_fields (event_id, field, value, doc_id, "
+                       "quote, source) VALUES (?,?,?,?,?,?)", rows)
+
+
 def _bbox_cols(bbox) -> tuple:
     """(min_lat, min_lon, max_lat, max_lon) from a (west, south, east, north) bbox."""
     if not bbox:
@@ -963,18 +978,19 @@ class SqliteStore:
     def replace_rule_fields(self, event_ids: list[str], fields: list[dict]) -> None:
         """Replace the ``source='rule'`` rows of ``event_ids`` with ``fields``
         ({event_id, field, value, doc_id, quote}); rows of other sources are untouched."""
-        rows = [(f["event_id"], f["field"], str(f["value"]), f["doc_id"],
-                 f.get("quote") or "", RULE_SOURCE) for f in fields]
         with self._lock, self._db:
-            for i in range(0, len(event_ids), 800):
-                chunk = event_ids[i: i + 800]
-                self._db.execute(
-                    f"DELETE FROM event_fields WHERE source = ? AND event_id IN "
-                    f"({','.join('?' * len(chunk))})", (RULE_SOURCE, *chunk))
-            if rows:
-                self._db.executemany(
-                    "INSERT OR IGNORE INTO event_fields (event_id, field, value, doc_id, quote, "
-                    "source) VALUES (?,?,?,?,?,?)", rows)
+            _replace_rule_fields(self._db, event_ids, fields)
+
+    def write_rule_results(self, derived: list[dict], event_ids: list[str],
+                           fields: list[dict]) -> int:
+        """``set_event_derived(derived)`` and ``replace_rule_fields(event_ids, fields)`` in
+        one transaction (one rule-pass chunk: both land or neither). Returns the events whose
+        derived columns were updated."""
+        with self._lock, self._db:
+            n = _write_derived(self._db, derived) if derived else 0
+            if event_ids:
+                _replace_rule_fields(self._db, event_ids, fields)
+        return n
 
     def rule_fields(self, event_ids: list[str]) -> dict[str, list[dict]]:
         """event id -> its ``source='rule'`` rows {field, value, doc_id, quote}."""
