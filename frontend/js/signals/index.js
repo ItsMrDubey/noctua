@@ -3,7 +3,7 @@
 // for GNSS cells, squawks, outages, radiation stations and satellites. app.js only constructs it,
 // routes picks with a `signal` id here and calls clearSelection() when another object is selected.
 import { fetchJson } from "/static/js/api.js";
-import { $, esc, nf, ago, agoHtml, kv } from "/static/js/ui.js";
+import { $, esc, nf, ago, agoHtml, kv, settleLoading } from "/static/js/ui.js";
 import { fmtDateTime, fmtTime, utcTitle } from "/static/js/timefmt.js";
 import { GnssLayer, GNSS_LEVELS } from "/static/js/signals/gnss.js";
 import { SquawkLayer, OutageLayer, RadiationLayer, AuroraLayer, OUTAGE_COLORS, SQK_COLOR, radColor } from "/static/js/signals/overlays.js";
@@ -34,6 +34,7 @@ export class Signals {
     this.sats.onTrack = (it) => { if (this.sel && this.sel.kind === "sat" && this.sel.it === it) this._renderSat(true); };
     this.sats.onStatus = () => this._counts();
     this.status = null; this.sel = null; this.alertSince = null;
+    settleLoading($("sig-pill"), 15000, "Signals status unavailable");
     for (const l of [this.gnss, this.squawks, this.outages, this.rad, this.aurora]) l.onData = () => { this._counts(); this._refreshSel(); };
     this._bind();
     this._pollStatus();

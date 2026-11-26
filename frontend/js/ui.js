@@ -61,3 +61,14 @@ export function detailsHtml(kind, it) {
   return ["M " + nf(it.mag, 1) + " · " + (it.place || "Earthquake"), kv([["Magnitude", nf(it.mag, 1)], ["Place", esc(it.place)], ["Depth", unit(it.depth_km, "km", 1)],
     ["Type", esc(it.event_type)], ["Position", coords(it)], ["Time", agoHtml(it.ts)], ["Link", url], ["ID", esc(it.id)]])];
 }
+
+// List / tile states. A loading state must settle into empty or error: settleLoading() turns a
+// still-present .state-loading inside el into an error after ms (the request timeout).
+export const stateHtml = (kind, title, detail) =>
+  '<div class="state state-' + kind + '"><b>' + esc(title) + "</b>" + (detail ? esc(detail) : "") + "</div>";
+export function settleLoading(el, ms, title) {
+  if (!el) return;
+  setTimeout(() => {
+    if (el.querySelector(".state-loading")) el.innerHTML = stateHtml("err", title, "No answer within " + Math.round(ms / 1000) + " s; retrying in the background.");
+  }, ms);
+}

@@ -47,7 +47,7 @@ ws.onmessage = (m) => {
   if (d.method === "Runtime.consoleAPICalled" && d.params.type === "error") errors.push(d.params.args.map((a) => a.value ?? a.description).join(" "));
 };
 const send = (method, params = {}) => new Promise((r) => { const id = ++seq; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
-const run = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true }); if (r.result && r.result.exceptionDetails) throw new Error(expr + ": " + r.result.exceptionDetails.text); };
+const run = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true }); if (r.result && r.result.exceptionDetails) { const x = r.result.exceptionDetails; throw new Error(expr + ": " + x.text + " " + ((x.exception && (x.exception.description || x.exception.value)) || "")); } };
 const shot = async (name) => {
   const r = await send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(out, name + ".png"), Buffer.from(r.result.data, "base64"));

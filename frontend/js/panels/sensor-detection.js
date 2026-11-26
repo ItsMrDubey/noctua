@@ -42,7 +42,7 @@ function cellMap(cells) {
     const tip = (c.role === "event" ? "Event cell " : "Neighbour ") + c.h3 + " · " + (c.n ? c.bad + "/" + c.n + " aircraft degraded (" + pct(c.pct) + ") now" : "no live data (fewer than 3 aircraft)");
     return '<polygon points="' + c.boundary.map(([lo, la]) => X(lo).toFixed(1) + "," + Y(la).toFixed(1)).join(" ") + '" style="fill:' + col + ";fill-opacity:" + (c.n ? 0.12 + Math.min(0.5, (c.pct || 0) / 80) : 0.05) +
       ";stroke:" + (c.role === "event" ? "#e8eef6" : col) + ";stroke-width:" + (c.role === "event" ? 1.8 : 0.8) + '" data-fly="' + c.lat + "," + c.lon + '"><title>' + esc(tip) + "</title></polygon>" +
-      '<text x="' + X(c.lon).toFixed(1) + '" y="' + (Y(c.lat) + 3).toFixed(1) + '" text-anchor="middle" style="font:9px var(--f-mono);fill:var(--fg-2)">' + (c.n ? esc(pct(c.pct) + " · " + c.n) : "–") + "</text>";
+      '<text x="' + X(c.lon).toFixed(1) + '" y="' + (Y(c.lat) + 3).toFixed(1) + '" text-anchor="middle" style="font:11px var(--f-mono);fill:var(--fg-2)">' + (c.n ? esc(pct(c.pct) + " · " + c.n) : "–") + "</text>";
   });
   return '<svg class="ic-cells" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="H3 cells">' + g.join("") + "</svg>";
 }

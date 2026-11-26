@@ -110,7 +110,7 @@
 @media (max-width: 760px) { #cmdbar .mark-name { display: none; } #cmdbar .sys-t { display: none; } #cmdbar .mode-pill span { display: none; } #cmdbar .mode-pill { padding: 0 7px; } }
 
 /* ---- rail + layer tree ---- */
-#rail { top: calc(var(--gap) * 2 + var(--bar-h)); left: var(--gap); bottom: calc(var(--dock-h) + var(--gap) * 2); width: 42px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; }
+#rail { top: calc(var(--gap) * 2 + var(--bar-h)); left: var(--gap); bottom: calc(var(--dock-h) + var(--gap) * 2 + var(--foot-h)); width: 42px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; }
 .rail-btn { position: relative; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; background: transparent; border-color: transparent; }
 .rail-btn svg { width: 18px; height: 18px; fill: none; stroke: var(--fg-2); stroke-width: 1.3; stroke-linejoin: round; transition: stroke var(--t-fast); }
 .rail-btn:hover svg, .rail-btn.on svg { stroke: var(--acc); }
@@ -122,7 +122,7 @@
 .rail-fill { flex: 1; }
 body.left-collapsed #rail-toggle svg { transform: scaleX(-1); }
 
-#left { top: calc(var(--gap) * 2 + var(--bar-h)); left: calc(var(--gap) * 2 + 42px); bottom: calc(var(--dock-h) + var(--gap) * 2); width: 266px; overflow: auto; padding: 4px 0 10px; animation: slide-l var(--t-med) var(--ease) both; }
+#left { top: calc(var(--gap) * 2 + var(--bar-h)); left: calc(var(--gap) * 2 + 42px); bottom: calc(var(--dock-h) + var(--gap) * 2 + var(--foot-h)); width: 266px; overflow: auto; padding: 4px 0 10px; animation: slide-l var(--t-med) var(--ease) both; }
 body.left-collapsed #left { display: none; }
 .grp { padding: 8px 12px 6px; border-bottom: 1px solid var(--line); }
 .grp:last-child { border-bottom: 0; }
@@ -196,7 +196,7 @@ input:disabled + .sw { opacity: .3; }
 #left .row .ts, #rightcol .ts { cursor: help; }
 
 /* ---- HUD (compass + readout) ---- */
-#hud { right: var(--gap); bottom: var(--gap); width: 200px; height: var(--dock-h); display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+#hud { right: var(--gap); bottom: calc(var(--gap) + var(--foot-h)); width: 200px; height: var(--dock-h); display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
 .compass { width: 66px; height: 66px; padding: 0; flex: none; border-radius: 50%; background: radial-gradient(circle, rgba(var(--acc-rgb), .06), transparent 70%); }
 .compass svg { width: 100%; height: 100%; transition: transform 80ms linear; }
 .compass circle { fill: none; stroke: var(--line-2); stroke-width: 1; }

@@ -2,7 +2,7 @@
 .dossier {
   position: fixed; z-index: 12;
   top: calc(var(--gap) * 2 + var(--bar-h));
-  bottom: calc(var(--dock-h) + var(--gap) * 2);
+  bottom: calc(var(--dock-h) + var(--gap) * 2 + var(--foot-h));
   left: calc(var(--gap) * 3 + 42px + 266px);
   right: calc(var(--gap) * 2 + 360px);
   display: flex; flex-direction: column;

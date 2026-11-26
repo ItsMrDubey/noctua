@@ -323,7 +323,7 @@ export class Declutter {
     const key = text + "|" + color + "|" + (big ? 1 : 0);
     let url = this.imgs.get(key);
     if (url) return url;
-    const fs = big ? 12 : 9, hgt = big ? 19 : 13;
+    const fs = big ? 12 : 11, hgt = big ? 19 : 15;
     const cv = document.createElement("canvas"), g = cv.getContext("2d");
     g.font = "700 " + fs + "px Consolas, monospace";
     const w = Math.max(hgt, Math.ceil(g.measureText(text).width) + (big ? 12 : 8));

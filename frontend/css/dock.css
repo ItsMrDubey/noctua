@@ -1,5 +1,5 @@
 /* Timeline dock: controls row, activity histogram with scrubber, time axis. */
-#timeline { left: var(--gap); right: calc(var(--gap) * 2 + 200px); bottom: var(--gap); height: var(--dock-h); display: grid; grid-template-rows: 30px 1fr 14px; padding: 6px 12px 4px; gap: 2px; animation: rise var(--t-med) var(--ease) 80ms both; }
+#timeline { left: var(--gap); right: calc(var(--gap) * 2 + 200px); bottom: calc(var(--gap) + var(--foot-h)); height: var(--dock-h); display: grid; grid-template-rows: 30px 1fr 14px; padding: 6px 12px 4px; gap: 2px; animation: rise var(--t-med) var(--ease) 80ms both; }
 #timeline.replay { border-color: rgba(var(--acc-rgb), .45); }
 .dk-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dk-ctl .mode { font: 600 12px/1 var(--f-mono); letter-spacing: .06em; color: var(--green); min-width: 220px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }

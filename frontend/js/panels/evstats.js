@@ -1,6 +1,6 @@
 // GDELT scorecard in the system-status popover: accepted / rejected (breakdown by reason) +
 // events by status, from /api/events/stats.
-import { $, esc } from "/static/js/ui.js";
+import { $, esc, stateHtml } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
 
 const nf = (n) => (n == null ? "–" : Number(n).toLocaleString());
@@ -10,9 +10,13 @@ const reasons = (g) => {
 };
 
 export async function refreshEventStats() {
-  const s = await fetchJson("/api/events/stats", 10000);
-  const g = s.gdelt || {}, acc = g.accepted || {}, rej = g.rejected || {};
   const el = $("ev-score");
+  let s;
+  try { s = await fetchJson("/api/events/stats", 10000); } catch (e) {
+    if (!el._h) el.innerHTML = stateHtml("err", "Scorecard unavailable", String((e && e.message) || e));
+    throw e; // poll() still reports it
+  }
+  const g = s.gdelt || {}, acc = g.accepted || {}, rej = g.rejected || {};
   const st = Object.entries(s.by_status || {});
   const rate = g.acceptance_rate == null ? "–" : (g.acceptance_rate * 100).toFixed(1) + "%";
   const err = s.builder && s.builder.last_error;
