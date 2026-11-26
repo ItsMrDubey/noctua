@@ -109,3 +109,16 @@ def test_unattributed_actor_only_row_is_never_domestic(store):
     got = {it["id"]: it for it in store.list_events(country="UA")}
     assert got["E5"]["ctx"]["involvement"] != "domestic"
     assert "E5" not in ids(store.list_events(country="UA", involvement="domestic"))
+
+
+def test_country_spark_plan_uses_an_index(store):
+    """The 30-day spark must not full-scan events (it runs on every summary poll)."""
+    from osint.store.country_sql import country_where
+    where, params = country_where("UA")
+    where.append("events.t_start >= ?")
+    params.append("2026-10-01T00:00:00Z")
+    plan = " | ".join(r[3] for r in store._db.execute(
+        "EXPLAIN QUERY PLAN SELECT substr(t_start, 1, 10), count(*) FROM events WHERE "
+        f"{' AND '.join(where)} GROUP BY 1 ORDER BY 1", params))
+    assert "SCAN events" not in plan, plan
+    assert "USING INDEX" in plan or "USING COVERING INDEX" in plan, plan

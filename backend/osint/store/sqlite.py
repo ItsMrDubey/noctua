@@ -410,6 +410,8 @@ class SqliteStore:
                         if "duplicate column" not in str(e):
                             raise
             self._db.execute("CREATE INDEX IF NOT EXISTS events_country ON events(country)")
+            # range-bounds the 30-day country spark (events_country can't serve the OR)
+            self._db.execute("CREATE INDEX IF NOT EXISTS events_t_start ON events(t_start)")
             # keeps the per-pass "every not-yet-closed event" lifecycle scan off closed history
             self._db.execute("CREATE INDEX IF NOT EXISTS events_open ON events(id) WHERE "
                              "lifecycle IS NULL OR lifecycle != 'closed'")

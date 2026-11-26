@@ -15,6 +15,8 @@ from osint.terror import board
 from osint.terror.store import TerrorStore
 from tests.country_fixture import T0, build_store, write_geojson
 
+_REAL_BBOX = countries.bbox
+
 
 class _RT:
     def __init__(self, store, terror_store):
@@ -102,3 +104,10 @@ def test_window_clamped_to_365_days(cclient):
     j = cclient.get("/api/country/UA/summary?since=2020-01-01T00:00:00Z"
                     "&until=2026-01-01T00:00:00Z").json()
     assert j["since"].startswith("2025-01-01T00:00:00")  # until - 365 days
+
+
+@pytest.mark.parametrize("cc", ["RU", "FJ"])
+def test_antimeridian_bbox_is_preserved(cclient, monkeypatch, cc):
+    monkeypatch.setattr(countries, "bbox", _REAL_BBOX)  # the real, unmocked registry
+    b = cclient.get(f"/api/country/{cc}/summary").json()["bbox"]
+    assert b is not None and b[0] > b[2]  # west > east: it wraps the date line
