@@ -4,7 +4,7 @@
 import { fetchJson } from "/static/js/api.js";
 import { esc, nf, stateHtml, settleLoading } from "/static/js/ui.js";
 import { EVENT_CATS } from "/static/js/symbology.js";
-import { LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, normState, summaryQuery, toggleCat, flagEmoji, sparkPath, threatTier, summaryNames, pairLabel } from "/static/js/country-state.js";
+import { controlSelector, LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, normState, summaryQuery, toggleCat, flagEmoji, sparkPath, threatTier, summaryNames, pairLabel } from "/static/js/country-state.js";
 
 const ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 14.5V2"/><path d="M3.5 2.5h9l-2.2 3 2.2 3h-9"/></svg>';
 const REFRESH_MS = 60000; // the live event poll's cadence (app.js)
@@ -34,13 +34,14 @@ function countryName(names, cc) {
   try { return (REGION && REGION.of(cc)) || null; } catch { return null; }
 }
 
+const GROUP = { location: "Location", involvement: "Involvement", window: "Time window" };
 class CountryPane {
   constructor(spec, body, hooks) {
     this.st = normState(spec);
     this.body = body;
     this.hooks = hooks;
     this.allCats = Object.keys(EVENT_CATS);
-    this.summary = null; this.sumErr = null; this.sumSeq = 0; this.advOpen = false; this.names = {};
+    this.summary = null; this.sumErr = null; this.sumSeq = 0; this.loadingN = 0; this.advOpen = false; this.names = {};
     body.innerHTML = '<div class="dk-root cx-pane"><div class="cx-head"></div><div class="cx-filters"></div><div class="cx-cp"></div><div class="cx-list"></div></div>';
     this.root = body.firstElementChild;
     this.root.addEventListener("click", (e) => this.click(e));
@@ -69,17 +70,36 @@ class CountryPane {
   }
   load() { return this.loadSummary(); }
   renderAll() { this.paintSummary(); }
-  paintSummary() { this.renderHead(); this.renderFilters(); }
+  paintSummary() {
+    this.renderHead();
+    if (!(this.filtersBusy() && this.countsOnly())) this.renderFilters(); // focus inside the bar: only the numbers change
+    this.root.querySelector(".cx-filters").classList.toggle("cx-loading", this.loadingN > 0);
+  }
+  // keyboard focus / an open date picker live inside .cx-filters: never rebuild it from under them on a refresh
+  filtersBusy() { const f = this.root.querySelector(".cx-filters"); return !!(f && f.contains(document.activeElement)); }
+  countsOnly() {
+    const c = this.summary && this.summary.counts, bs = this.root.querySelectorAll(".cx-seg button b");
+    if (!c || bs.length !== 7) return false; // structure differs (counts just arrived): full repaint
+    const tot = c.inside + c.abroad, v = [tot, c.inside, c.abroad, tot, c.domestic, c.foreign, c.unattributed];
+    bs.forEach((b, i) => { b.textContent = nf(v[i]); });
+    return true;
+  }
   // any filter change: new state into the pane spec (persisted), redraw, reload (the seq guard drops superseded loads)
   set(next) {
     this.st = normState(next);
     this.hooks.setSpec(this.st);
-    this.renderAll();
+    this.renderHead(); this.renderFilters(); // state changed: always a full repaint (focus is restored)
     this.load("reset");
   }
   renderFilters() {
+    const act = document.activeElement, host = this.root.querySelector(".cx-filters");
+    const sel = host && act && host.contains(act) ? controlSelector(act.dataset) : null;
+    this.paintFilters();
+    if (sel) { const el = host.querySelector(sel); if (el) el.focus(); } // innerHTML rebuild drops focus: find the same control again
+  }
+  paintFilters() {
     const st = this.st, c = (this.summary && this.summary.counts) || null, tot = c ? c.inside + c.abroad : null;
-    const seg = (key, values, labels, counts) => '<span class="seg cx-seg" role="group" aria-label="' + key + '">' + values.map((v, i) =>
+    const seg = (key, values, labels, counts) => '<span class="seg cx-seg" role="group" aria-label="' + GROUP[key] + '">' + values.map((v, i) =>
       '<button type="button" data-k="' + key + '" data-v="' + v + '" class="tab' + (st[key] === v ? " on" : "") + '" aria-pressed="' + (st[key] === v) + '">' + labels[i] +
       (counts && counts[v] != null ? " <b>" + nf(counts[v]) + "</b>" : "") + "</button>").join("") + "</span>";
     const loc = seg("location", LOCATIONS, ["ALL", "INSIDE", "ABROAD"], c && { all: tot, inside: c.inside, abroad: c.abroad });
@@ -88,7 +108,7 @@ class CountryPane {
     const dates = st.window === "custom" ? '<span class="cx-dates"><input type="date" data-date="from" value="' + esc(st.from || "") + '" aria-label="From (UTC)"><span aria-hidden="true">→</span><input type="date" data-date="to" value="' + esc(st.to || "") + '" aria-label="To (UTC)"></span>' : "";
     const pair = st.counterpart ? '<button type="button" class="cx-pair" data-cx="uncp" title="Remove the counterpart filter">' + esc(pairLabel(st, this.names)) + ' <span aria-hidden="true">×</span></button>' : "";
     const on = (k) => !st.cats || st.cats.includes(k);
-    const cats = '<div class="chips cx-cats">' + this.allCats.map((k) => '<button type="button" class="chip' + (on(k) ? " on" : "") + '" data-cat="' + k + '" aria-pressed="' + on(k) + '" style="--c:' + EVENT_CATS[k][1] + '" title="' + esc(EVENT_CATS[k][0]) + '">' + esc(EVENT_CATS[k][0]) + "</button>").join("") + "</div>";
+    const cats = '<div class="chips cx-cats" role="group" aria-label="Categories">' + this.allCats.map((k) => '<button type="button" class="chip' + (on(k) ? " on" : "") + '" data-cat="' + k + '" aria-pressed="' + on(k) + '" style="--c:' + EVENT_CATS[k][1] + '" title="' + esc(EVENT_CATS[k][0]) + '">' + esc(EVENT_CATS[k][0]) + "</button>").join("") + "</div>";
     this.root.querySelector(".cx-filters").innerHTML = '<div class="cx-frow">' + loc + inv + '</div><div class="cx-frow">' + win + dates + pair + "</div>" + cats;
   }
   change(e) {
@@ -97,15 +117,18 @@ class CountryPane {
   }
   async loadSummary() {
     const seq = ++this.sumSeq;
+    this.loadingN = 1; this.root.querySelector(".cx-filters").classList.add("cx-loading"); // stale counts read as dimmed until this lands
     this.lastTry = Date.now();
     if (this.sumErr) { this.sumErr = null; if (!this.summary) this.renderHead(); } // retry: back to loading
     try {
       const s = await fetchJson("/api/country/" + encodeURIComponent(this.st.cc) + "/summary?" + summaryQuery(this.st, { allCats: this.allCats }), SUMMARY_MS);
       if (this.dead() || seq !== this.sumSeq) return;
+      this.loadingN = 0;
       this.summary = s; this.sumErr = null; this.names = summaryNames(s);
       this.title(s);
     } catch (err) {
       if (this.dead() || seq !== this.sumSeq) return;
+      this.loadingN = 0;
       this.sumErr = err && err.name === "AbortError" ? "No answer within " + SUMMARY_MS / 1000 + " s." : String((err && err.message) || err);
     }
     this.paintSummary();

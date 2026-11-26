@@ -120,3 +120,14 @@ export function summaryNames(s) {
   for (const c of s ? [s, ...(s.counterparts || [])] : []) if (CC.test(String(c.cc || "")) && c.name) out[c.cc] = c.name;
   return out;
 }
+
+// selector that finds a filter control again after a repaint (from its dataset), or null
+export function controlSelector(ds) {
+  const q = (v) => String(v).replace(/["\\]/g, "");
+  if (!ds) return null;
+  if (ds.k) return '[data-k="' + q(ds.k) + '"][data-v="' + q(ds.v) + '"]';
+  if (ds.cat) return '[data-cat="' + q(ds.cat) + '"]';
+  if (ds.date) return '[data-date="' + q(ds.date) + '"]';
+  if (ds.cx === "uncp") return '[data-cx="uncp"]';
+  return null;
+}

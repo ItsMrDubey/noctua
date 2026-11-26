@@ -203,3 +203,18 @@ def test_summary_names_maps_the_country_and_its_counterparts():
     )
     assert out == {"UA": "Ukraine", "RU": "Russia"}
     assert run("return S.summaryNames(null);") == {}
+
+
+def test_control_selector_refinds_each_filter_control():
+    assert run(
+        'return [S.controlSelector({k:"location",v:"inside"}), S.controlSelector({cat:"disaster"}),'
+        ' S.controlSelector({date:"from"}), S.controlSelector({cx:"uncp"}), S.controlSelector({cx:"adv"}),'
+        ' S.controlSelector(null)];'
+    ) == [
+        '[data-k="location"][data-v="inside"]',
+        '[data-cat="disaster"]',
+        '[data-date="from"]',
+        '[data-cx="uncp"]',
+        None,
+        None,
+    ]

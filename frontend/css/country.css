@@ -56,3 +56,4 @@
 .ds-pane .cx-cats .chip { font-size: 11px; }
 .ds-pane .cx-cats .chip.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
 .ds-pane .cx-cats .chip:not(.on) { color: var(--dim) !important; border-color: var(--line); background: transparent; }
+.cx-loading .cx-seg button b { opacity: .45; }
