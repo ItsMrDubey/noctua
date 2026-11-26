@@ -23,6 +23,7 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from osint.core import countries
@@ -138,7 +139,10 @@ def _migrate(store: SqliteStore, rule_pass: RulePass, *, now: datetime, days: fl
         cc, kind = normalise_country(eid, origin, value)
         kinds[kind] += 1
         if kind == "unresolved":
+            # the raw value is kept (never erased); only reported
             unresolved[str(value)] += 1
+            override[eid] = value
+            continue
         override[eid] = cc
         if cc != value:
             changes.append((cc, eid))
@@ -162,9 +166,13 @@ def _migrate(store: SqliteStore, rule_pass: RulePass, *, now: datetime, days: fl
         # countries and actors in memory); "migrated" keeps migrate_events from treating it
         # as a fresh rebuild (no legacy-event deletion)
         store.set_cursor(REBUILD_STATE, {**marker, "at": utcnow().isoformat(),
-                                         "migrated": True})
-        store.set_cursor(COUNTRY_MIGRATION_STATE, {"done": True, "at": iso(now),
-                                                   "rewritten": len(changes)})
+                                         "migrated": marker.get("migrated", True)})
+        prev = store.get_cursor(COUNTRY_MIGRATION_STATE) or {}
+        first = prev if prev.get("done") else {}
+        store.set_cursor(COUNTRY_MIGRATION_STATE, {
+            "done": True, "at": first.get("at", iso(now)),
+            "rewritten": first.get("rewritten", len(changes)),
+            "last_at": iso(now), "last_rewritten": len(changes)})
     total = len(ids)
     resolved = s_recent.events + s_old.events
     return {
@@ -203,6 +211,30 @@ class _PreMigrationView:
         return {}
 
 
+def _side_files(db: Path) -> dict[Path, bool]:
+    return {p: p.exists() for p in (Path(f"{db}-wal"), Path(f"{db}-shm"))}
+
+
+def _drop_created_side_files(seen: dict[Path, bool]) -> None:
+    """Remove the -wal/-shm that a read-only open of a WAL database created. The -wal only
+    when it is empty; the -shm (a 32 KB wal-index, never 0 bytes) only when this run created
+    it and its -wal is empty or gone (no frames to index). A file another process still
+    holds open cannot be unlinked on Windows and is left alone."""
+    for p, existed in sorted(seen.items(), key=lambda kv: not kv[0].name.endswith("-wal")):
+        try:
+            if existed or not p.exists():
+                continue
+            if p.name.endswith("-wal"):
+                if p.stat().st_size == 0:
+                    p.unlink()
+            else:
+                wal = p.with_name(p.name[:-4] + "-wal")
+                if not wal.exists() or wal.stat().st_size == 0:
+                    p.unlink()
+        except OSError:
+            log.warning("could not remove %s", p)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="osint.pipeline.migrate_countries", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -223,12 +255,17 @@ def main(argv: list[str] | None = None) -> int:
     dry = args.dry_run
     # a dry run must not touch the (possibly live) databases: read-only connections, no
     # schema upgrade, no lake directory created
+    ext_path = st.data_dir / "extraction.sqlite"
+    seen = {**_side_files(st.sqlite_path), **_side_files(ext_path)} if dry else {}
+    if not dry:
+        print("Stop the server (or upgrade it to this version) and back up data/ before "
+              "running without --dry-run; the run holds the rebuild lock and adds "
+              "columns/indexes.", file=sys.stderr)
     store = SqliteStore.open_read_only(st.sqlite_path) if dry else SqliteStore(st.sqlite_path)
     view: Any = store
     if dry and not store.has_column("event_fields", "source"):
         view = _PreMigrationView(store)
     lake = Lake(st.lake_dir) if not dry or st.lake_dir.is_dir() else None
-    ext_path = st.data_dir / "extraction.sqlite"
     extractions = ExtractionStore(ext_path, read_only=dry) if ext_path.is_file() else None
     cfg = EventsConfig.from_file(st.config_dir / "events.yaml")
     rule_pass = RulePass(  # the migration's own instance: its snippet LRU is not shared
@@ -245,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         if lake is not None:
             lake.close()
         store.close()
+        _drop_created_side_files(seen)
     # ASCII-escaped: the Windows console code page cannot print every country name
     print(json.dumps({"migrate_countries": report}, indent=2, ensure_ascii=True, default=str))
     return 0

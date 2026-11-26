@@ -174,3 +174,48 @@ def _columns(db):
                 for t in ("events", "event_fields")}
     finally:
         con.close()
+
+
+def test_unresolved_country_is_kept_and_reported(store, lexicon):
+    store.save_events([_ev("01NEWSODD", "Atlantis")])
+    rp = RulePass(store, lexicon=lexicon, rules=RuleSet.load())
+    rep = migrate(store, rp, now=NOW)
+    assert store.get_event("01NEWSODD")["country"] == "Atlantis"  # raw value not erased
+    assert rep["unresolved"] == {"Atlantis": 1}
+
+
+def test_rebuild_marker_keeps_a_pending_cleanup_flag(store, lexicon):
+    store.set_cursor(REBUILD_STATE, {"at": "2026-01-01T00:00:00+00:00", "migrated": False})
+    rp = RulePass(store, lexicon=lexicon, rules=RuleSet.load())
+    migrate(store, rp, now=NOW)
+    marker = store.get_cursor(REBUILD_STATE)
+    assert marker["migrated"] is False and marker["at"] != "2026-01-01T00:00:00+00:00"
+
+
+def test_rerun_keeps_the_first_completion_values(store, lexicon):
+    rp = RulePass(store, lexicon=lexicon, rules=RuleSet.load())
+    migrate(store, rp, now=NOW)
+    first = store.get_cursor(COUNTRY_MIGRATION_STATE)
+    assert first["rewritten"] == 3
+    migrate(store, rp, now=NOW + timedelta(hours=2))
+    again = store.get_cursor(COUNTRY_MIGRATION_STATE)
+    assert (again["at"], again["rewritten"]) == (first["at"], 3)
+    assert again["last_at"] == iso(NOW + timedelta(hours=2)) and again["last_rewritten"] == 0
+
+
+def test_cli_dry_run_leaves_no_side_files(tmp_path, monkeypatch, capsys):
+    from osint.pipeline.extract.store import ExtractionStore
+    db = tmp_path / "osint.sqlite"
+    s = SqliteStore(db)
+    _fill(s)
+    s.close()
+    ExtractionStore(tmp_path / "extraction.sqlite").close()
+    for f in tmp_path.glob("*-wal"):
+        f.unlink()
+    for f in tmp_path.glob("*-shm"):
+        f.unlink()
+    before = sorted(p.name for p in tmp_path.iterdir())
+    monkeypatch.setenv("OSINT_DATA_DIR", str(tmp_path))
+    assert main(["--dry-run"]) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == before
+    assert "Stop the server" not in capsys.readouterr().out  # real-run notice only
