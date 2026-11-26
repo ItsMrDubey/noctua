@@ -11,8 +11,8 @@ QUOTE_MAX = 300
 
 @dataclass(frozen=True, slots=True)
 class FieldValue:
-    """One rule-extracted value and its evidence (the matched span), stored in event_fields
-    with source='rule'."""
+    """One rule-extracted value and its evidence (the matched span), stored in
+    event_rule_fields."""
 
     field: str
     value: str

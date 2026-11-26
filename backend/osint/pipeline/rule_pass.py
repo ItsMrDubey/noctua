@@ -4,10 +4,10 @@ country migration for every event.
 
 Per event: actors are re-resolved (``osint.enrich.actors.resolve_actors``) and the derived
 columns written (actor_countries, foreign_involved, attributed); for news and sensor events
-the rule extractors (``osint.enrich.rules.RuleSet``) replace the event's ``source='rule'``
-fields (curated ACLED / UCDP rows keep their own values). Inputs: the event row (incl. its
-category, which gates the generic "<demonym> strike" phrases), its documents (titles from
-event_documents, snippets from the pass or the lake), the LLM extraction when it is
+the rule extractors (``osint.enrich.rules.RuleSet``) replace the event's rule fields (table
+``event_rule_fields``; curated ACLED / UCDP rows keep their own values). Inputs: the event
+row (incl. its category, which gates the generic "<demonym> strike" phrases), its documents
+(titles from event_documents, snippets from the pass or the lake), the LLM extraction when it is
 ``supported`` (its actor names) and, with an embedder, document vectors for the headline
 pick.
 

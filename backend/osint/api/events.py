@@ -147,8 +147,8 @@ def impact_layer_item(rec: dict) -> dict:
 
 def field_precedence(rule_rows: list[dict], extraction: dict | None) -> dict:
     """Extracted fields of an event (deterministic extraction spec §2.4): a value of an LLM
-    extraction whose verdict is ``supported`` outranks the rule value (``event_fields``
-    ``source='rule'``); otherwise the rule value is used. ``field_source`` says which one
+    extraction whose verdict is ``supported`` outranks the rule value
+    (``event_rule_fields``); otherwise the rule value is used. ``field_source`` says which one
     each field came from (None: neither has a value). Both stay stored."""
     rule: dict[str, list[dict]] = {}
     for r in rule_rows:

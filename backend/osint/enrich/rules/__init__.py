@@ -1,7 +1,7 @@
 """Deterministic rule extractors (deterministic extraction spec §2.4).
 
 Each extractor is a pure function ``(event, docs) -> list[FieldValue]``; the values are
-written to ``event_fields`` with ``source='rule'`` and the matched span as ``quote``
+written to ``event_rule_fields`` with the matched span as ``quote``
 (``osint.pipeline.rule_pass``). Configuration: ``config/extract_rules.yaml``.
 """
 

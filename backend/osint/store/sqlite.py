@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS quarantine (
 """
 
 # Events (spec §3): one row per de-duplicated event; event_documents links contributing
-# documents (role primary | mention | gdelt); event_fields is the per-field provenance;
+# documents (role primary | mention | gdelt); event_fields is the per-field provenance
+# (clusterer / LLM); event_rule_fields holds the rule-extracted values (osint.pipeline.
+# rule_pass) apart, so event_fields keeps the five columns older builds insert positionally;
 # gdelt_decisions records every accept/reject of a GDELT row (benchmark substrate);
 # event_redirects maps the id of a news event merged into another (pipeline.cluster
 # consolidation) to the surviving id, so links held by the UI or other stores still resolve.
@@ -57,6 +59,11 @@ CREATE INDEX IF NOT EXISTS event_documents_added ON event_documents(added_at);
 CREATE TABLE IF NOT EXISTS event_fields (
   event_id TEXT NOT NULL, field TEXT NOT NULL, value TEXT NOT NULL, doc_id TEXT NOT NULL,
   quote TEXT NOT NULL DEFAULT '', PRIMARY KEY (event_id, field, value, doc_id));
+CREATE TABLE IF NOT EXISTS event_rule_fields (
+  event_id TEXT NOT NULL, field TEXT NOT NULL, value TEXT NOT NULL, doc_id TEXT NOT NULL,
+  quote TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,
+  PRIMARY KEY (event_id, field, value, doc_id));
+CREATE INDEX IF NOT EXISTS event_rule_fields_event ON event_rule_fields(event_id);
 CREATE TABLE IF NOT EXISTS gdelt_decisions (
   gdelt_event_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL,
   event_id TEXT, doc_id TEXT, category TEXT, decided_at TEXT NOT NULL);
@@ -153,7 +160,6 @@ COUNTRY_MIGRATION_STATE = "country_migration"
 # Not in EVENT_COLUMNS, so the clusterer's upsert never overwrites them; writers that know
 # them put them in the event dict (save_events) or call set_event_derived.
 DERIVED_COLUMNS = ("actor_countries", "foreign_involved", "attributed")
-RULE_SOURCE = "rule"  # event_fields.source of rule-extracted values ('' = clusterer/LLM)
 _DERIVED_SQL = ("UPDATE events SET actor_countries=?, foreign_involved=?, attributed=? "
                 "WHERE id=?")
 _DERIVED_ACTORS_SQL = ("UPDATE events SET actors=?, actor_countries=?, foreign_involved=?, "
@@ -213,17 +219,18 @@ def _write_derived(db: sqlite3.Connection, rows: list[dict]) -> int:
 
 def _replace_rule_fields(db: sqlite3.Connection, event_ids: list[str],
                          fields: list[dict]) -> None:
-    """DELETE the ``source='rule'`` rows of ``event_ids`` and INSERT ``fields``; caller holds
-    the store lock and the transaction."""
+    """DELETE the event_rule_fields rows of ``event_ids`` and INSERT ``fields``; caller
+    holds the store lock and the transaction."""
+    now = iso(utcnow())
     rows = [(f["event_id"], f["field"], str(f["value"]), f["doc_id"],
-             f.get("quote") or "", RULE_SOURCE) for f in fields]
+             f.get("quote") or "", now) for f in fields]
     for i in range(0, len(event_ids), 800):
         chunk = event_ids[i: i + 800]
-        db.execute(f"DELETE FROM event_fields WHERE source = ? AND event_id IN "
-                   f"({','.join('?' * len(chunk))})", (RULE_SOURCE, *chunk))
+        db.execute(f"DELETE FROM event_rule_fields WHERE event_id IN "
+                   f"({','.join('?' * len(chunk))})", chunk)
     if rows:
-        db.executemany("INSERT OR IGNORE INTO event_fields (event_id, field, value, doc_id, "
-                       "quote, source) VALUES (?,?,?,?,?,?)", rows)
+        db.executemany("INSERT OR IGNORE INTO event_rule_fields (event_id, field, value, "
+                       "doc_id, quote, updated_at) VALUES (?,?,?,?,?,?)", rows)
 
 
 def _bbox_cols(bbox) -> tuple:
@@ -374,8 +381,11 @@ class SqliteStore:
             self._db.execute("CREATE INDEX IF NOT EXISTS events_origin ON events(origin)")
 
     def _migrate_derived(self) -> None:
-        """Add the deterministic-extraction columns, the events(country) index and
-        event_fields.source (idempotent; tolerates another process adding them first)."""
+        """Add the deterministic-extraction columns and the events(country) index
+        (idempotent; tolerates another process adding them first). event_fields is never
+        altered (older builds sharing the database insert it positionally); an
+        ``event_fields.source`` column left by an earlier build of this feature is folded
+        back: its rule rows move to event_rule_fields and the column is dropped."""
         with self._lock, self._db:
             cols = {r[1] for r in self._db.execute("PRAGMA table_info(events)")}
             for col, ddl in (("actor_countries", "TEXT NOT NULL DEFAULT '[]'"),
@@ -393,15 +403,18 @@ class SqliteStore:
             self._db.execute("CREATE INDEX IF NOT EXISTS events_open ON events(id) WHERE "
                              "lifecycle IS NULL OR lifecycle != 'closed'")
             fcols = {r[1] for r in self._db.execute("PRAGMA table_info(event_fields)")}
-            if "source" not in fcols:
+            if "source" in fcols:
+                self._db.execute(
+                    "INSERT OR IGNORE INTO event_rule_fields (event_id, field, value, doc_id, "
+                    "quote, updated_at) SELECT event_id, field, value, doc_id, quote, ? "
+                    "FROM event_fields WHERE source = 'rule'", (iso(utcnow()),))
+                self._db.execute("DELETE FROM event_fields WHERE source = 'rule'")
+                self._db.execute("DROP INDEX IF EXISTS event_fields_source")
                 try:
-                    self._db.execute(
-                        "ALTER TABLE event_fields ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+                    self._db.execute("ALTER TABLE event_fields DROP COLUMN source")
                 except sqlite3.OperationalError as e:
-                    if "duplicate column" not in str(e):
+                    if "no such column" not in str(e):
                         raise
-            self._db.execute("CREATE INDEX IF NOT EXISTS event_fields_source "
-                             "ON event_fields(source, event_id)")
 
     def _status_baseline(self) -> None:
         """One 'baseline' history row (status as of now) for events that predate history
@@ -879,6 +892,7 @@ class SqliteStore:
                 m = ",".join("?" * len(ids))
                 self._db.execute(f"DELETE FROM event_documents WHERE event_id IN ({m})", ids)
                 self._db.execute(f"DELETE FROM event_fields WHERE event_id IN ({m})", ids)
+                self._db.execute(f"DELETE FROM event_rule_fields WHERE event_id IN ({m})", ids)
 
     def clear_gdelt_decisions(self) -> int:
         with self._lock, self._db:
@@ -909,6 +923,7 @@ class SqliteStore:
                     marks = ",".join("?" * len(chunk))
                 for table, col in (("event_documents", "event_id"),
                                    ("event_fields", "event_id"),
+                                   ("event_rule_fields", "event_id"),
                                    ("corroborations", "event_id"),
                                    ("event_corroboration", "event_id"),
                                    ("event_verification", "event_id"),
@@ -993,8 +1008,8 @@ class SqliteStore:
                  "last_doc_at": r[4], "recent_docs": int(r[5] or 0)} for r in rows]
 
     def replace_rule_fields(self, event_ids: list[str], fields: list[dict]) -> None:
-        """Replace the ``source='rule'`` rows of ``event_ids`` with ``fields``
-        ({event_id, field, value, doc_id, quote}); rows of other sources are untouched."""
+        """Replace the rule-extracted rows (event_rule_fields) of ``event_ids`` with
+        ``fields`` ({event_id, field, value, doc_id, quote}); event_fields is untouched."""
         with self._lock, self._db:
             _replace_rule_fields(self._db, event_ids, fields)
 
@@ -1010,15 +1025,15 @@ class SqliteStore:
         return n
 
     def rule_fields(self, event_ids: list[str]) -> dict[str, list[dict]]:
-        """event id -> its ``source='rule'`` rows {field, value, doc_id, quote}."""
+        """event id -> its rule-extracted rows {field, value, doc_id, quote}."""
         out: dict[str, list[dict]] = {}
         for i in range(0, len(event_ids), 800):
             chunk = event_ids[i: i + 800]
             with self._lock:
                 rows = self._db.execute(
-                    "SELECT event_id, field, value, doc_id, quote FROM event_fields WHERE "
-                    f"source = ? AND event_id IN ({','.join('?' * len(chunk))}) "
-                    "ORDER BY event_id, field, value, doc_id", (RULE_SOURCE, *chunk)).fetchall()
+                    "SELECT event_id, field, value, doc_id, quote FROM event_rule_fields WHERE "
+                    f"event_id IN ({','.join('?' * len(chunk))}) "
+                    "ORDER BY event_id, field, value, doc_id", chunk).fetchall()
             for eid, f, v, d, q in rows:
                 out.setdefault(eid, []).append({"field": f, "value": v, "doc_id": d,
                                                 "quote": q})
@@ -1112,6 +1127,9 @@ class SqliteStore:
                         db.execute(f"UPDATE OR IGNORE {table} SET event_id=? WHERE event_id=?",
                                    (sv, lo))
                     db.execute(f"DELETE FROM {table} WHERE event_id=?", (lo,))
+                # rule values are per event: the survivor keeps its own (the next rule pass
+                # over it recomputes them from the merged documents)
+                db.execute("DELETE FROM event_rule_fields WHERE event_id=?", (lo,))
                 db.execute("UPDATE OR IGNORE event_verification SET event_id=? "
                            "WHERE event_id=? AND verdict='supported'", (sv, lo))
                 for table in ("event_impacts", "event_corroboration"):
@@ -1147,8 +1165,8 @@ class SqliteStore:
         news = ("(SELECT id FROM events WHERE origin = 'news' AND id NOT IN "
                 "(SELECT event_id FROM sensor_events))")
         with self._lock, self._db:
-            for table in ("event_documents", "event_fields", "corroborations",
-                          "event_corroboration", "event_verification"):
+            for table in ("event_documents", "event_fields", "event_rule_fields",
+                          "corroborations", "event_corroboration", "event_verification"):
                 self._db.execute(f"DELETE FROM {table} WHERE event_id IN {news}")
             self._db.execute("DELETE FROM gdelt_decisions")
             return self._db.execute(f"DELETE FROM events WHERE id IN {news}").rowcount

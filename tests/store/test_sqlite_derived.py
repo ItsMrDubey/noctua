@@ -77,9 +77,25 @@ def test_rule_fields_replace_only_rule_rows(store):
     assert [(r["field"], r["value"]) for r in rules] == [("casualties.killed", "3"),
                                                           ("headline", "New")]
     fields = {(f["field"], f["value"]) for f in store.get_event("E1")["fields"]}
-    assert ("location", "Kyiv") in fields and ("headline", "Old") not in fields
+    # rule values live in their own table: event_fields (the dossier's extracted facts)
+    # keeps only clusterer / LLM provenance
+    assert fields == {("location", "Kyiv")}
     store.replace_rule_fields(["E1"], [])
     assert store.rule_fields(["E1"]) == {}
+    assert store.get_event("E1")["fields"][0]["field"] == "location"
+
+
+def test_rule_rows_follow_event_deletes_and_merges(store):
+    store.save_events([_ev("E1"), _ev("E2"), _ev("E3")])
+    rows = [{"event_id": e, "field": "headline", "value": e, "doc_id": "d", "quote": e}
+            for e in ("E1", "E2", "E3")]
+    store.replace_rule_fields(["E1", "E2", "E3"], rows)
+    assert store.delete_events(["E3"]) == 1
+    assert "E3" not in store.rule_fields(["E1", "E2", "E3"])
+    store.merge_events([{"survivor": "E1", "loser": "E2"}], [])
+    assert set(store.rule_fields(["E1", "E2"])) == {"E1"}
+    store.clear_news_events()
+    assert store._db.execute("SELECT COUNT(*) FROM event_rule_fields").fetchone()[0] == 0
 
 
 def test_rule_documents_and_events_for_rules(store):
@@ -120,6 +136,49 @@ def test_an_existing_database_gets_the_new_columns(tmp_path):
     s = SqliteStore(path)
     cols = {r[1] for r in s._db.execute("PRAGMA table_info(events)")}
     assert {"actor_countries", "foreign_involved", "attributed", "lifecycle"} <= cols
-    assert s._db.execute("SELECT source FROM event_fields").fetchone()[0] == ""
+    assert "event_rule_fields" in {r[0] for r in s._db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
     s.close()
     SqliteStore(path).close()  # idempotent on the next start
+
+
+def test_event_fields_keeps_its_pre_branch_schema(tmp_path):
+    """Older worktrees share the database and insert event_fields rows positionally
+    (``INSERT OR IGNORE INTO event_fields VALUES (?,?,?,?,?)``): the table must keep
+    exactly its five columns after this version opened it."""
+    path = tmp_path / "shared.sqlite"
+    s = SqliteStore(path)
+    s.replace_rule_fields(["E1"], [{"event_id": "E1", "field": "headline", "value": "h",
+                                    "doc_id": "d1", "quote": "h"}])
+    s.close()
+    db = sqlite3.connect(path)
+    try:
+        assert [r[1] for r in db.execute("PRAGMA table_info(event_fields)")] == [
+            "event_id", "field", "value", "doc_id", "quote"]
+        db.executemany("INSERT OR IGNORE INTO event_fields VALUES (?,?,?,?,?)",
+                       [("E1", "location", "Kyiv", "d1", "in Kyiv")])
+        db.commit()
+        assert db.execute("SELECT COUNT(*) FROM event_fields").fetchone()[0] == 1
+    finally:
+        db.close()
+
+
+def test_a_source_column_from_an_earlier_build_is_folded_back(tmp_path):
+    """A database opened by an earlier build of this branch has event_fields.source and
+    rule rows in event_fields: they move to event_rule_fields and the column goes."""
+    path = tmp_path / "early.sqlite"
+    db = sqlite3.connect(path)
+    db.executescript(EVENTS_SCHEMA)
+    db.execute("ALTER TABLE event_fields ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+    db.execute("CREATE INDEX event_fields_source ON event_fields(source, event_id)")
+    db.execute("INSERT INTO event_fields VALUES ('E1', 'location', 'Kyiv', 'd1', '', '')")
+    db.execute("INSERT INTO event_fields VALUES ('E1', 'headline', 'H', 'd1', 'H', 'rule')")
+    db.commit()
+    db.close()
+    s = SqliteStore(path)
+    assert [r[1] for r in s._db.execute("PRAGMA table_info(event_fields)")] == [
+        "event_id", "field", "value", "doc_id", "quote"]
+    rows = s.rule_fields(["E1"])["E1"]
+    assert [(r["field"], r["value"]) for r in rows] == [("headline", "H")]
+    assert [tuple(r) for r in s._db.execute("SELECT field FROM event_fields")] == [("location",)]
+    s.close()

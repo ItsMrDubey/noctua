@@ -139,7 +139,7 @@ def test_cli_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_dry_run_on_a_pre_migration_schema(tmp_path, monkeypatch, capsys):
-    """The live DB may predate the derived columns / event_fields.source: a dry run reads
+    """The live DB may predate the derived columns / event_rule_fields: a dry run reads
     it as is and never adds them."""
     db = tmp_path / "osint.sqlite"
     s = SqliteStore(db)
@@ -152,14 +152,11 @@ def test_cli_dry_run_on_a_pre_migration_schema(tmp_path, monkeypatch, capsys):
             con.execute(f"ALTER TABLE events DROP COLUMN {col}")
         except sqlite3.OperationalError:
             pass
-    con.execute("CREATE TABLE ef AS SELECT event_id, field, value, doc_id, quote "
-                "FROM event_fields")
-    con.execute("DROP TABLE event_fields")
-    con.execute("ALTER TABLE ef RENAME TO event_fields")
+    con.execute("DROP TABLE event_rule_fields")
     con.commit()
     con.close()
     cols = _columns(db)
-    assert "lifecycle" not in cols["events"] and "source" not in cols["event_fields"]
+    assert "lifecycle" not in cols["events"] and not cols["event_rule_fields"]
     before = _digest(db)
     monkeypatch.setenv("OSINT_DATA_DIR", str(tmp_path))
     assert main(["--dry-run"]) == 0
@@ -171,7 +168,7 @@ def _columns(db):
     con = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)
     try:
         return {t: [r[1] for r in con.execute(f"PRAGMA table_info({t})")]
-                for t in ("events", "event_fields")}
+                for t in ("events", "event_fields", "event_rule_fields")}
     finally:
         con.close()
 

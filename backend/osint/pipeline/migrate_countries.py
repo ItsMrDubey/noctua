@@ -198,7 +198,7 @@ def _migrate(store: SqliteStore, rule_pass: RulePass, *, now: datetime, days: fl
 
 
 class _PreMigrationView:
-    """Read-only store on a database that predates ``event_fields.source`` (dry run before
+    """Read-only store on a database that predates ``event_rule_fields`` (dry run before
     the schema upgrade): there are no rule rows yet, so ``rule_fields`` is empty."""
 
     def __init__(self, store: SqliteStore) -> None:
@@ -263,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
               "columns/indexes.", file=sys.stderr)
     store = SqliteStore.open_read_only(st.sqlite_path) if dry else SqliteStore(st.sqlite_path)
     view: Any = store
-    if dry and not store.has_column("event_fields", "source"):
+    if dry and not store.has_column("event_rule_fields", "event_id"):
         view = _PreMigrationView(store)
     lake = Lake(st.lake_dir) if not dry or st.lake_dir.is_dir() else None
     extractions = ExtractionStore(ext_path, read_only=dry) if ext_path.is_file() else None
