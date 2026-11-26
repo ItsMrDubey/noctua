@@ -305,7 +305,10 @@ def test_globe_action_follows_the_dossier_not_esc():
         ' S.globeAction({state: "min", focused: ua, specs: [ua]}, null),'
         ' S.globeAction({state: "open", focused: intel, specs: [intel]}, "UA"),'
         ' S.globeAction({state: "open", focused: null, specs: []}, null),'
-        " S.globeAction(null, null)];"
+        " S.globeAction(null, null),"
+        ' S.globeAction({state: "open", focused: intel, specs: [ua, intel]}, null, "UA"),'
+        ' S.globeAction({state: "open", focused: intel, specs: [intel]}, null, "UA"),'
+        ' S.globeAction({state: "open", focused: ru, specs: [ua, ru]}, null, "UA")];'
     )
     assert r == [
         {"op": "activate", "cc": "UA"},
@@ -318,4 +321,7 @@ def test_globe_action_follows_the_dossier_not_esc():
         {"op": "deactivate"},  # the country pane was closed
         {"op": "keep"},
         {"op": "keep"},
+        {"op": "activate", "cc": "UA"},  # restored with the intel pane focused: context comes back
+        {"op": "keep"},  # its pane was closed meanwhile
+        {"op": "activate", "cc": "RU"},  # a focused country pane wins
     ]

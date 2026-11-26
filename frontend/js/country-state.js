@@ -216,11 +216,15 @@ export function outlineRuns(ring) {
 // specs}) while `active` (ISO2 or null) is the active country: "deactivate" when the dossier is no
 // longer open (closed / minimised, e.g. by Esc) or the active country's pane is gone, "activate"
 // (with cc) when a country pane has focus, otherwise "keep" (another pane focused beside it,
-// an inner layer such as a zoomed pane or lightbox closed by Esc)
-export function globeAction(detail, active) {
+// an inner layer such as a zoomed pane or lightbox closed by Esc). `resume`: the country that was
+// active when the dossier was minimised; restoring the dossier with another pane focused (the
+// event's intel pane beside it) brings that context back while its pane is still open
+export function globeAction(detail, active, resume = null) {
   const d = detail || {}, cc = (s) => String((s && s.cc) || "").toUpperCase();
   if (d.state !== "open") return active ? { op: "deactivate" } : { op: "keep" };
   if (d.focused && d.focused.type === "country" && cc(d.focused)) return { op: "activate", cc: cc(d.focused) };
-  if (active && !(d.specs || []).some((s) => s && s.type === "country" && cc(s) === active)) return { op: "deactivate" };
+  const has = (code) => (d.specs || []).some((s) => s && s.type === "country" && cc(s) === code);
+  if (active && !has(active)) return { op: "deactivate" };
+  if (!active && resume && has(resume)) return { op: "activate", cc: resume };
   return { op: "keep" };
 }

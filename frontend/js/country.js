@@ -51,10 +51,11 @@ export function installCountry(ctx) {
   // dossier restores the globe. Esc needs no handler of its own: the dossier's Esc minimises
   // (announced here as state "min"), while an Esc that only closes an inner layer (lightbox,
   // zoomed pane, max views) leaves the country context as it is
+  let resume = null; // the country active when the dossier was minimised (restored with it)
   window.addEventListener("noctua:dossier", (e) => {
-    const a = globeAction(e.detail, globe.active);
-    if (a.op === "activate") globe.activate(a.cc);
-    else if (a.op === "deactivate") globe.deactivate();
+    const a = globeAction(e.detail, globe.active, resume);
+    if (a.op === "activate") { resume = null; globe.activate(a.cc); }
+    else if (a.op === "deactivate") { resume = e.detail && e.detail.state === "min" ? globe.active : null; globe.deactivate(); }
   });
   window.dispatchEvent(new Event("noctua:panels")); // renders country panes restored before this ran
   const open = (cc) => {
