@@ -5,13 +5,12 @@ import { fetchJson } from "/static/js/api.js";
 import { esc, nf, evTitle, stateHtml, settleLoading } from "/static/js/ui.js";
 import { EVENT_CATS, threatColor } from "/static/js/symbology.js";
 import { eventRowInner } from "/static/js/eventlist.js";
-import { controlSelector, LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, PAGE, normState, resetFilters, eventsQuery, mergePage, summaryQuery, toggleCat, ctxLabel, flagEmoji, sparkPath, emptyText, threatTier, summaryNames, pairLabel } from "/static/js/country-state.js";
+import { controlSelector, LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, PAGE, normState, resetFilters, eventsQuery, mergePage, mergeTop, summaryQuery, toggleCat, ctxLabel, flagEmoji, sparkPath, emptyText, threatTier, summaryNames, pairLabel } from "/static/js/country-state.js";
 
 const ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 14.5V2"/><path d="M3.5 2.5h9l-2.2 3 2.2 3h-9"/></svg>';
 const REFRESH_MS = 60000; // the live event poll's cadence (app.js)
 const SUMMARY_MS = 20000; // summary request timeout
 const EVENTS_MS = 20000; // event list request timeout
-const MAX_ROWS = 9999; // a refresh re-reads at most this many rows (+1 probe = the API's MAX_LIMIT)
 const RETRY_MS = 10000; // a failed load retries sooner than the refresh (busy server at start-up)
 const TICK_MS = 2000; // visibility / due check; nothing is fetched while the pane is hidden
 let REGION = null;
@@ -45,10 +44,11 @@ class CountryPane {
     this.hooks = hooks;
     this.allCats = Object.keys(EVENT_CATS);
     this.summary = null; this.sumErr = null; this.sumSeq = 0; this.loadingN = 0; this.advOpen = false; this.names = {};
-    // event list: rows shown, more pages on the server, last error, request in flight, seq guard;
-    // pageAt / pageUntil pin the first page's window so "load more" pages through the same one
+    // event list: rows shown, more pages under the pin, last error, request in flight, seq guard;
+    // pageAt / pageUntil pin the first load's window so "load more" pages through the same one, and
+    // pageN counts the rows fetched under that pin (the next offset; rows a refresh adds don't shift it)
     this.items = []; this.more = false; this.listErr = null; this.listLoading = true; this.listSeq = 0;
-    this.pageAt = null; this.pageUntil = null; this.moreBusy = false; this.listDirty = false; this.selId = null;
+    this.pageAt = null; this.pageUntil = null; this.pageN = 0; this.moreBusy = false; this.listDirty = false; this.selId = null;
     body.innerHTML = '<div class="dk-root cx-pane"><div class="cx-head"></div><div class="cx-filters"></div><div class="cx-cp"></div><div class="cx-list"></div></div>';
     this.root = body.firstElementChild;
     this.root.addEventListener("click", (e) => this.click(e));
@@ -88,57 +88,69 @@ class CountryPane {
   load(mode) { return Promise.all([this.loadSummary(), this.loadList(mode)]); }
   renderAll() { this.paintSummary(); this.renderList(); }
   // pages of PAGE events, sorted by the server (lifecycle, then last update). "reset" starts over
-  // (filter change); "more" appends the next page of the first page's window; "refresh" re-reads
-  // as many rows as are shown with a fresh window, so loaded pages stay and offsets stay aligned
+  // (filter change) and pins the window; "more" appends the next page under that pin; "refresh"
+  // reads only the newest PAGE with a fresh window and merges it (mergeTop): new ids on top, shown
+  // rows updated in place, older pages and the pin left alone
   async loadList(mode) {
-    const more = mode === "more";
-    if (mode === "refresh" && this.moreBusy) return; // a "load more" in flight wins; the next tick refreshes
+    if (mode !== "more" && mode !== "reset" && this.pageUntil == null) mode = "reset"; // never loaded (hidden at start / failed): a first load
+    const more = mode === "more", refresh = mode === "refresh";
+    if (refresh && this.moreBusy) return; // a "load more" in flight wins; the next tick refreshes
     const seq = ++this.listSeq;
-    if (mode === "reset") { this.items = []; this.more = false; this.listErr = null; this.pageAt = this.pageUntil = null; }
+    if (mode === "reset") { this.items = []; this.more = false; this.listErr = null; this.pageAt = this.pageUntil = null; this.pageN = 0; }
     this.moreBusy = more;
     const now = more && this.pageAt ? this.pageAt : Date.now(), until = more ? this.pageUntil : null;
-    const offset = more ? this.items.length : 0;
-    const limit = mode === "refresh" ? Math.min(MAX_ROWS, Math.max(PAGE, this.items.length)) : PAGE;
+    const offset = more ? this.pageN : 0, limit = PAGE;
     const el = this.root.querySelector(".cx-list");
-    if (!this.items.length) {
+    if (!refresh && !this.items.length) { // only a first / reset load shows "Loading…" (a refresh never flickers)
       this.listLoading = true; this.listErr = null; this.renderList();
       settleLoading(el, EVENTS_MS + 2000, "Events unavailable", () => seq === this.listSeq); // backstop for this request only
     } else if (more) {
       const b = el.querySelector(".cx-more");
       if (b) { b.disabled = true; b.textContent = "Loading…"; }
     }
-    let first = null;
+    let first = null, added = 0;
     try {
-      const page = await fetchJson("/api/events?" + eventsQuery(this.st, { offset, limit: limit + 1, now, until, allCats: this.allCats }), EVENTS_MS);
+      const page = await fetchJson("/api/events?" + eventsQuery(this.st, { offset, limit: refresh ? limit : limit + 1, now, until, allCats: this.allCats }), EVENTS_MS);
       if (this.dead() || seq !== this.listSeq) return;
-      const all = page.items || [], got = all.slice(0, limit); // one extra row says whether more exist
-      if (more) {
+      const all = page.items || [], got = all.slice(0, limit); // a first / more load asks one extra row: are there more?
+      if (refresh) {
+        const m = mergeTop(this.items, got);
+        this.items = m.items; added = m.added; // this.more / the pin are about the pinned pages: unchanged
+      } else if (more) {
         const n = this.items.length;
         this.items = mergePage(this.items, got);
         first = this.items[n] ? this.items[n].id : null;
+        this.pageN += got.length; this.more = all.length > limit;
       } else {
         this.items = got;
-        this.pageAt = now; this.pageUntil = page.until || null;
+        this.pageAt = now; this.pageUntil = page.until || null; this.pageN = got.length; this.more = all.length > limit;
       }
-      this.more = all.length > limit;
       this.listErr = null;
     } catch (err) {
       if (this.dead() || seq !== this.listSeq) return;
       this.listErr = err && err.name === "AbortError" ? "No answer within " + EVENTS_MS / 1000 + " s." : String((err && err.message) || err);
     }
     this.moreBusy = false; this.listLoading = false;
-    this.renderList(mode, first);
+    this.renderList(mode, first, added);
   }
-  // mode "refresh" with keyboard focus inside the list updates the rows in place, or waits for
-  // focus to leave (focusout); focusId: the row to focus after a "load more" (the first new one)
-  renderList(mode, focusId) {
+  // mode "refresh": with keyboard focus inside the list, rows update in place or the repaint waits
+  // for focus to leave (focusout); with nothing added, rows update in place too. focusId: the row to
+  // focus after a "load more" (the first new one). added: rows a refresh put on top
+  renderList(mode, focusId, added = 0) {
     const el = this.root.querySelector(".cx-list");
     const act = document.activeElement, inside = !!act && el.contains(act);
-    if (mode === "refresh" && inside) { if (!this.listInPlace(el)) this.listDirty = true; return; }
+    if (mode === "refresh" && (inside || !added) && this.listInPlace(el)) return;
+    if (mode === "refresh" && inside) { this.listDirty = true; return; }
     this.listDirty = false;
     const keep = inside && act.dataset ? act.dataset.ev : null, top = this.body.scrollTop;
+    // scroll anchor, once the list is scrolled past its start: the first row still in view, which
+    // rows inserted above it must not push down (above that, new rows at the top are simply visible)
+    const view = this.body.getBoundingClientRect().top, old = [...el.querySelectorAll(".cx-row")];
+    const anchor = old.length && old[0].getBoundingClientRect().top < view ? old.find((r) => r.getBoundingClientRect().bottom > view) : null;
+    const anchorId = anchor ? anchor.dataset.ev : null, anchorY = anchor ? anchor.getBoundingClientRect().top : 0;
     el.innerHTML = this.listHtml();
     this.body.scrollTop = top; // a repaint never jumps the pane's scroll position
+    if (anchorId) { const r = [...el.querySelectorAll(".cx-row")].find((x) => x.dataset.ev === anchorId); if (r) this.body.scrollTop += r.getBoundingClientRect().top - anchorY; }
     const want = focusId || keep;
     if (want) { const r = [...el.querySelectorAll(".cx-row")].find((x) => x.dataset.ev === want); if (r) r.focus({ preventScroll: true }); }
   }
@@ -158,6 +170,7 @@ class CountryPane {
   }
   // same rows in the same order: refresh their content without replacing the elements (focus stays)
   listInPlace(el) {
+    if (!this.items.length) return !this.listErr && !!el.querySelector(".cx-empty"); // empty stays empty: nothing to repaint
     const rows = el.querySelectorAll(".cx-row");
     if (rows.length !== this.items.length || !!el.querySelector(".cx-more") !== this.more) return false;
     for (let i = 0; i < rows.length; i++) if (rows[i].dataset.ev !== this.items[i].id) return false;

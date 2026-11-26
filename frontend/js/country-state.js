@@ -95,6 +95,18 @@ export function mergePage(items, page) {
   return (items || []).concat((page || []).filter((e) => !seen.has(e.id) && seen.add(e.id)));
 }
 
+// a refresh's newest page onto the shown rows: ids not shown yet go on top (in page order),
+// shown ones are replaced in place by their fresh copy (lifecycle, badges), the rest stay as they are
+export function mergeTop(items, page) {
+  const have = new Set((items || []).map((e) => e.id)), fresh = new Map(), top = [];
+  for (const e of page || []) {
+    if (fresh.has(e.id)) continue;
+    fresh.set(e.id, e);
+    if (!have.has(e.id)) top.push(e);
+  }
+  return { items: top.concat((items || []).map((e) => fresh.get(e.id) || e)), added: top.length };
+}
+
 // polyline path of daily counts across a w x h box (half-pixel inset so the stroke stays inside)
 export function sparkPath(spark, w, h) {
   const v = (spark || []).map((d) => +d.n || 0);

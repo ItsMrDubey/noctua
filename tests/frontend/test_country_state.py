@@ -172,6 +172,19 @@ def test_pinned_until_and_merge_page():
     assert run("return S.mergePage(null, [{ id: 'a' }]).length;") == 1
 
 
+def test_merge_top():
+    # a refresh's newest page: new ids on top in page order, shown rows replaced in place, older kept
+    out = run(
+        "const r = S.mergeTop([{ id: 'a', lc: 'active' }, { id: 'b' }, { id: 'old' }], "
+        "[{ id: 'n1' }, { id: 'a', lc: 'cooling' }, { id: 'n2' }, { id: 'n1', dup: 1 }]);"
+        "return { ids: r.items.map((e) => e.id), added: r.added, a: r.items[2].lc, n1: r.items[0].dup || 0 };"
+    )
+    assert out == {"ids": ["n1", "n2", "a", "b", "old"], "added": 2, "a": "cooling", "n1": 0}
+    assert run("const r = S.mergeTop(null, null); return [r.items.length, r.added];") == [0, 0]
+    same = run("const r = S.mergeTop([{ id: 'a' }], [{ id: 'a', v: 2 }]); return [r.added, r.items[0].v];")
+    assert same == [0, 2]
+
+
 def test_labels_use_country_names():
     assert (
         run(
