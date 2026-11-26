@@ -1,6 +1,6 @@
 // Context inspector: object dossier (glyph + threat colour header, tags, profile sparklines,
 // key/value telemetry, provenance) and actions (Fly to, Follow, Trail, Pin).
-import { $, esc, nf, agoHtml, kv } from "/static/js/ui.js";
+import { $, esc, nf, agoHtml, kv, stateHtml } from "/static/js/ui.js";
 import { fmtTime, tzLabel, utcTitle } from "/static/js/timefmt.js";
 import { uiGlyph, threatColor, aircraftRole, ROLE_LABEL, shipClass, SHIP_LABEL } from "/static/js/symbology.js";
 import { EventDossier } from "/static/js/panels/event-dossier.js";
@@ -8,6 +8,15 @@ import { EventDossier } from "/static/js/panels/event-dossier.js";
 const EMERG = { 7500: "Hijack", 7600: "Radio failure", 7700: "Emergency" };
 const tsMs = (ts) => (ts == null ? NaN : typeof ts === "number" ? (ts < 1e11 ? ts * 1000 : ts) : Date.parse(ts));
 const extras = (ex, skip) => Object.entries(ex || {}).filter(([k, v]) => !skip.includes(k) && v != null && v !== "").map(([k, v]) => [k.replace(/_/g, " "), esc(typeof v === "object" ? JSON.stringify(v) : v)]);
+
+// Which profile placeholder to show: data wins; otherwise in-flight is "loading" (only while a trail
+// request is outstanding), then error, then an answered-but-short trail is "empty", else not requested.
+export function trailState({ inFlight, pts, error }) {
+  if (pts && pts.length > 1) return "ready";
+  if (inFlight && pts == null && !error) return "loading"; // a refresh with something to show keeps showing it
+  if (error) return "error";
+  return pts ? "empty" : "off";
+}
 
 function spark(label, pts, fmt) {
   const vals = pts.filter((v) => v != null && !isNaN(v));
@@ -24,7 +33,7 @@ function spark(label, pts, fmt) {
 export class Inspector {
   constructor(actions) {
     this.el = $("right"); this.dz = $("dz"); this.a = actions;
-    this.cur = null; this.points = null;
+    this.cur = null; this.points = null; this.trailReq = { inFlight: false, error: null };
     $("close-details").addEventListener("click", () => actions.close());
     $("d-fly").addEventListener("click", () => actions.fly());
     $("d-follow").addEventListener("click", () => actions.follow());
@@ -43,7 +52,7 @@ export class Inspector {
     });
   }
   get open() { return !this.el.classList.contains("hidden"); }
-  hide() { this.el.classList.add("hidden"); this.cur = null; this.points = null; this._h = null; this._ev = null; this.evd.forget(); }
+  hide() { this.el.classList.add("hidden"); this.cur = null; this.points = null; this.trailReq = { inFlight: false, error: null }; this._h = null; this._ev = null; this.evd.forget(); }
   _show(html, threat) {
     if (this._ev) { this._ev = null; this.evd.forget(); }
     this.el.classList.remove("hidden", "ev");
@@ -56,7 +65,9 @@ export class Inspector {
     t.disabled = !trail; t.classList.toggle("on", !!trailOn);
     p.disabled = !pin; p.classList.toggle("on", !!pinned); p.textContent = pinned ? "Pinned" : "Pin";
   }
-  setTrail(points) { this.points = points; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
+  resetTrail() { this.points = null; this.trailReq = { inFlight: false, error: null }; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
+  setTrailState(inFlight, error) { this.trailReq = { inFlight, error: error || null }; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
+  setTrail(points) { this.points = points; this.trailReq = { inFlight: false, error: null }; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
 
   _head(kind, it, eyebrow, title, sub) {
     const c = threatColor(kind, it);
@@ -79,11 +90,16 @@ export class Inspector {
       sq ? '<span class="tag hp">Squawk ' + esc(ex.squawk) + " " + sq + "</span>" : "", age > 180 ? '<span class="tag stale">Stale ' + Math.round(age / 60) + " min</span>" : ""].join("");
     let prof = "";
     const pts = this.points || [];
-    if (pts.length > 1) {
+    const tstate = trailState({ ...(this.trailReq || {}), pts: this.points });
+    if (tstate === "ready") {
       prof = (air ? spark("ALT", pts.map((p) => p.alt_ft), (v) => nf(v) + " ft") : "") + spark("SPEED", pts.map((p) => p.speed_kts), (v) => nf(v) + " kt");
       const t0 = tsMs(pts[0].ts);
       prof = '<section class="dz-sec"><h3>Profile<small>' + pts.length + " fixes · since " + (isNaN(t0) ? "–" : '<span title="' + esc(utcTitle(t0)) + '">' + fmtTime(t0) + " " + esc(tzLabel(t0).split(" ")[0]) + "</span>") + "</small></h3>" + (prof || '<div class="dz-empty">No altitude / speed samples</div>') + "</section>";
-    } else prof = '<section class="dz-sec"><h3>Profile</h3><div class="dz-empty">Loading trail…</div></section>';
+    } else {
+      const st = tstate === "loading" ? stateHtml("loading", "Loading trail…") : tstate === "error" ? stateHtml("err", "Trail unavailable", this.trailReq.error || "request failed")
+        : tstate === "empty" ? stateHtml("empty", "No trail yet", "Stationary or newly tracked; fewer than two fixes in the last 6 h.") : stateHtml("empty", "Trail off", "Enable Trail to load the track history.");
+      prof = '<section class="dz-sec"><h3>Profile</h3>' + st + "</section>";
+    }
     const tele = air
       ? [["Altitude", it.alt_ft == null ? "–" : nf(it.alt_ft) + " ft · " + nf(it.alt_ft * 0.3048) + " m"], ["Speed", it.speed_kts == null ? "–" : nf(it.speed_kts) + " kt"],
         ["Heading", it.heading_deg == null ? "–" : nf(it.heading_deg) + "°"], ["Squawk", esc(ex.squawk)], ["Position", nf(it.lat, 4) + ", " + nf(it.lon, 4)], ["Last fix", agoHtml(it.ts)]]
@@ -107,14 +123,14 @@ export class Inspector {
   // while loading). Rendered by EventDossier (panels/event-dossier.js), which owns its DOM and
   // only rebuilds when the record changes.
   // nearNuc: {site, km} of the closest known nuclear site within 50 km (client-side), or null
-  event(it, detail, nearNuc) {
+  event(it, detail, nearNuc, detailErr) {
     this.cur = null;
-    this._ev = [it, detail, nearNuc];
+    this._ev = [it, detail, nearNuc, detailErr];
     this.el.classList.remove("hidden");
     this.el.classList.add("ev");
     this.el.style.setProperty("--threat", threatColor("events", it));
     this._h = null; // the dossier owns #dz: the next non-event render must write it
-    if (this.evd.render(this.dz, it, detail, nearNuc)) this.el.scrollTop = this._evScrollFor === it.id ? this.el.scrollTop : 0;
+    if (this.evd.render(this.dz, it, detail, nearNuc, detailErr)) this.el.scrollTop = this._evScrollFor === it.id ? this.el.scrollTop : 0;
     this._evScrollFor = it.id;
   }
 

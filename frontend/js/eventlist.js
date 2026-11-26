@@ -70,7 +70,7 @@ export class EventList {
     const top = this.body.scrollTop, h = this.body.clientHeight;
     const a = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN), b = Math.min(this.rows.length, Math.ceil((top + h) / ROW_H) + OVERSCAN);
     let html = "";
-    if (!this.rows.length) html = '<div class="empty" style="position:absolute;left:0;right:0"><b>No events</b>' + (this.layer.items.size ? "Nothing matches the current filters." : "Waiting for the event builder. Fused events appear here as outlets report them.") + "</div>";
+    if (!this.rows.length) html = '<div class="empty" style="position:absolute;left:0;right:0"><b>No events in window</b>' + (this.layer.items.size ? "Nothing matches the current filters." : "Waiting for the event builder. Fused events appear here as outlets report them.") + "</div>";
     for (let i = a; i < b; i++) {
       const it = this.rows[i];
       const cls = "erow" + (i === this.active ? " act" : "") + (it.id === this.selId ? " sel" : "");

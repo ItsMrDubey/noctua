@@ -35,24 +35,26 @@ export class Trails {
     }
   }
 
-  clearSelected() { this.sel.removeAll(); this.selKey = null; this.points = []; this.scene.requestRender(); }
+  clearSelected() { const k = this.selKey; this.sel.removeAll(); this.selKey = null; if (k && this.onState) this.onState(k, false, null); this.points = []; this.scene.requestRender(); }
 
   // Fetch + draw the trail for the selected track; throttled unless force.
   async showSelected(kind, id, it, force) {
     const key = kind + ":" + id;
     const now = Date.now();
     if (!force && key === this.selKey && now - this.lastSel < 8000) return;
+    const fresh = force || key !== this.selKey; // periodic refreshes of the same track keep the current placeholder (no "loading" flicker)
     this.selKey = key; this.lastSel = now;
+    if (fresh && this.onState) this.onState(key, true, null);
     try {
       const d = await fetchJson("/api/tracks/" + encodeURIComponent(id) + "?hours=6");
-      if (this.selKey !== key) return; // selection changed while fetching
+      if (this.selKey !== key) { if (this.onState) this.onState(key, false, null); return; } // selection changed / trail toggled off while fetching
       const pts = (d.points || []).map((p) => [p.lon, p.lat, kind === "aircraft" ? (p.alt_ft || 0) * 0.3048 : 0]);
       this.sel.removeAll();
       this._draw(this.sel, pts, colorFor(kind, it), 3);
       this.points = d.points || [];
       if (this.onPoints) this.onPoints(key, this.points);
       this.scene.requestRender();
-    } catch (e) { /* keep previous trail */ }
+    } catch (e) { if (this.selKey === key && this.onState) this.onState(key, false, String((e && e.message) || e)); /* keep previous trail */ }
   }
 
   async refreshMil() {

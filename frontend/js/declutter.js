@@ -25,7 +25,7 @@
 // Layer-tree wiring: call ctx.declutter.setMode("auto" | "off"), read .mode, listen via
 // .onModeChange((mode) => {}). Until the tree has a row, a small "LOD" button sits in the HUD.
 import { bandOf, gridStep, aggregate, mergeClose, allocate, placeLabels, spiderOffsets, topCategory, eventPriority, shipPriority, aircraftPriority, firePriority, BUDGET, LOD, LABEL_CAP, EVENT_LABELS } from "/static/js/lod.js";
-import { EVENT_CATS } from "/static/js/symbology.js";
+import { catColor, COLORS } from "/static/js/symbology.js";
 import { evTitle } from "/static/js/ui.js";
 
 const C = Cesium;
@@ -33,7 +33,7 @@ const STORE_KEY = "noctua.declutter";
 const FONT = "600 11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
 const BLACK = C.Color.BLACK.withAlpha(0.85);
 const FIRE_CELL = Array.from({ length: 11 }, (_, i) => C.Color.fromHsl(0.13 - 0.13 * (i / 10), 1, 0.52 - 0.12 * (i / 10), 0.42 + 0.33 * (i / 10)));
-const SHIP_CELL = Array.from({ length: 11 }, (_, i) => C.Color.fromCssColorString("#7fa8ff").withAlpha(0.22 + 0.4 * (i / 10)));
+const SHIP_CELL = Array.from({ length: 11 }, (_, i) => C.Color.fromCssColorString(COLORS.ship).withAlpha(0.22 + 0.4 * (i / 10)));
 const CELL_OUT = C.Color.BLACK.withAlpha(0.35);
 const BADGE_OFF = new C.Cartesian2(14, -14);
 const BADGE_EYE = new C.Cartesian3(0, 0, -50); // drawn just in front of the glyph it annotates
@@ -41,8 +41,7 @@ const LABEL_OFF = new C.Cartesian2(18, 4); // right of the glyph, clear of its "
 const ZERO2 = new C.Cartesian2(0, 0);
 const CELL_FADE = new C.NearFarScalar(2e6, 1.0, 3e7, 0.8);
 const TRACK_DELAY = 2500, DATA_DELAY = 300, VIEW_DELAY = 120;
-const catColor = (c) => (EVENT_CATS[c] || ["", "#a99bff"])[1];
-const AIR_BADGE = "#9ff3ff", AIR_HOT = "#ff4b55";
+const AIR_BADGE = COLORS.air, AIR_HOT = COLORS.hp;
 const fmtN = (n) => (n >= 10000 ? Math.round(n / 1000) + "k" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
 
 export class Declutter {
@@ -324,7 +323,7 @@ export class Declutter {
     const key = text + "|" + color + "|" + (big ? 1 : 0);
     let url = this.imgs.get(key);
     if (url) return url;
-    const fs = big ? 12 : 9, hgt = big ? 19 : 13;
+    const fs = big ? 12 : 11, hgt = big ? 19 : 15;
     const cv = document.createElement("canvas"), g = cv.getContext("2d");
     g.font = "700 " + fs + "px Consolas, monospace";
     const w = Math.max(hgt, Math.ceil(g.measureText(text).width) + (big ? 12 : 8));

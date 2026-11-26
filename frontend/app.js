@@ -6,7 +6,7 @@ import { DensityLayer } from "/static/js/density.js";
 import { Timeline, RANGES } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $, esc, evTitle } from "/static/js/ui.js";
+import { $, esc, evTitle, settleLoading } from "/static/js/ui.js";
 import { fmtDateTime, onTzChange } from "/static/js/timefmt.js";
 import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
 import { BASE_URL } from "/static/js/layers.js";
@@ -287,16 +287,25 @@ async function main() {
     const it = byKind[selected.kind].items.get(selected.id);
     if (!it) return;
     if (isTrack(selected.kind)) { inspector.track(selected.kind, it, detail && detail.id === selected.id ? detail : null); alerts.squawk(withExtra(it)); }
-    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null, hooks.nearNuclear(it));
+    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null, hooks.nearNuclear(it), detailErr && detailErr.id === selected.id ? detailErr.msg : null);
     else inspector.observation(selected.kind, it);
   }
-  async function loadDetail(kind, id) {
-    detail = null;
+  let detailErr = null; // {id, msg} when the full-record fetch for the selected event failed
+  let detailBusy = false;
+  // `retry`: a re-fetch after a failure; keeps the error showing (no flicker) until it succeeds
+  async function loadDetail(kind, id, retry) {
+    if (!retry) { detail = null; detailErr = null; }
     if (!isTrack(kind) && kind !== "events") return;
+    detailBusy = true;
     try {
       const d = await fetchJson((kind === "events" ? "/api/events/" : "/api/track/") + encodeURIComponent(id), 8000);
-      if (selected && selected.id === id) { detail = d; refreshSelected(); }
-    } catch (e) { /* older backend or unknown track: the list item is enough */ }
+      if (selected && selected.id === id) { detail = d; detailErr = null; refreshSelected(); }
+    } catch (e) { /* older backend or unknown track: the list item is enough */ if (selected && selected.id === id) { detailErr = { id, msg: String((e && e.message) || e), at: Date.now() }; refreshSelected(); } }
+    finally { detailBusy = false; }
+  }
+  // bounded retry (at most every 15 s) of a failed full-record fetch, driven by the 5 s refresh tick
+  function retryDetail() {
+    if (selected && selected.kind === "events" && detailErr && detailErr.id === selected.id && !detailBusy && Date.now() - detailErr.at >= 15000) loadDetail(selected.kind, selected.id, true);
   }
   // module-rendered selections (webcam, carrier hypothesis) own timers / labels: release them
   const mods = { wc: null, naval: null };
@@ -309,7 +318,7 @@ async function main() {
     if (!(kind === "events" && nearFor === id)) clearNear();
     refSel = null;
     selected = { kind, id };
-    inspector.points = null;
+    inspector.points = null; inspector.trailReq = { inFlight: false, error: null };
     refreshSelected();
     buttons();
     loadDetail(kind, id);
@@ -363,7 +372,7 @@ async function main() {
       else if (selected) flyToItem(selected.kind, selected.id);
     },
     follow: () => setFollow(!following),
-    trail: () => { trailOn = !trailOn; if (trailOn) trailSelected(true); else trails.clearSelected(); buttons(); },
+    trail: () => { trailOn = !trailOn; if (trailOn) trailSelected(true); else { trails.clearSelected(); inspector.resetTrail(); } buttons(); },
     flyToPoint: (lat, lon, alt) => flyTo(lat, lon, alt),
     highlight: (pts) => highlight(pts),
     select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); },
@@ -376,6 +385,7 @@ async function main() {
       savePins(); tracklist.dirty = true; tracklist.render(true); buttons();
     },
   });
+  trails.onState = (key, inFlight, err) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrailState(inFlight, err); };
   trails.onPoints = (key, pts) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrail(pts); };
   const fireScore = installFireScore({ viewer, fires, inspector }); // fire conflict score: style, filter, dossier, front line
 
@@ -701,7 +711,7 @@ async function main() {
     if (!has("/api/density")) disable(["d-aircraft", "d-ships", "d-fires", "d-quakes", "d-res"], "Not supported by this backend version");
     if (!has("/api/reference")) { disable([...REF_IDS], "Reference data not supported by this backend version"); for (const id of REF_IDS) refLayers.setOn(id, false); }
     if (!has("/api/tracks")) disable(["t-miltrails"], "Not supported by this backend version");
-    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-range", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
+    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-r-48h", "tl-r-7d", "tl-r-30d", "tl-r-1y", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
   }).catch(() => { /* openapi unavailable: leave controls enabled */ });
 
   // ---- Replay (time slider) ----
@@ -893,6 +903,7 @@ async function main() {
     feed("fires", "/api/layers/fires?hours=24", fires), feed("quakes", "/api/layers/quakes?hours=24", quakes),
   ];
   poll("events", 60000, () => evFeed.tick(), onErr);
+  settleLoading($("ev-score"), 15000, "Scorecard unavailable");
   poll("events-stats", 60000, () => refreshEventStats(), onErr);
   poll("status", 5000, async () => { lastStatus = await fetchJson("/api/status", 8000); freshness.setStatus(lastStatus); }, onErr);
   poll("aircraft", 10000, ticks[0], onErr);
@@ -900,7 +911,7 @@ async function main() {
   poll("fires", 300000, ticks[2], onErr);
   poll("quakes", 300000, ticks[3], onErr);
   // refresh relative "last seen" in the inspector
-  setInterval(() => { if (selected) { refreshSelected(); if (!replayAt) trailSelected(false); } }, 5000);
+  setInterval(() => { if (selected) { refreshSelected(); retryDetail(); if (!replayAt) trailSelected(false); } }, 5000);
   // ---- Selection reticle + high-priority halos ----
   const reticle = new Reticle(scene);
   fx.setTarget = (fn, kind) => reticle.setTarget(fn, kind);

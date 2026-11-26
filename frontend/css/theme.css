@@ -1,104 +1,170 @@
-/* NOCTUA // GLOBAL WATCH — design tokens, base elements, glass panel primitive. */
+/* NOCTUA // GLOBAL WATCH — intel-console theme (amber phosphor): design tokens, base elements,
+   panel primitive, Cesium widget overrides. Globe colours (js/symbology.js, js/theme/globe.js) are
+   read from these custom properties at startup: keep PALETTE_FALLBACK in js/symbology.js equal to
+   the values here (tests/frontend/test_theme.py checks it). */
 :root {
-  --void: #05080d;
-  --deep: #08101a;
-  --glass: rgba(7, 13, 21, .80);
-  --glass-hi: rgba(10, 19, 30, .92);
-  --line: rgba(120, 175, 205, .16);
-  --line-2: rgba(120, 175, 205, .28);
-  --fg: #d3dee8;
-  --fg-2: #9fb0c0;
-  --dim: #66798c;
-  --ion: #5ee3ea;        /* primary accent */
-  --amber: #f2ad3d;      /* warnings + replay */
-  --red: #ff4b55;        /* threat / high priority only */
-  --green: #4fdf8c;      /* healthy */
-  --violet: #a99bff;     /* starting / pending */
-  --acc: var(--ion);
-  --acc-rgb: 94, 227, 234;
+  /* surfaces */
+  --void: #0a0a08;
+  --deep: #11110d;
+  --raise: #181812;
+  --glass: #11110df2;
+  --glass-hi: #181812f7;
+  --line: rgba(255, 176, 0, .14);
+  --line-2: rgba(255, 176, 0, .28);
+  /* text */
+  --fg: #f2e6c9;
+  --fg-2: #b8a57e;
+  --dim: #6e6450;
+  /* accents */
+  --amber: #ffb000;
+  --acc: var(--amber);
+  --acc-rgb: 255, 176, 0;
+  --red: #ff4d2e;
+  --red-2: #ff8a70;
+  --green: #7fd16b;
+  --ion: #7fb8c9;
+  --violet: #c792ea;
+  /* event categories (js/symbology.js EVENT_CATS): distinct, none amber (amber = selection) */
+  --cat-armed_conflict: #ff4d4d;
+  --cat-air_activity: #8fd3ff;
+  --cat-maritime_security: #5b8cff;
+  --cat-civil_unrest: #ff7eb6;
+  --cat-disaster: #ff7a1a;
+  --cat-infrastructure: #45c9b0;
+  --cat-political: #b69cff;
+  --cat-economic: #7fd16b;
+  --cat-cyber_outage: #e36bff;
+  --cat-other: #a89f8a;
+  /* event status: luminance + saturation rise with corroboration (reads in greyscale) */
+  --st-reported: #7d735f;
+  --st-multi-source: #a39470;
+  --st-sensor-detected: #c7ad6e;
+  --st-sensor-corroborated: #e6c35c;
+  --st-official: #ffe066;
+  /* threat scale 0..4: dim sand -> amber-orange -> red */
+  --thr-0: #8c8270;
+  --thr-1: #c9a66b;
+  --thr-2: #ff9f1c;
+  --thr-3: #ff6a1f;
+  --thr-4: #ff3b2b;
+  /* track + sensor symbology (js/symbology.js COLORS) */
+  --sym-air: #8fe8f5;
+  --sym-air-civ: #bdb6a5;
+  --sym-hp: #ff4d2e;
+  --sym-ship: #6f9cff;
+  --sym-ship-mil: #ff4d2e;
+  --sym-fire: #ff7a1a;
+  --sym-quake: #f2e45c;
+  --sym-hist: #8f86c9;
+  /* globe (js/theme/globe.js, js/reference.js) */
+  --globe-line: rgba(255, 176, 0, .18);
+  --globe-base: #0c0b08;
+  /* effects */
+  --glow: 0 0 0 1px var(--acc), 0 0 8px rgba(var(--acc-rgb), .35);
+  --radius: 2px;
+  /* type */
   --f-head: "Bahnschrift SemiCondensed", "Bahnschrift", "Segoe UI Variable Display", "Segoe UI Variable", "Inter", "Arial Narrow", sans-serif;
   --f-body: "Segoe UI Variable Text", "Segoe UI Variable", "Inter", "Segoe UI", system-ui, sans-serif;
   --f-mono: "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, "SFMono-Regular", monospace;
+  /* motion + layout (8px spacing scale) */
   --t-fast: 140ms;
   --t-med: 200ms;
   --ease: cubic-bezier(.2, .7, .2, 1);
-  --gap: 10px;
+  --gap: 8px;
   --bar-h: 48px;
   --dock-h: 118px;
+  --foot-h: 14px;
 }
-body.replay { --acc: var(--amber); --acc-rgb: 242, 173, 61; }
+/* replay: amber is the live default, so replay switches the accent to cyan */
+body.replay { --acc: #7fb8c9; --acc-rgb: 127, 184, 201; --glow: 0 0 0 1px var(--acc), 0 0 8px rgba(var(--acc-rgb), .35); } /* --glow is computed on :root, so re-declare it here to pick up the cyan accent */
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: var(--void); color: var(--fg); font: 13px/1.4 var(--f-body); -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--void); color: var(--fg); font: 12px/1.45 var(--f-body); -webkit-font-smoothing: antialiased; }
 #globe { position: fixed; inset: 0; }
 .cesium-viewer-bottom, .cesium-viewer-toolbar { display: none !important; }
 .hidden { display: none !important; }
-::selection { background: rgba(var(--acc-rgb), .35); }
-a { color: var(--acc); text-decoration: none; border-bottom: 1px dotted rgba(var(--acc-rgb), .5); }
+::selection { background: rgba(var(--acc-rgb), .35); color: var(--fg); }
+a { color: var(--acc); text-decoration: none; border-bottom: 1px dotted rgba(var(--acc-rgb), .6); }
 a:hover { border-bottom-style: solid; }
-kbd { font: 10px var(--f-mono); color: var(--fg-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: rgba(255, 255, 255, .03); }
-.mono, .num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+kbd { font: 11px var(--f-mono); color: var(--fg-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: var(--radius); padding: 0 4px; background: var(--raise); }
+/* data in mono: numbers, ids, coordinates, timestamps, code, table cells */
+.mono, .num, code, kbd, time, output, td { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 
-/* cinematic vignette + replay frame (pointer-transparent) */
+/* vignette + replay frame (pointer-transparent) */
 #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 5;
-  background: radial-gradient(ellipse at 50% 46%, transparent 55%, rgba(2, 5, 9, .55) 100%); }
-#vignette::after { content: ""; position: absolute; inset: 0; border: 0 solid var(--amber); opacity: 0; transition: opacity var(--t-med) var(--ease);
-  box-shadow: inset 0 0 0 1px rgba(242, 173, 61, .55), inset 0 0 90px rgba(242, 173, 61, .14); }
+  background: radial-gradient(ellipse at 50% 46%, transparent 55%, rgba(10, 10, 8, .6) 100%); }
+#vignette::after { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity var(--t-med) var(--ease);
+  box-shadow: inset 0 0 0 1px rgba(var(--acc-rgb), .55), inset 0 0 90px rgba(var(--acc-rgb), .12); }
 body.replay #vignette::after { opacity: 1; }
+/* optional scanline overlay (Settings > Display); above the globe, under the panels, never takes input */
+body.fx-crt::after { content: ""; position: fixed; inset: 0; z-index: 6; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px); }
 
-/* ---- glass panel: hairline border, faint scanlines, bracketed corners ---- */
+/* ---- panel primitive: matte surface, hairline border, bracketed corners (no blur, no shadow) ---- */
 .glass {
   position: fixed; z-index: 10;
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, .016) 0 1px, transparent 1px 3px),
-    linear-gradient(180deg, rgba(var(--acc-rgb), .035), transparent 40%),
-    var(--glass);
+  background: var(--glass);
   border: 1px solid var(--line);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035), inset 0 0 24px rgba(var(--acc-rgb), .025), 0 12px 32px rgba(0, 0, 0, .45);
-  backdrop-filter: blur(10px) saturate(1.1);
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
-  transition: border-color var(--t-med), box-shadow var(--t-med);
+  border-radius: var(--radius);
+  transition: border-color var(--t-med);
 }
-.glass::before, .glass::after { content: ""; position: absolute; width: 9px; height: 9px; pointer-events: none; border: 0 solid rgba(var(--acc-rgb), .75); transition: border-color var(--t-med); }
+.glass::before, .glass::after { content: ""; position: absolute; width: 8px; height: 8px; pointer-events: none; border: 0 solid rgba(var(--acc-rgb), .6); }
 .glass::before { top: -1px; left: -1px; border-top-width: 1px; border-left-width: 1px; }
 .glass::after { bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; }
 
-/* eyebrow / section labels */
-.eyebrow, h3 { margin: 0; font: 600 10.5px/1 var(--f-head); letter-spacing: .2em; text-transform: uppercase; color: var(--dim); }
+/* section / panel titles: head font, uppercase, 11px */
+.eyebrow, h3 { margin: 0; font: 600 11px/1 var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
 
 /* ---- controls ---- */
-button { font: 600 11px/1 var(--f-head); letter-spacing: .1em; text-transform: uppercase; color: var(--fg);
-  background: rgba(var(--acc-rgb), .07); border: 1px solid var(--line-2); padding: 6px 10px; cursor: pointer;
+button { font: 600 11px/1 var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--fg);
+  background: transparent; border: 1px solid var(--line-2); border-radius: var(--radius); padding: 6px 10px; cursor: pointer;
   transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast); }
-button:hover { background: rgba(var(--acc-rgb), .16); border-color: rgba(var(--acc-rgb), .6); }
-button.on { background: rgba(var(--acc-rgb), .22); border-color: var(--acc); color: #fff; box-shadow: inset 0 0 10px rgba(var(--acc-rgb), .25); }
+button:hover { background: var(--raise); border-color: rgba(var(--acc-rgb), .6); }
+button.on { background: rgba(var(--acc-rgb), .16); border-color: var(--acc); color: var(--fg); }
 button:disabled { opacity: .35; cursor: not-allowed; }
 button.ghost { background: transparent; border-color: transparent; color: var(--fg-2); }
 button.ghost:hover { color: var(--fg); border-color: var(--line-2); }
-:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
-input, select { font: 12px var(--f-mono); color: var(--fg); background: rgba(0, 0, 0, .35); border: 1px solid var(--line-2); padding: 3px 6px; outline: none; color-scheme: dark; }
+/* keyboard focus: one visible treatment on every interactive element */
+:focus { outline: none; }
+:focus-visible { outline: none; box-shadow: var(--glow) !important; }
+input, select { font: 12px var(--f-mono); color: var(--fg); background: var(--void); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 3px 6px; outline: none; color-scheme: dark; }
 input:focus, select:focus { border-color: var(--acc); }
-input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 12px; height: 12px; margin: 0; padding: 0; flex: none; border: 1px solid var(--line-2); background: rgba(0, 0, 0, .4); cursor: pointer; position: relative; }
+input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 12px; height: 12px; margin: 0; padding: 0; flex: none; border: 1px solid var(--line-2); border-radius: 0; background: var(--void); cursor: pointer; position: relative; }
 input[type=checkbox]:checked { border-color: var(--acc); background: rgba(var(--acc-rgb), .2); }
-input[type=checkbox]:checked::after { content: ""; position: absolute; inset: 2px; background: var(--acc); box-shadow: 0 0 6px var(--acc); }
+input[type=checkbox]:checked::after { content: ""; position: absolute; inset: 2px; background: var(--acc); }
 input[type=checkbox]:disabled { opacity: .3; cursor: not-allowed; }
 
 /* status dots */
-.dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #3a4654; color: #3a4654; }
-.dot.healthy { background: var(--green); color: var(--green); box-shadow: 0 0 6px currentColor; }
-.dot.degraded { background: var(--amber); color: var(--amber); box-shadow: 0 0 6px currentColor; }
-.dot.down { background: var(--red); color: var(--red); box-shadow: 0 0 6px currentColor; }
+.dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--dim); color: var(--dim); }
+.dot.healthy { background: var(--green); color: var(--green); }
+.dot.degraded { background: var(--amber); color: var(--amber); }
+.dot.down { background: var(--red); color: var(--red); }
 .dot.starting { background: var(--violet); color: var(--violet); }
 
-/* scrollbars */
-* { scrollbar-width: thin; scrollbar-color: rgba(120, 175, 205, .25) transparent; }
+/* scrollbars: thin, --line-2 */
+* { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: rgba(120, 175, 205, .25); }
+::-webkit-scrollbar-thumb { background: var(--line-2); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 #pick-tip { top: calc(var(--bar-h) + 20px); left: 50%; transform: translateX(-50%); padding: 6px 12px; pointer-events: none; font: 11px var(--f-mono); }
-#attrib { position: fixed; z-index: 9; bottom: 1px; left: 50%; transform: translateX(-50%); font: 9px var(--f-mono); color: rgba(159, 176, 192, .45); white-space: nowrap; pointer-events: none; letter-spacing: .02em; }
-#attrib a { pointer-events: auto; color: var(--acc); text-decoration: none; }
+/* attribution footer: its own --foot-h strip under the dock; the licences link leads, the rest truncates */
+#attrib { position: fixed; z-index: 9; bottom: 0; left: 50%; transform: translateX(-50%); height: var(--foot-h); max-width: calc(100vw - 2 * var(--gap)); overflow: hidden; text-overflow: ellipsis;
+  font: 11px/14px var(--f-mono); color: var(--dim); white-space: nowrap; pointer-events: none; }
+#attrib a { pointer-events: auto; color: var(--acc); }
+
+/* ---- Cesium widgets (most are disabled in theme/globe.js; these can still appear) ---- */
+.cesium-widget-errorPanel { background: rgba(10, 10, 8, .92); }
+.cesium-widget-errorPanel-content { background: var(--deep); color: var(--fg); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: none; font: 12px var(--f-body); }
+.cesium-widget-errorPanel-header { color: var(--red); font: 600 11px var(--f-head); letter-spacing: .08em; text-transform: uppercase; }
+.cesium-widget-errorPanel-message { color: var(--fg-2); font: 11px var(--f-mono); }
+.cesium-button { background: var(--raise); color: var(--fg); fill: var(--fg); border: 1px solid var(--line-2); border-radius: var(--radius); }
+.cesium-button:hover { background: var(--raise); color: var(--fg); border-color: var(--acc); box-shadow: none; }
+.cesium-infoBox { background: var(--deep); color: var(--fg); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: none; }
+.cesium-infoBox-title { background: var(--raise); color: var(--fg); font: 600 11px var(--f-head); letter-spacing: .08em; text-transform: uppercase; }
+.cesium-credit-lightbox-overlay { background: rgba(10, 10, 8, .8); }
+.cesium-credit-lightbox { background: var(--deep); color: var(--fg); border: 1px solid var(--line-2); border-radius: var(--radius); }
+.cesium-credit-lightbox a { color: var(--acc); }
 
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes slide-l { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }

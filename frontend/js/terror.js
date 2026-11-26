@@ -13,16 +13,17 @@
 // * indicators are compared with stated baselines ("no baseline yet" when data is short) and
 //   are labelled as indicators, not predictions.
 import { fetchJson, poll } from "/static/js/api.js";
-import { $, esc, nf } from "/static/js/ui.js";
+import { $, esc, nf, stateHtml } from "/static/js/ui.js";
 import { timeHtml, fmtDateTime } from "/static/js/timefmt.js";
 import { gridStep, aggregate, mergeClose, bandOf } from "/static/js/lod.js";
 import { sec, wireSections, chip } from "/static/js/panels/dossier-kit.js";
+import { cssColor } from "/static/js/symbology.js";
 
 const C = window.Cesium;
-export const TW_STATUS = { confirmed: "#ff3b4e", reported: "#ff9b3d", possible: "#a99bff" };
+export const TW_STATUS = { confirmed: cssColor("--red"), reported: cssColor("--thr-2"), possible: cssColor("--violet") || "#c792ea" };
 export const TW_STATUS_TEXT = { confirmed: "Confirmed", reported: "Reported (unconfirmed)", possible: "Possible", excluded: "Excluded", context: "Context", pending: "Pending" };
 export const TW_ATTR_TEXT = { claimed: "Claimed", attributed_by_authorities: "Attributed by authorities", suspected: "Suspected (media)", unknown: "Unknown" };
-const ATTR_RING = { claimed: "#ffffff", attributed_by_authorities: "#5ee3ea", suspected: "#c9d2dc", unknown: "#2a3440" };
+const ATTR_RING = { claimed: "#ffffff", attributed_by_authorities: cssColor("--ion"), suspected: cssColor("--fg-2"), unknown: cssColor("--dim") };
 const CLASS_TEXT = { attack: "Attack", plot: "Plot / foiled plot", arrest: "Arrest", prosecution: "Prosecution", threat: "Threat / hoax", ct_operation: "CT operation" };
 const LIST_TEXT = { us_fto: "US FTO", us_sdgt: "US SDGT", un_1267: "UN 1267", un_1988: "UN 1988", uk_proscribed: "UK proscribed", eu_terr: "EU terrorist list", eu_isil_aq: "EU ISIL/AQ" };
 const PREC_TEXT = { point: "exact site", city: "city", admin1: "province / region", country: "country only", unknown: "unknown" };
@@ -95,8 +96,8 @@ export class TerrorLayer {
       const size = 7 + Math.min(9, Math.log2(1 + k) * 2);
       const pos = C.Cartesian3.fromDegrees(c.n > 1 ? c.lon : it.lon, c.n > 1 ? c.lat : it.lat, 0);
       this.pts.add({ position: pos, pixelSize: c.n > 1 ? Math.min(26, 12 + Math.log2(c.n) * 3) : size,
-        color: C.Color.fromCssColorString(TW_STATUS[it.status] || "#a99bff").withAlpha(it.status === "possible" ? 0.55 : 0.92),
-        outlineColor: C.Color.fromCssColorString(c.n > 1 ? "#05080d" : ATTR_RING[(it.attribution_level || "unknown")] || "#2a3440"), outlineWidth: c.n > 1 ? 1.5 : 2,
+        color: C.Color.fromCssColorString(TW_STATUS[it.status] || TW_STATUS.possible).withAlpha(it.status === "possible" ? 0.55 : 0.92),
+        outlineColor: C.Color.fromCssColorString(c.n > 1 ? cssColor("--void") : ATTR_RING[(it.attribution_level || "unknown")] || ATTR_RING.unknown), outlineWidth: c.n > 1 ? 1.5 : 2,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
         id: c.n > 1 ? { terror: true, cluster: c.ids.map((x) => byId.get(x)).filter(Boolean), lat: c.lat, lon: c.lon, w: c.w, s: c.s, e: c.e, nn: c.nn } : { terror: true, incident: it } });
       if (c.n > 1) this.labels.add({ position: pos, text: String(c.n), font: "600 11px Inter, sans-serif", fillColor: C.Color.WHITE,
@@ -419,7 +420,17 @@ export class TerrorPanel {
   }
   async refresh() {
     const qs = "days=" + this.days + (this.cc ? "&country=" + this.cc : "") + "&limit=500";
-    const [feed, g] = await Promise.all([fetchJson("/api/terror/feed?" + qs, 30000), this.global ? Promise.resolve(this.global) : fetchJson("/api/terror/board/global", 30000).catch(() => null)]);
+    let feed, g;
+    try {
+      [feed, g] = await Promise.all([fetchJson("/api/terror/feed?" + qs, 30000), this.global ? Promise.resolve(this.global) : fetchJson("/api/terror/board/global", 30000).catch(() => null)]);
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (!this.items.length) { this.el.innerHTML = stateHtml("err", "Terror Watch feed unavailable", msg); return; }
+      // already rendered: keep the data, show a one-line non-destructive note above it
+      const note = this.el.querySelector(".tw-stale") || this.el.insertAdjacentElement("afterbegin", Object.assign(document.createElement("div"), { className: "tw-stale" }));
+      note.innerHTML = stateHtml("err", "Showing last data", "Refresh failed: " + msg);
+      return;
+    }
     this.items = (feed && feed.items) || []; this.global = g;
     this.render();
   }
@@ -432,7 +443,7 @@ export class TerrorPanel {
       '<div class="tw-head-row"><span>Global UCDP tempo ' + verdictChip(t.verdict || (t.available === false ? "no data" : "–")) + '</span><span>News tempo ' + chip(nt.verdict || "–") + "</span></div>" +
       '<div class="tw-head-row">' + NAV.map(([spec, label]) => '<button type="button" class="ghost" data-open=\'' + esc(JSON.stringify(spec)) + "'>" + esc(label) + "</button>").join("") + "</div></div>";
     const rows = vis.map((x) => this.row(x)).join("");
-    this.el.innerHTML = head + (rows ? '<ul class="tw-feed">' + rows + "</ul>" : '<div class="empty">Nothing in the window for these filters.</div>');
+    this.el.innerHTML = head + (rows ? '<ul class="tw-feed">' + rows + "</ul>" : stateHtml("empty", "No items in window", "Nothing matches these filters in the selected window."));
   }
   row(x) {
     if (x.type === "incident") {
@@ -444,14 +455,14 @@ export class TerrorPanel {
     }
     if (x.type === "designation") {
       const spec = x.group_id ? { type: "terror-group", id: x.group_id } : { type: "terror-groups" };
-      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:#f2ad3d"></i><div><a href="#" data-open=\'' + esc(JSON.stringify(spec)) + "'>" + esc((LIST_TEXT[x.list_id] || x.list_id) + " · " + x.change + ": " + x.name) + "</a>" +
+      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--amber)"></i><div><a href="#" data-open=\'' + esc(JSON.stringify(spec)) + "'>" + esc((LIST_TEXT[x.list_id] || x.list_id) + " · " + x.change + ": " + x.name) + "</a>" +
         '<small class="tw-muted">' + esc(x.date) + " · " + esc(x.date_basis || "") + "</small></div></li>";
     }
     if (x.type === "level_change" || x.type === "advisory_change") {
-      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:#5ee3ea"></i><div><a href="#" data-open=\'' + esc(JSON.stringify({ type: "terror-country", cc: x.country })) + "'>" + esc(x.country + " · " + (x.authority || "US advisory") + ": " + (x.prev_level ?? "?") + " → " + (x.level ?? "?")) + "</a>" +
+      return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--ion)"></i><div><a href="#" data-open=\'' + esc(JSON.stringify({ type: "terror-country", cc: x.country })) + "'>" + esc(x.country + " · " + (x.authority || "US advisory") + ": " + (x.prev_level ?? "?") + " → " + (x.level ?? "?")) + "</a>" +
         '<small class="tw-muted">detected ' + when(x.observed_at) + (x.as_of ? " · as of " + esc(x.as_of) : "") + "</small></div></li>";
     }
-    return '<li class="tw-fi"><i class="tw-dot sq" style="--c:#8fa3b8"></i><div><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(x.title) + "</a>" +
+    return '<li class="tw-fi"><i class="tw-dot sq" style="--c:var(--fg-2)"></i><div><a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer" data-ext="1">' + esc(x.title) + "</a>" +
       '<small class="tw-muted">' + esc(x.source) + " · " + esc(x.kind || "") + " · " + when(x.published_at || x.first_seen) + " (" + esc(x.date_basis || "") + ")" + (x.group_ids && x.group_ids.length ? " · mentions " + esc(x.group_ids.join(", ")) : "") + "</small></div></li>";
   }
 }
@@ -477,7 +488,7 @@ export function installTerror(ctx) {
   const chips = $("tw-chips");
   if (chips) {
     chips.innerHTML = ["confirmed", "reported", "possible"].map((s) => '<button class="chip' + (layer.filter.statuses.has(s) ? " on" : "") + '" data-st="' + s + '" style="--c:' + TW_STATUS[s] + '">' + s + "</button>").join("") +
-      [["attack", "attacks"], ["plot", "plots"], ["arrest", "arrests"], ["threat", "threats"]].map(([k, l]) => '<button class="chip on" data-k="' + k + '" style="--c:#8fa3b8">' + l + "</button>").join("");
+      [["attack", "attacks"], ["plot", "plots"], ["arrest", "arrests"], ["threat", "threats"]].map(([k, l]) => '<button class="chip on" data-k="' + k + '" style="--c:var(--fg-2)">' + l + "</button>").join("");
     chips.addEventListener("click", (e) => {
       const b = e.target.closest(".chip");
       if (!b) return;

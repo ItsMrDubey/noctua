@@ -1,17 +1,17 @@
 // News events: map layer (billboards by category / status / confidence), filter state, 60 s incremental poll.
 import { Layer, GLYPH_SCALE, GLYPH_FADE } from "/static/js/layers.js";
-import { EVENT_CATS, eventCat, eventGlyph } from "/static/js/symbology.js";
+import { EVENT_CATS, eventGlyph, cesiumColor } from "/static/js/symbology.js";
 import { fetchJson } from "/static/js/api.js";
 
 const C = Cesium;
 const EV_SCALE = GLYPH_SCALE, EV_FADE = GLYPH_FADE; // same distance scale / fade as the track glyphs
 const COLOR = {}, COLOR_FAINT = {};
-for (const [k, v] of Object.entries(EVENT_CATS)) {
-  COLOR[k] = C.Color.fromCssColorString(v[1]);
-  COLOR_FAINT[k] = COLOR[k].withAlpha(0.5);
+for (const k of Object.keys(EVENT_CATS)) {
+  COLOR[k] = cesiumColor("--cat-" + k);
+  COLOR_FAINT[k] = cesiumColor("--cat-" + k, 0.5);
 }
-const DEFAULT = C.Color.fromCssColorString(eventCat("")[1]);
-const DEFAULT_FAINT = DEFAULT.withAlpha(0.5);
+const DEFAULT = cesiumColor("--cat-other");
+const DEFAULT_FAINT = cesiumColor("--cat-other", 0.5);
 export const STATUSES = ["reported", "multi-source", "sensor-detected", "sensor-corroborated", "official"];
 const isHollow = (it) => it.precision === "country";
 const tsOf = (s) => { const t = Date.parse(s); return isNaN(t) ? 0 : t; };

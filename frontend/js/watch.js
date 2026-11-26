@@ -7,7 +7,7 @@ import { fetchJson } from "/static/js/api.js";
 import { esc, kv, agoHtml } from "/static/js/ui.js";
 
 const C = Cesium;
-const FONT = "600 10px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
+const FONT = "600 11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
 const SEV_COLOR = { high: "#ff3b4e", warn: "#ffb020", info: "#5ee3ea" };
 const ring = (c) => "data:image/svg+xml;utf8," + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="' + c + '" stroke-width="2">' +

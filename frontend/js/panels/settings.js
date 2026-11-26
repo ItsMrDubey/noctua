@@ -5,6 +5,7 @@ import { getTz, setTz, onTzChange, localTz, tzLabel, listZones, fmtDateTime } fr
 import { bindPopover } from "/static/js/panels/topbar.js";
 
 const MAX_LIST = 60;
+const CRT_KEY = "noctua.fx.crt";
 
 export function installSettings() {
   const btn = $("cfg-btn"), pop = $("cfg-pop");
@@ -21,8 +22,20 @@ export function installSettings() {
     '<input id="cfg-zone-q" type="search" placeholder="Search time zones (e.g. London, Tokyo)" autocomplete="off" spellcheck="false" aria-label="Search time zones" aria-controls="cfg-zones">' +
     '<div id="cfg-zones" class="cfg-zones" role="listbox" aria-label="Time zones"></div>' +
     '<div class="row-note">Times show in this zone; hover any time for the exact UTC instant. Relative ages ("3m ago") are unaffected.</div>' +
+    "</section>" +
+    '<section class="sp-sec"><h5>Display</h5>' +
+    '<label class="row"><input type="checkbox" id="cfg-crt"><span>Scanline overlay <small>CRT effect · off by default</small></span></label>' +
     "</section>";
   const q = $("cfg-zone-q"), list = $("cfg-zones");
+  const crt = $("cfg-crt");
+  let crtOn = false;
+  try { crtOn = localStorage.getItem(CRT_KEY) === "1"; } catch (e) { /* storage disabled */ }
+  crt.checked = crtOn;
+  document.body.classList.toggle("fx-crt", crtOn);
+  crt.addEventListener("change", () => {
+    document.body.classList.toggle("fx-crt", crt.checked);
+    try { localStorage.setItem(CRT_KEY, crt.checked ? "1" : "0"); } catch (e) { /* storage disabled */ }
+  });
   let zone = getTz() !== "local" && getTz() !== "UTC" ? getTz() : null;
   const renderList = () => {
     const s = q.value.trim().toLowerCase().replace(/\s+/g, "_");

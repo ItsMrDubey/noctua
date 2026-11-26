@@ -2,6 +2,7 @@
 // request-render mode with an explicit "continuous" override (follow / replay play).
 import { $ } from "/static/js/ui.js";
 import { makeImagery } from "/static/js/layers.js";
+import { cesiumColor } from "/static/js/symbology.js";
 
 const C = Cesium;
 
@@ -33,9 +34,9 @@ function showGpuHelp(detail) {
   const box = document.createElement("div");
   box.className = "gpu-help";
   box.style.cssText = "position:fixed;inset:0;display:grid;place-items:center;z-index:9999;" +
-    "background:rgba(3,6,10,.92);color:#cfe8ff;font:14px/1.5 'Segoe UI',sans-serif";
+    "background:rgba(10,10,8,.94);color:#f2e6c9;font:14px/1.5 'Segoe UI',sans-serif";
   const msg = document.createElement("div");
-  msg.style.cssText = "max-width:560px;padding:24px;border:1px solid #1f3a52;border-radius:6px";
+  msg.style.cssText = "max-width:560px;padding:24px;border:1px solid #4a3a10;border-radius:2px";
   msg.innerHTML = "<b>3D globe could not start (WebGL)</b><br><br>" +
     "Usually the browser has run out of GPU contexts or its GPU process crashed.<br>" +
     "1. Close other tabs showing 3D maps or globes.<br>" +
@@ -121,12 +122,13 @@ export function createViewer(cfg) {
   viewer.camera.moveEnd.addEventListener(adaptDetail);
   const dpr = window.devicePixelRatio || 1;
   if (dpr > 1.5) viewer.resolutionScale = Math.min(1, 1.5 / dpr);
-  // look: deep night-ocean base, atmosphere on
-  globe.baseColor = C.Color.fromCssColorString("#07111c");
+  // look: warm near-black base, subdued amber-tinted atmosphere (hueShift .5 turns the blue limb amber)
+  globe.baseColor = cesiumColor("--globe-base");
   globe.enableLighting = false;
   globe.showGroundAtmosphere = true;
-  if (scene.skyAtmosphere) { scene.skyAtmosphere.show = true; scene.skyAtmosphere.brightnessShift = -0.25; scene.skyAtmosphere.saturationShift = -0.3; }
-  scene.backgroundColor = C.Color.fromCssColorString("#03060a");
+  globe.atmosphereHueShift = 0.5; globe.atmosphereSaturationShift = -0.6; globe.atmosphereBrightnessShift = -0.35;
+  if (scene.skyAtmosphere) { scene.skyAtmosphere.show = true; scene.skyAtmosphere.hueShift = 0.5; scene.skyAtmosphere.brightnessShift = -0.45; scene.skyAtmosphere.saturationShift = -0.6; }
+  scene.backgroundColor = cesiumColor("--void");
   if (scene.sun) scene.sun.show = false;
   if (scene.moon) scene.moon.show = false;
   viewer.camera.percentageChanged = 0.02;
@@ -173,8 +175,7 @@ export function setupImagery(viewer) {
   const scene = viewer.scene, layers = viewer.imageryLayers;
   // base layer goes in first (index 0), before any data layer or overlay
   const base = layers.addImageryProvider(makeImagery("base"), 0);
-  // darken + desaturate so data pops (kept mild: never dim the base to near-black)
-  base.brightness = 0.78; base.contrast = 1.1; base.saturation = 0.6; base.gamma = 1.0;
+  // the base-layer look (dim/full) is owned by basemap.js (DIM/FULL presets); not set here
   // keep requesting frames until the first base tiles have arrived (requestRenderMode would
   // otherwise only repaint on the 2 s safety net)
   const t0 = performance.now();
@@ -212,13 +213,13 @@ export function setupImagery(viewer) {
         const pts = [];
         for (let lon = -180; lon <= 180; lon += 5) pts.push(lon, lat);
         inst.push(new C.GeometryInstance({ geometry: new C.SimplePolylineGeometry({ positions: C.Cartesian3.fromDegreesArray(pts) }),
-          attributes: { color: C.ColorGeometryInstanceAttribute.fromColor(C.Color.fromCssColorString(lat === 0 ? "#5ee3ea" : "#5ee3ea").withAlpha(lat === 0 ? 0.32 : 0.14)) } }));
+          attributes: { color: C.ColorGeometryInstanceAttribute.fromColor(lat === 0 ? cesiumColor("--amber", 0.32) : cesiumColor("--globe-line")) } }));
       }
       for (let lon = -180; lon < 180; lon += 15) {
         const pts = [];
         for (let lat = -88; lat <= 88; lat += 4) pts.push(lon, lat);
         inst.push(new C.GeometryInstance({ geometry: new C.SimplePolylineGeometry({ positions: C.Cartesian3.fromDegreesArray(pts) }),
-          attributes: { color: C.ColorGeometryInstanceAttribute.fromColor(C.Color.fromCssColorString("#5ee3ea").withAlpha(lon === 0 ? 0.3 : 0.12)) } }));
+          attributes: { color: C.ColorGeometryInstanceAttribute.fromColor(lon === 0 ? cesiumColor("--amber", 0.3) : cesiumColor("--globe-line")) } }));
       }
       grid = scene.primitives.add(new C.Primitive({ geometryInstances: inst, appearance: new C.PerInstanceColorAppearance({ flat: true, translucent: true }), asynchronous: false }));
     }

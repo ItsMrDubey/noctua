@@ -79,7 +79,7 @@ function viewerBtn(by, ev) {
 
 // `points`: [{lat, lon, label}] evidence to overlay; `ev`: {lat, lon, label?, t?}
 export function imageryHtml(j, ev, points) {
-  if (!j) return '<div class="dz-empty">Loading imagery…</div>';
+  if (!j) return '<div class="dz-empty">No imagery data for this event</div>'; // callers only render once the request settled
   if (j.error) return '<div class="dz-empty">Imagery unavailable: ' + esc(j.error) + "</div>";
   const by = Object.fromEntries((j.assets || []).map((a) => [a.role, a]));
   const ok = (r) => by[r] && by[r].status === "ok" && by[r].url;

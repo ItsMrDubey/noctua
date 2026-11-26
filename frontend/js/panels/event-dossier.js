@@ -8,7 +8,7 @@
 // when the record changes (id, detail loaded, updated_at, original-text toggle) and otherwise
 // just refreshes its [data-since] labels, so the imagery slider, scroll position and open
 // sections survive. Async sections are cached per event and redrawn from the cache.
-import { esc, nf, evTitle, trPending, TR_TAG, hasOriginal, isEn } from "/static/js/ui.js";
+import { esc, nf, evTitle, trPending, TR_TAG, hasOriginal, isEn, stateHtml } from "/static/js/ui.js";
 import { fetchJson, fetchBlob } from "/static/js/api.js";
 import { uiGlyph, threatColor, eventCat, EVENT_STATUS } from "/static/js/symbology.js";
 import { fmtUtc, localHint, relMin, since, bandText, distKm, bearing, compass, kmText, mgrs, latLonText, sec, wireSections, chip, gauge, bars, copyBtn, wireCopy, copyText, toast, download } from "/static/js/panels/dossier-kit.js";
@@ -38,11 +38,11 @@ export class EventDossier {
   }
 
   // the pane's DOM lives in `dz`; returns true when it (re)built
-  render(dz, it, detail, nearNuc) {
+  render(dz, it, detail, nearNuc, detailErr) {
     if (this.origFor !== it.id) { this.origFor = it.id; this.showOrig = false; }
     const d = detail || it;
-    const key = [it.id, detail ? 1 : 0, d.updated_at || it.updated_at, this.showOrig ? 1 : 0, nearNuc ? 1 : 0].join("|");
-    this.it = it; this.d = d; this.detail = detail; this.nearNuc = nearNuc;
+    const key = [it.id, detail ? 1 : 0, d.updated_at || it.updated_at, this.showOrig ? 1 : 0, nearNuc ? 1 : 0, !detail && detailErr ? 1 : 0].join("|");
+    this.it = it; this.d = d; this.detail = detail; this.nearNuc = nearNuc; this.detailErr = !detail && detailErr ? String(detailErr) : null;
     if (key === this.key && this.root && dz.firstElementChild === this.root) { this._tick(); return false; }
     const refetch = !this.key || this.key.split("|")[0] !== it.id || this.key.split("|")[2] !== key.split("|")[2];
     this.key = key;
@@ -138,7 +138,7 @@ export class EventDossier {
       this._fields() +
       sec("context", "Context", slot("context"), { meta: '<span data-meta="context"></span>' }) +
       sec("prov", "Provenance", '<div class="prov"><div><i></i>ID ' + esc(it.id) + copyBtn(it.id, "copy") + "</div><div><i></i>v" + esc(d.version ?? "–") + " · updated <span data-since=\"" + esc(d.updated_at || it.updated_at || "") + '">' +
-        esc(since(d.updated_at || it.updated_at)) + "</span> ago · first ingested " + esc(fmtUtc(d.first_seen)) + "</div><div><i></i>" + (this.detail ? "Full record · /api/events" : "List item (loading full record)") + "</div></div>", { cls: "small" }) +
+        esc(since(d.updated_at || it.updated_at)) + "</span> ago · first ingested " + esc(fmtUtc(d.first_seen)) + "</div><div><i></i>" + (this.detail ? "Full record · /api/events" : this.detailErr ? "List item (full record unavailable)" : "List item (loading full record)") + "</div></div>", { cls: "small" }) +
       "</div>";
   }
 
@@ -151,7 +151,7 @@ export class EventDossier {
   // corroborations grouped by sensor pass, with the fire conflict score from /api/intel sensors
   _evidence() {
     const d = this.d, it = this.it;
-    if (!this.detail) return '<div class="dz-empty">Loading record…</div>';
+    if (!this.detail) return this.detailErr ? stateHtml("err", "Record unavailable", this.detailErr) : stateHtml("loading", "Loading record…");
     const rows = d.corroborations || [];
     if (!rows.length) return '<div class="dz-empty">No sensor evidence linked' + (String(it.status) === "sensor-corroborated" ? " (status from an earlier pass)" : "") + "</div>";
     const c = this.cache.get(it.id), fires = new Map((((c && c.intel && c.intel.sensors) || {}).fires || { items: [] }).items.map((f) => [f.id, f]));
@@ -196,7 +196,7 @@ export class EventDossier {
   _sources() {
     const d = this.d;
     const docs = (d.documents || []).slice().sort((a, b) => String(a.published_at).localeCompare(String(b.published_at)));
-    if (!this.detail) return '<div class="dz-empty">Loading sources…</div>';
+    if (!this.detail) return this.detailErr ? stateHtml("err", "Sources unavailable", this.detailErr) : stateHtml("loading", "Loading sources…");
     if (!docs.length) return '<div class="dz-empty">' + (isSensor(d) ? "Sensor-derived" + (d.sensor ? " (" + esc(d.sensor.sensor) + ")" : "") + "; no news reports" : "No source documents") + "</div>";
     const first = docs[0].published_at;
     // repost groups: near-identical titles collapse under the first publication
@@ -264,7 +264,7 @@ export class EventDossier {
       return el;
     };
     if (!S) {
-      if (c.err) ["assessment", "imagery", "timeline", "context"].forEach((n) => put(n, '<div class="dz-empty">Unavailable: ' + esc(c.err) + "</div>"));
+      if (c.err) ["assessment", "imagery", "timeline", "context"].forEach((n) => put(n, stateHtml("err", "Unavailable", c.err)));
       return;
     }
     // storyline membership ("Part of storyline: ..."), worker-derived
