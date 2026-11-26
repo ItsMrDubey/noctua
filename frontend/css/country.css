@@ -1,0 +1,42 @@
+/* COUNTRY CONTEXT pane (js/panels/country-view.js). Tokens from theme.css (sub-project C).
+   Data colours use --amber explicitly: --acc turns ion-blue in replay, the data does not. */
+.cx-pane { display: flex; flex-direction: column; gap: 8px; padding: 8px; font: 12px var(--f-body); color: var(--fg); }
+.cx-pane > :empty { display: none; }
+.cx-pane button:focus-visible { outline: none; box-shadow: var(--glow); }
+.cx-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding: 8px; background: var(--raise); border: 1px solid var(--line); }
+.cx-head > .state, .cx-head > .cx-err { grid-column: 1 / -1; }
+.cx-id { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.cx-flag { font-size: 18px; line-height: 1; }
+.cx-cc { font: 600 13px var(--f-mono); color: var(--amber); letter-spacing: .06em; }
+.cx-name { font: 600 11px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-threat { --thr: var(--amber); display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border: 1px solid var(--line-2); background: transparent; color: var(--fg); font: 11px var(--f-mono); white-space: nowrap; cursor: pointer; }
+.cx-threat:hover { border-color: var(--thr); }
+.cx-threat.thr-0 { --thr: var(--thr-0); }
+.cx-threat.thr-1 { --thr: var(--thr-1); }
+.cx-threat.thr-2 { --thr: var(--thr-2); }
+.cx-threat.thr-3 { --thr: var(--thr-3); }
+.cx-threat.thr-4 { --thr: var(--thr-4); }
+.cx-threat b { color: var(--thr); font-weight: 600; text-transform: uppercase; }
+.cx-threat small, .cx-threat .cx-n { color: var(--fg-2); font-size: 11px; }
+.cx-threat.off { justify-self: end; cursor: default; color: var(--dim); border-style: dashed; }
+.cx-spark { grid-column: 1 / -1; width: 100%; height: 24px; }
+.cx-spark path { fill: none; stroke: var(--amber); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.cx-life { display: flex; flex-wrap: wrap; gap: 4px; grid-column: 1 / -1; }
+.cx-lc { font: 11px var(--f-mono); padding: 1px 5px; border: 1px solid var(--line-2); color: var(--fg-2); white-space: nowrap; }
+.cx-lc b { color: var(--fg); font-weight: 600; }
+.cx-lc.lc-developing { border-color: var(--amber); color: var(--amber); }
+.cx-lc.lc-closed { color: var(--dim); border-style: dashed; }
+.cx-actors { display: flex; flex-wrap: wrap; gap: 4px; grid-column: 1 / -1; }
+.cx-actors:empty { display: none; }
+.cx-adv { grid-column: 1 / -1; margin: 0; padding: 6px 0 0; list-style: none; border-top: 1px solid var(--line); font: 11px var(--f-mono); color: var(--fg-2); }
+.cx-adv li { padding: 2px 0; }
+.cx-adv b { color: var(--fg); }
+.cx-adv a { color: var(--amber); }
+.cx-terr { color: var(--red-2); }
+.cx-err { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px dashed var(--red); }
+.cx-err .state { padding: 0; flex: 1; min-width: 0; font-size: 11px; }
+.cx-err button { padding: 3px 10px; border: 1px solid var(--line-2); background: transparent; color: var(--amber); font: 11px var(--f-mono); cursor: pointer; }
+.cx-err button:hover { border-color: var(--amber); }
+.cx-head > .state { padding: 0; }
+.cx-sub { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font: 600 11px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-2); padding: 4px 0; border-bottom: 1px solid var(--line); }
+.cx-sub small { font: 11px var(--f-mono); letter-spacing: 0; text-transform: none; color: var(--dim); }

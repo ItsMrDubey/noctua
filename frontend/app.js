@@ -31,6 +31,7 @@ import { HistoricalLayer, historicalDetails } from "/static/js/historical.js";
 import { Models3D, VectorLeaders, enableIonExtras, toggleBuildings } from "/static/js/models3d.js";
 import { Weather, irNote, radarNote, setCinematic, sunTime } from "/static/js/weather.js";
 import { Dossier } from "/static/js/browser.js";
+import { installCountry } from "/static/js/country.js";
 import { installFireScore } from "/static/js/firescore.js";
 import { Freshness } from "/static/js/freshness.js";
 import { InfraLayers, mountInfraTree, infraDetails } from "/static/js/infra.js";
@@ -939,6 +940,7 @@ async function main() {
   ctx.fireScore = fireScore;
   ctx.declutter = installDeclutter(ctx);
   ctx.terror = installTerror(ctx); // Terror Watch: layer, Terror tab, dossier panes, intel tiles
+  ctx.country = installCountry(ctx); // Country context: dossier pane, globe sync, open(cc)
   ctx.palette = new Palette(ctx);
   // ---- Satellite imagery viewer: globe right-click "Imagery here", drapes onto the globe ----
   installImageryViewer({ viewer });

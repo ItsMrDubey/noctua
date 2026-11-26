@@ -289,6 +289,11 @@ export class Dossier {
     this.max = false;
     this._build();
     this._intercept();
+    // panes restored before their feature module registered (country.js, terror.js) render
+    // once it has: modules fire "noctua:panels" after registering
+    window.addEventListener("noctua:panels", () => {
+      for (const p of this.panes) if (p._pendingExt && (window.__noctuaPanes || {})[p.spec.type]) { p._pendingExt = false; this._render(p); }
+    });
     this._restore();
   }
 
@@ -564,9 +569,12 @@ export class Dossier {
         await renderStoryline(spec, body, { head: (h) => this._head(pane, h), stale, highlight: this.highlight, flyTo: this.flyTo,
           overlay: st.overlay || { show: noop, fit: noop, setTime: noop, clear: noop }, replay: st.replay,
           intelEvent: (id, label) => this.open({ type: "intel", kind: "event", id, label: label || id }) });
-      } else if ((window.__noctuaPanes || {})[spec.type]) { // panes registered by feature modules (e.g. terror.js)
-        await window.__noctuaPanes[spec.type].render(spec, body, { head: (h) => this._head(pane, h), stale, flyTo: this.flyTo, highlight: this.highlight });
-      }
+      } else if ((window.__noctuaPanes || {})[spec.type]) { // panes registered by feature modules (terror.js, country.js)
+        await window.__noctuaPanes[spec.type].render(spec, body, { head: (h) => this._head(pane, h), stale, flyTo: this.flyTo, highlight: this.highlight,
+          select: this.select, open: (s, o) => this.open(s, o),
+          // a pane that keeps its own state in its spec (country.js) updates it in place: persisted, no re-render
+          setSpec: (s) => { pane.spec = s; pane.hist[pane.hi] = s; this._save(); } });
+      } else pane._pendingExt = true; // its module has not registered yet: rendered on "noctua:panels"
     } catch (err) {
       if (stale()) return;
       this._head(pane, { title: pane.title === "Loading…" ? "Error" : pane.title, sub: spec.url || spec.qid || "", icon: spec.type, ext: spec.url });
@@ -712,6 +720,9 @@ function specKey(s) {
   if (s.type === "story") return storyKey(s);
   const ext = (window.__noctuaPanes || {})[s.type];
   if (ext && ext.key) return ext.key(s);
+  // a feature pane restored before its module registered: keyed by its whole spec, so two of them
+  // (UA and RU country panes, two Terror Watch panes) are not taken for duplicates of each other
+  if (s.type !== "resolve") return "x:" + JSON.stringify(s);
   return "r:" + [s.q, s.icao, s.lat, s.lon].join("|");
 }
 const tab = (id, label, disabled) => '<button data-tab="' + id + '"' + (disabled ? " disabled" : "") + ">" + label + "</button>";

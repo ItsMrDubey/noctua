@@ -107,3 +107,16 @@ export function emptyText(st, names) {
   const when = st.window === "custom" ? (st.from ? st.from + " → " + (st.to || "now") : "7D") : st.window.toUpperCase();
   return "No events for " + nm(names, st.cc) + " in " + when + " with these filters";
 }
+
+// official threat level (summary.threat) -> 0..4, the --thr-N token tier; null without a rank
+export function threatTier(t) {
+  if (!t || t.rank == null || !(+t.scale_max > 0)) return null;
+  return Math.max(0, Math.min(4, Math.round((+t.rank / +t.scale_max) * 4)));
+}
+
+// {ISO2: name} of the summary's country and counterparts, for labels (pairLabel, actor chips)
+export function summaryNames(s) {
+  const out = {};
+  for (const c of s ? [s, ...(s.counterparts || [])] : []) if (CC.test(String(c.cc || "")) && c.name) out[c.cc] = c.name;
+  return out;
+}

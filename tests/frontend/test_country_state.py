@@ -184,3 +184,22 @@ def test_labels_use_country_names():
         run("return S.emptyText(S.normState({ cc: 'UA' }), { UA: 'Ukraine' });")
         == "No events for Ukraine in 7D with these filters"
     )
+
+
+def test_threat_tier_scales_rank_to_the_five_threat_tokens():
+    out = run(
+        "return [S.threatTier({ rank: 4, scale_max: 4 }), S.threatTier({ rank: 1, scale_max: 5 }),"
+        " S.threatTier({ rank: 3, scale_max: 5 }), S.threatTier({ rank: 9, scale_max: 4 }),"
+        " S.threatTier({ rank: null, scale_max: 4 }), S.threatTier({ rank: 2, scale_max: 0 }),"
+        " S.threatTier(null)];"
+    )
+    assert out == [4, 1, 2, 4, None, None, None]
+
+
+def test_summary_names_maps_the_country_and_its_counterparts():
+    out = run(
+        'return S.summaryNames({ cc: "UA", name: "Ukraine", counterparts: ['
+        '{ cc: "RU", name: "Russia" }, { cc: "BY", name: "" }, { cc: "x", name: "X" }] });'
+    )
+    assert out == {"UA": "Ukraine", "RU": "Russia"}
+    assert run("return S.summaryNames(null);") == {}
