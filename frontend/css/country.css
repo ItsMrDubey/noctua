@@ -72,3 +72,18 @@
 .cx-bars button.on .cx-bar i { opacity: 1; }
 .cx-bv { font: 11px var(--f-mono); color: var(--fg-2); text-align: right; }
 .cx-none { padding: 6px 0; font: 11px var(--f-mono); color: var(--dim); }
+
+/* event list: eventlist.js rows in normal flow (the Events tab positions them absolutely) */
+.cx-list { display: flex; flex-direction: column; gap: 4px; }
+.cx-rows { display: flex; flex-direction: column; }
+.cx-rows .erow { position: relative; top: auto; height: auto; min-height: 42px; padding: 4px 8px 4px 0; }
+.cx-rows .erow:focus-visible { outline: none; box-shadow: var(--glow); }
+.cx-ctx { font: 600 11px var(--f-mono); color: var(--amber); white-space: nowrap; }
+.cx-noact { font: 11px var(--f-mono); color: var(--dim); border: 1px dashed var(--line-2); padding: 0 4px; white-space: nowrap; }
+.cx-row .cx-lc { padding: 0 4px; }
+.cx-list > .state { padding: 8px 0; }
+.cx-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; font: 11px var(--f-mono); color: var(--dim); }
+.cx-empty button, .cx-more { padding: 3px 10px; border: 1px solid var(--line-2); background: transparent; color: var(--amber); font: 11px var(--f-mono); cursor: pointer; }
+.cx-empty button:hover, .cx-more:hover { border-color: var(--amber); }
+.cx-more { align-self: center; margin-top: 6px; }
+.cx-more:disabled { color: var(--dim); cursor: default; }

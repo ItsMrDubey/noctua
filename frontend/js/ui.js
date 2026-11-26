@@ -63,12 +63,13 @@ export function detailsHtml(kind, it) {
 }
 
 // List / tile states. A loading state must settle into empty or error: settleLoading() turns a
-// still-present .state-loading inside el into an error after ms (the request timeout).
+// still-present .state-loading inside el into an error after ms (the request timeout). live: optional
+// predicate, false once the request that armed it is superseded (its timer must not settle a later load).
 export const stateHtml = (kind, title, detail) =>
   '<div class="state state-' + kind + '"><b>' + esc(title) + "</b>" + (detail ? esc(detail) : "") + "</div>";
-export function settleLoading(el, ms, title) {
+export function settleLoading(el, ms, title, live = null) {
   if (!el) return;
   setTimeout(() => {
-    if (el.querySelector(".state-loading")) el.innerHTML = stateHtml("err", title, "No answer within " + Math.round(ms / 1000) + " s; retrying in the background.");
+    if ((!live || live()) && el.querySelector(".state-loading")) el.innerHTML = stateHtml("err", title, "No answer within " + Math.round(ms / 1000) + " s; retrying in the background.");
   }, ms);
 }

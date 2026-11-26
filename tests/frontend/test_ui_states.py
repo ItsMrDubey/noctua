@@ -26,8 +26,11 @@ let h2 = '<div class="state state-empty">E</div>';
 const el2 = { get innerHTML() { return h2; }, set innerHTML(v) { h2 = v; }, querySelector: () => (h2.includes("state-loading") ? {} : null) };
 settleLoading(el2, 20, "Gone");
 settleLoading(null, 20, "x");
+let h3 = '<div class="state state-loading">L</div>';
+const el3 = { get innerHTML() { return h3; }, set innerHTML(v) { h3 = v; }, querySelector: () => (h3.includes("state-loading") ? {} : null) };
+settleLoading(el3, 20, "Gone", () => false);
 await new Promise((r) => setTimeout(r, 80));
-out.settled = h1; out.kept = h2;
+out.settled = h1; out.kept = h2; out.superseded = h3;
 console.log(JSON.stringify(out));
 """
 
@@ -45,6 +48,8 @@ def test_state_helpers():
     assert out["b"] == '<div class="state state-loading"><b>Loading</b></div>'
     assert 'state-err' in out["settled"] and "Gone" in out["settled"] and "No answer within 0 s" in out["settled"]
     assert out["kept"] == '<div class="state state-empty">E</div>'
+    # a superseded request's timer leaves a later load's loading state alone
+    assert out["superseded"] == '<div class="state state-loading">L</div>'
 
 
 @pytest.mark.skipif(NODE is None, reason="node not installed")
