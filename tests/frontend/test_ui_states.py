@@ -70,3 +70,33 @@ console.log(JSON.stringify(o));
     r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "loading", "empty", "empty", "error", "off", "ready", "ready"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed")
+def test_trail_toggle_off_mid_request_settles():
+    """Trails.showSelected/clearSelected (real source) + the inspector's trailReq bookkeeping: toggling Trail
+    off while a request is in flight must end in 'off', never stay 'loading'."""
+    tsrc = (ROOT / "frontend" / "js" / "trails.js").read_text(encoding="utf-8")
+    isrc = (ROOT / "frontend" / "js" / "panels" / "inspector.js").read_text(encoding="utf-8")
+    ts = re.search(r"^export function trailState.*?^}\n", isrc, re.S | re.M).group(0).replace("export ", "")
+    cs = re.search(r"^  clearSelected\(\).*?\n", tsrc, re.M).group(0)
+    ss = re.search(r"^  async showSelected.*?^  }\n", tsrc, re.S | re.M).group(0)
+    script = ts + """
+let release; const fetchJson = () => new Promise((r) => { release = r; });
+class T { constructor() { this.sel = { removeAll() {} }; this.scene = { requestRender() {} }; this.selKey = null; this.lastSel = 0; }
+  _draw() {}
+%s
+%s}
+const t = new T(); let req = { inFlight: false, error: null }, pts = null;
+t.onState = (k, f, e) => { req = { inFlight: f, error: e }; };
+t.onPoints = (k, p) => { pts = p; req = { inFlight: false, error: null }; };
+const C = { Color: {} }; globalThis.colorFor = () => ({});
+const p = t.showSelected("aircraft", "a1", {}, true);
+const during = trailState({ ...req, pts });
+t.clearSelected(); pts = null; req = { inFlight: false, error: null }; // app.js: clearSelected + inspector.resetTrail
+release({ points: [{}, {}] }); await p;
+console.log(JSON.stringify([during, trailState({ ...req, pts })]));
+""" % (cs, ss)
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "off"]

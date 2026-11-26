@@ -65,6 +65,7 @@ export class Inspector {
     t.disabled = !trail; t.classList.toggle("on", !!trailOn);
     p.disabled = !pin; p.classList.toggle("on", !!pinned); p.textContent = pinned ? "Pinned" : "Pin";
   }
+  resetTrail() { this.points = null; this.trailReq = { inFlight: false, error: null }; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
   setTrailState(inFlight, error) { this.trailReq = { inFlight, error: error || null }; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
   setTrail(points) { this.points = points; this.trailReq = { inFlight: false, error: null }; if (this.cur) this.track(this.cur.kind, this.cur.it, this.cur.detail); }
 

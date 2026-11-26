@@ -310,7 +310,7 @@ async function main() {
     if (!(kind === "events" && nearFor === id)) clearNear();
     refSel = null;
     selected = { kind, id };
-    inspector.points = null;
+    inspector.points = null; inspector.trailReq = { inFlight: false, error: null };
     refreshSelected();
     buttons();
     loadDetail(kind, id);
@@ -364,7 +364,7 @@ async function main() {
       else if (selected) flyToItem(selected.kind, selected.id);
     },
     follow: () => setFollow(!following),
-    trail: () => { trailOn = !trailOn; if (trailOn) trailSelected(true); else trails.clearSelected(); buttons(); },
+    trail: () => { trailOn = !trailOn; if (trailOn) trailSelected(true); else { trails.clearSelected(); inspector.resetTrail(); } buttons(); },
     flyToPoint: (lat, lon, alt) => flyTo(lat, lon, alt),
     highlight: (pts) => highlight(pts),
     select: (kind, id) => { if (byKind[kind] && byKind[kind].items.has(id)) { select(kind, id); flyToItem(kind, id); } else if (kind === "events") selectUnlisted(id); },
