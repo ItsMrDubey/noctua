@@ -1,5 +1,5 @@
 // Timeline dock: scrubber over the activity histogram with a selectable range (48 h / 7 d / 30 d / 1 y),
-// Live button, play/pause with speed. Replay mode re-tints the whole UI amber (body.replay) and
+// Live button, play/pause with speed. Replay mode switches the accent to cyan (body.replay) and
 // updates the command-bar pill.
 import { $ } from "/static/js/ui.js";
 import { Histogram } from "/static/js/histogram.js";
@@ -21,27 +21,34 @@ export class Timeline {
     let key = "48h";
     try { const k = localStorage.getItem(RANGE_KEY); if (k && RANGES[k]) key = k; } catch (e) { /* storage disabled */ }
     this.key = key; this.span = RANGES[key][0];
-    $("tl-range").value = key;
+    this._markRange(key);
     $("tl-speed").value = String(RANGES[key][2]);
     this.slider.min = 0; this.slider.max = this.span; this.slider.value = this.span;
     this.hist = new Histogram(this.span);
     this.slider.addEventListener("input", () => this._fromSlider());
     $("tl-live").addEventListener("click", () => this.goLive());
     $("tl-play").addEventListener("click", () => this.togglePlay());
-    $("tl-range").addEventListener("change", (e) => this.setRange(e.target.value));
+    $("tl-range").addEventListener("click", (e) => { const b = e.target.closest("button[data-k]"); if (b && !b.disabled) this.setRange(b.dataset.k); });
     setInterval(() => this._labels(), 30000);
     onTzChange(() => { this._labels(); this._render(); });
     this._labels();
     this._render();
   }
   get label() { return RANGES[this.key][1]; }
+  _markRange(key) {
+    for (const b of document.querySelectorAll("#tl-range button[data-k]")) {
+      const on = b.dataset.k === key;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+  }
   start() { return Date.now() - this.span * 60000; }
   _start() { return this.start(); }
   setRange(key) {
     if (!RANGES[key] || key === this.key) return;
     this.key = key; this.span = RANGES[key][0];
     try { localStorage.setItem(RANGE_KEY, key); } catch (e) { /* ignore */ }
-    $("tl-range").value = key;
+    this._markRange(key);
     $("tl-speed").value = String(RANGES[key][2]);
     this.slider.max = this.span;
     if (this.at) {

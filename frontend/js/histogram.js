@@ -4,9 +4,11 @@
 // Lines: aircraft / ships in the air / at sea, sampled from /api/snapshot (lazy, sequential).
 import { $, esc } from "/static/js/ui.js";
 import { fetchJson } from "/static/js/api.js";
+import { cssColor } from "/static/js/symbology.js";
 import { fmtDate, fmtTime, fmtDateTime, tzOffset, tzLabel, utcTitle, onTzChange } from "/static/js/timefmt.js";
 
-const COL = { fires: "#ff6a1a", quakes: "#ffd24a", events: "#a99bff", hist: "#8f86c9", air: "#5ee3ea", sea: "#7fa8ff" };
+// events (the dominant series) in amber; sensors / tracks keep their symbology colours; UCDP matches its layer swatch
+const COL = { fires: cssColor("--sym-fire"), quakes: cssColor("--sym-quake"), events: cssColor("--amber"), hist: "#8f86c9", air: cssColor("--sym-air"), sea: cssColor("--sym-ship") };
 const HOUR = 3600e3, DAY = 86400e3, CHUNK_H = 168;
 const SAMPLES = 12;
 
@@ -167,15 +169,15 @@ export class Histogram {
     const c = this.ctx, N = this.n, span = this.spanMs;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
-    const top = 6, base = h - 11, ph = base - top;
+    const top = 6, base = h - 13, ph = base - top;
     const bw = w / N;
-    c.font = "9px Consolas, 'Cascadia Mono', monospace";
+    c.font = "11px 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace";
     c.textBaseline = "alphabetic";
     for (const [t, label, major] of this._ticks()) {
       const x = Math.round(((t - this.t0) / span) * w) + 0.5;
-      c.fillStyle = major ? "rgba(159,176,192,.28)" : "rgba(159,176,192,.12)";
+      c.fillStyle = major ? "rgba(255,176,0,.24)" : "rgba(255,176,0,.10)";
       c.fillRect(x, top, 1, ph);
-      if (label) { c.fillStyle = "rgba(159,176,192,.55)"; c.fillText(label, x + 3, h - 2); }
+      if (label) { c.fillStyle = "rgba(184,165,126,.85)"; c.fillText(label, x + 3, h - 2); }
     }
     // stacked bars: quakes, fires, historical, events (bottom -> top)
     let max = 1;
@@ -211,12 +213,12 @@ export class Histogram {
     line(this.air, COL.air, false);
     // future-of-cursor dimming while replaying
     if (this.cursor != null && this.cursor < 1) {
-      c.fillStyle = "rgba(3,7,12,.55)";
+      c.fillStyle = "rgba(10,10,8,.6)";
       c.fillRect(this.cursor * w, 0, w - this.cursor * w, h);
-      c.fillStyle = "rgba(242,173,61,.08)";
+      c.fillStyle = "rgba(127,184,201,.08)";
       c.fillRect(0, 0, this.cursor * w, h);
     }
-    c.fillStyle = "rgba(120,175,205,.25)";
+    c.fillStyle = "rgba(255,176,0,.28)";
     c.fillRect(0, base, w, 1);
     this.legend();
   }

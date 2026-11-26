@@ -75,7 +75,7 @@
   --foot-h: 14px;
 }
 /* replay: amber is the live default, so replay switches the accent to cyan */
-body.replay { --acc: #7fb8c9; --acc-rgb: 127, 184, 201; }
+body.replay { --acc: #7fb8c9; --acc-rgb: 127, 184, 201; --glow: 0 0 0 1px var(--acc), 0 0 8px rgba(var(--acc-rgb), .35); } /* --glow is computed on :root, so re-declare it here to pick up the cyan accent */
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--void); color: var(--fg); font: 12px/1.45 var(--f-body); -webkit-font-smoothing: antialiased; }

@@ -701,7 +701,7 @@ async function main() {
     if (!has("/api/density")) disable(["d-aircraft", "d-ships", "d-fires", "d-quakes", "d-res"], "Not supported by this backend version");
     if (!has("/api/reference")) { disable([...REF_IDS], "Reference data not supported by this backend version"); for (const id of REF_IDS) refLayers.setOn(id, false); }
     if (!has("/api/tracks")) disable(["t-miltrails"], "Not supported by this backend version");
-    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-range", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
+    if (!has("/api/snapshot")) { disable(["tl-live", "tl-play", "tl-speed", "tl-r-48h", "tl-r-7d", "tl-r-30d", "tl-r-1y", "tl-slider"], "Replay not supported by this backend version"); $("timeline").title = "Replay not supported by this backend version"; }
   }).catch(() => { /* openapi unavailable: leave controls enabled */ });
 
   // ---- Replay (time slider) ----
