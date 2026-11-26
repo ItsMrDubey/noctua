@@ -89,6 +89,10 @@ def registry() -> Registry:
     return Registry.load()
 
 
+# Distinct unresolved values kept between two drains; further new values are counted in the
+# single UNRESOLVED_OVERFLOW bucket (bounded memory whatever the input).
+UNRESOLVED_MAX_KEYS = 1000
+UNRESOLVED_OVERFLOW = "*:overflow"
 _unresolved_lock = threading.Lock()
 _unresolved: dict[str, int] = {}
 
@@ -97,6 +101,8 @@ def _note_unresolved(value: str, hint: str) -> None:
     key = f"{hint}:{value}"
     with _unresolved_lock:
         first = key not in _unresolved
+        if first and len(_unresolved) - (UNRESOLVED_OVERFLOW in _unresolved)                 >= UNRESOLVED_MAX_KEYS:
+            key, first = UNRESOLVED_OVERFLOW, False
         _unresolved[key] = _unresolved.get(key, 0) + 1
     if first:  # once per distinct value between two drains (one EventBuilder pass)
         log.debug("country value %r (%s) did not resolve", value, hint)

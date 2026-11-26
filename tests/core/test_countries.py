@@ -132,3 +132,15 @@ def test_unresolved_values_are_counted_until_drained():
     to_iso2("IGO", "cameo")  # a known non-state code is not "unresolved"
     assert countries.drain_unresolved() == {"name:Atlantis": 2}
     assert countries.drain_unresolved() == {}
+
+
+def test_unresolved_keys_are_bounded(monkeypatch):
+    monkeypatch.setattr(countries, "UNRESOLVED_MAX_KEYS", 3)
+    countries.drain_unresolved()
+    for i in range(5):
+        to_iso2(f"Atlantis{i}", "name")
+    to_iso2("Atlantis0", "name")  # a value already counted keeps counting
+    to_iso2("Atlantis4", "name")
+    out = countries.drain_unresolved()
+    assert len(out) == 4 and out[countries.UNRESOLVED_OVERFLOW] == 3
+    assert out["name:Atlantis0"] == 2 and sum(out.values()) == 7
