@@ -131,3 +131,18 @@ def test_country_at_point(cclient):
         r = cclient.get(f"/api/country/at?lat={lat}&lon={lon}")
         assert r.status_code == 404 and r.json() == {"error": "no_country"}
     assert cclient.get("/api/country/at?lat=95&lon=0").status_code == 422
+
+
+def test_top_actor_country_normalised_before_migration():
+    """Pre-migration rows carry CAMEO / ISO3 actor countries; chips must still get ISO2."""
+    ctx = {"location": "inside", "involvement": "domestic"}
+    rows = [{"ctx": ctx, "country": "UA", "actor_countries": [], "actors": [
+        {"name": "Russian forces", "country": "RUS"},
+        {"name": "Ukrainian army", "country": "ukr"},
+        {"name": "Polish police", "country": "PL"},
+        {"name": "NATO", "country": "IGO"},
+        {"name": "Rebels", "country": None}]}]
+    top = country_api.summarise("UA", rows, [], T0.date())["top_actors"]
+    got = {a["name"]: a["country"] for a in top}
+    assert got == {"Russian forces": "RU", "Ukrainian army": "UA", "Polish police": "PL",
+                   "NATO": None, "Rebels": None}

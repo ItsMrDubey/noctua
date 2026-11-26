@@ -73,6 +73,15 @@ def country_at(shapes: Countries, lat: float, lon: float) -> str | None:
     return None
 
 
+def _actor_cc(v) -> str | None:
+    """ISO2 of an actor country that may still be ISO2 or a CAMEO / ISO3 code (rows are only
+    rewritten to ISO2 by the migrate_countries CLI), else None."""
+    if not isinstance(v, str):
+        return None
+    return (countries.to_iso2(v, "iso2") or countries.to_iso2(v, "cameo")
+            or countries.to_iso2(v, "iso3"))
+
+
 def summarise(cc: str, rows: list[dict], spark_rows: list[tuple[str, int]],
               today: date) -> dict:
     """Counts, lifecycle, top actors, counterparts and the 30-day spark from
@@ -93,7 +102,7 @@ def summarise(cc: str, rows: list[dict], spark_rows: list[tuple[str, int]],
         for a in r.get("actors") or []:
             if not isinstance(a, dict) or not str(a.get("name") or "").strip():
                 continue
-            key = (str(a["name"]).strip(), a.get("country"))
+            key = (str(a["name"]).strip(), _actor_cc(a.get("country")))
             if key not in seen:
                 seen.add(key)
                 actors[key] += 1

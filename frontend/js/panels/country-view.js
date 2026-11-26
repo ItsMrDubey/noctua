@@ -12,6 +12,9 @@ const SUMMARY_MS = 20000; // summary request timeout
 const RETRY_MS = 10000; // a header that never loaded retries sooner than the refresh (busy server at start-up)
 let REGION = null;
 try { REGION = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" }); } catch { /* old engine: codes stay codes */ }
+// Windows has no flag glyphs: a regional-indicator pair renders as the two letters, so skip it there
+const FLAGS = typeof navigator === "undefined" || !/Windows/i.test(navigator.userAgent || "");
+const flagOf = (cc) => (FLAGS ? flagEmoji(cc) : "");
 const NOT_COUNTRIES = new Set(["ZZ", "EU", "EZ", "UN", "QO"]); // CLDR regions that are not countries
 
 // an ISO2 the browser knows as a country (open(cc) refuses the rest; the API 400s on them)
@@ -44,7 +47,7 @@ class CountryPane {
   dead() { return this.hooks.stale() || !this.body.isConnected; }
   name(cc) { return countryName(this.names, cc) || cc; }
   title(s) {
-    this.hooks.head({ title: (flagEmoji(this.st.cc) + " " + (s ? s.name : this.name(this.st.cc))).trim(), sub: this.st.cc + " · COUNTRY CONTEXT", icon: "country",
+    this.hooks.head({ title: (flagOf(this.st.cc) + " " + (s ? s.name : this.name(this.st.cc))).trim(), sub: this.st.cc + " · COUNTRY CONTEXT", icon: "country",
       coord: s && s.centroid ? { lat: s.centroid[0], lon: s.centroid[1], alt: 3e6 } : null });
   }
   async start() {
@@ -73,7 +76,7 @@ class CountryPane {
   }
   renderHead() {
     const el = this.root.querySelector(".cx-head"), s = this.summary;
-    if (this.sumErr) {
+    if (this.sumErr && !s) {
       el.innerHTML = '<div class="cx-err">' + stateHtml("err", "Summary unavailable", this.sumErr) + '<button type="button" data-cx="retry">Retry</button></div>';
       return;
     }
@@ -82,6 +85,7 @@ class CountryPane {
       settleLoading(el, SUMMARY_MS + 2000, "Summary unavailable"); // backstop: never stuck on "Loading…"
       return;
     }
+    const stale = this.sumErr ? '<div class="cx-stale" role="status">Showing last data · retrying</div>' : "";
     const t = s.threat, advs = (t && t.advisories) || [], tier = threatTier(t);
     const threat = t
       ? '<button type="button" class="cx-threat' + (tier == null ? "" : " thr-" + tier) + '" data-cx="adv" aria-expanded="' + this.advOpen + '" title="' + esc(t.as_of ? "As of " + t.as_of : "Official threat level") + '"><b>' + esc(t.level || "No official level") + "</b>" +
@@ -99,7 +103,7 @@ class CountryPane {
       const where = countryName(this.names, a.country);
       return '<span class="dk-chip" title="' + esc(nf(a.n) + " events" + (where ? " · " + where : "")) + '">' + esc(a.name) + (where && where !== a.name ? " · " + esc(where) : "") + "</span>";
     }).join("") + "</div>";
-    el.innerHTML = '<div class="cx-id"><span class="cx-flag" aria-hidden="true">' + flagEmoji(s.cc) + '</span><b class="cx-cc">' + esc(s.cc) + '</b><span class="cx-name">' + esc(s.name) + "</span></div>" + threat + spark + life + actors + adv;
+    el.innerHTML = '<div class="cx-id">' + (flagOf(s.cc) ? '<span class="cx-flag" aria-hidden="true">' + flagOf(s.cc) + "</span>" : "") + '<b class="cx-cc">' + esc(s.cc) + '</b><span class="cx-sep" aria-hidden="true">·</span><span class="cx-name">' + esc(s.name) + "</span></div>" + stale + threat + spark + life + actors + adv;
   }
   click(e) {
     const t = e.target.closest("button");
