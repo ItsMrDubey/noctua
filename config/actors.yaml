@@ -18,9 +18,14 @@ generated:
   # "<demonym | extra adjective> <noun>" only: after a country name these words usually
   # name the target ("Ukraine drone strikes"), after a demonym the attacker
   demonym_nouns:
-    state_military: [drone, drones, missile, missiles, strike, strikes, airstrike, airstrikes,
-                     "air strike", "air strikes", shelling, artillery, warplane, warplanes, jets,
-                     "fighter jets", warship, warships, attack, attacks, offensive, raid, raids]
+    state_military: [drone, drones, missile, missiles, airstrike, airstrikes, "air strike",
+                     "air strikes", shelling, artillery, warplane, warplanes, "fighter jets",
+                     warship, warships]
+  # as demonym_nouns, but generic words ("Indian attack collapses" in cricket, "Chinese
+  # strike at Foxconn" in a labour story, "New York Jets"): they count only for an event
+  # whose category is in conflict_categories
+  demonym_nouns_conflict:
+    state_military: [strike, strikes, attack, attacks, offensive, raid, raids, jets]
   # ACLED / UCDP state side names: "Military Forces of Sudan (2019-)", "Government of Ukraine"
   of_country:
     state_military: ["military forces of", "armed forces of"]
@@ -34,6 +39,14 @@ generated:
   # no "<country name> <noun>" forms: "Georgia police" is usually the US state,
   # "Jersey police" New Jersey
   skip_name_forms: ["GE", "JE"]
+  # a "<country name> <noun>" hit right after one of these words is part of a longer place
+  # name: "New Mexico police" is not Mexico ("Papua New Guinea army" still wins as the
+  # longer phrase)
+  name_left_block: [new, nueva, nuevo, nouvelle, nouveau, nova, novo]
+
+# event categories (config/triage.yaml / pipeline.extract.schema.EVENT_TYPES) for which the
+# generic demonym_nouns_conflict phrases count
+conflict_categories: [armed_conflict, maritime_security, air_activity]
 
 # adjectives beyond the demonyms in config/countries.yaml
 extra_adjectives:

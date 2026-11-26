@@ -25,7 +25,8 @@ def test_generated_hand_written_and_group_phrases(lex, text, country):
 def test_whole_words_only(tmp_path):
     p = tmp_path / "actors.yaml"
     p.write_text('entries:\n  - match: ["Iran"]\n    country: "IR"\n'
-                 '    class: state_government\n', encoding="utf-8")
+                 '    class: state_government\nconflict_categories: [armed_conflict]\n',
+                 encoding="utf-8")
     lx = ActorLexicon.load(p, groups_path=tmp_path / "none.yaml")
     assert lx.find("Iranian officials") == []
     assert lx.find("Iran says")[0].payload.country == "IR"
@@ -124,3 +125,81 @@ def test_derive():
     assert derive([], "UA") == {"actor_countries": [], "foreign_involved": False,
                                 "attributed": False}
     assert derive(acts, None)["foreign_involved"] is False  # no location: not "foreign"
+
+
+# ---- review fix: generic demonym nouns only for conflict categories; country names inside
+# longer place names ("New Mexico police") are not the country
+
+
+def _rule_countries(lex, text, category):
+    ev = {"id": "01NEWS", "category": category, "actors": []}
+    return [a["country"] for a in resolve_actors(ev, [_doc(text)], lex) if a["source"] == "rule"]
+
+
+def test_a_country_name_inside_a_longer_place_name_is_not_the_country(lex):
+    assert all(h.payload.country != "MX" for h in lex.find("New Mexico police arrest suspect"))
+    assert _rule_countries(lex, "New Mexico police arrest suspect", "civil_unrest") == []
+    assert lex.find("Mexico police arrest suspect")[0].payload.country == "MX"
+    assert lex.find("Mexican police arrest suspect")[0].payload.country == "MX"
+
+
+def test_the_longest_place_name_still_wins(lex):
+    hits = lex.find("Papua New Guinea army deployed")
+    assert [h.payload.country for h in hits] == ["PG"]
+    assert _rule_countries(lex, "Papua New Guinea army deployed", "political") == ["PG"]
+
+
+@pytest.mark.parametrize(("text", "category", "expected"), [
+    ("Indian attack collapses on day three", "other", []),
+    ("Indian attack collapses on day three", "economic", []),
+    ("Indian attack collapses on day three", None, []),
+    ("Indian attack collapses on day three", "armed_conflict", ["IN"]),
+    ("Chinese strike at Foxconn plant", "economic", []),
+    ("Israeli strike kills 5 in Gaza", "armed_conflict", ["IL"]),
+    ("Israeli jets over Beirut", "air_activity", ["IL"]),
+    ("Iranian raid on a tanker", "maritime_security", ["IR"]),
+    ("Russian shelling of Kyiv", "other", ["RU"]),
+    ("Russian shelling of Kyiv", "economic", ["RU"]),
+    ("Russian shelling of Kyiv", None, ["RU"]),
+    ("Israeli forces entered Jenin", "other", ["IL"]),
+    ("Israeli forces entered Jenin", "political", ["IL"])])
+def test_generic_demonym_nouns_count_only_for_conflict_events(lex, text, category, expected):
+    assert _rule_countries(lex, text, category) == expected
+
+
+def test_conflict_only_marks_only_generic_demonym_nouns(lex):
+    def flag(text):
+        [hit] = lex.find(text)
+        return hit.payload.conflict_only
+
+    assert flag("Indian attack") and flag("Chinese strikes") and flag("Israeli jets")
+    assert not flag("Russian shelling") and not flag("Israeli forces")
+    assert not flag("Iranian drones") and not flag("Russian missiles")
+
+
+def test_actor_entry_positional_fields_still_work():
+    from osint.enrich.actors import ActorEntry
+
+    e = ActorEntry("Russian forces", "RU", "state_military")
+    assert (e.name, e.country, e.klass, e.conflict_only) == (
+        "Russian forces", "RU", "state_military", False)
+
+
+_ENTRY = 'entries:\n  - match: ["X army"]\n    country: "RU"\n    class: state_military\n'
+
+
+@pytest.mark.parametrize("cats", [
+    "", "conflict_categories: []\n", "conflict_categories:\n",
+    "conflict_categories: [bogus_category]\n", "conflict_categories: armed_conflict\n",
+    "conflict_categories: [[armed_conflict]]\n",
+    "conflict_categories: [armed_conflict]\ngenerated:\n  name_left_block: new\n"])
+def test_conflict_categories_must_be_known_event_categories(tmp_path, cats):
+    p = tmp_path / "actors.yaml"
+    p.write_text(_ENTRY + cats, encoding="utf-8")
+    with pytest.raises(LexiconError):
+        ActorLexicon.load(p, groups_path=tmp_path / "none.yaml")
+
+
+def test_the_shipped_conflict_categories(lex):
+    assert lex.conflict_categories == frozenset(
+        {"armed_conflict", "maritime_security", "air_activity"})

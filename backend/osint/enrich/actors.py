@@ -22,7 +22,7 @@ import yaml
 
 from osint.config import ROOT
 from osint.core import countries
-from osint.enrich.gazetteer import name_key
+from osint.enrich.gazetteer import name_key, tokens
 from osint.enrich.phrases import PhraseHit, PhraseMatcher
 
 log = logging.getLogger(__name__)
@@ -45,13 +45,21 @@ class ActorEntry:
     name: str  # canonical actor name ("Russian forces")
     country: str | None  # home country, ISO2
     klass: str  # one of CLASSES
+    # a generic demonym phrase ("Indian attack"): counts only for conflict categories
+    conflict_only: bool = False
+    # a generated "<country name> <noun>" phrase: rejected after a name_left_block word
+    name_form: bool = False
 
 
 class ActorLexicon:
-    def __init__(self, matcher: PhraseMatcher[ActorEntry]) -> None:
+    def __init__(self, matcher: PhraseMatcher[ActorEntry], *,
+                 conflict_categories: frozenset[str] = frozenset(),
+                 name_left_block: frozenset[str] = frozenset()) -> None:
         if not len(matcher):
             raise LexiconError("actor lexicon is empty")
         self.matcher = matcher
+        self.conflict_categories = conflict_categories
+        self.name_left_block = name_left_block
 
     def __len__(self) -> int:
         return len(self.matcher)
@@ -72,10 +80,23 @@ class ActorLexicon:
                        _generated(cfg)):
             for phrase, entry in source:
                 m.add(phrase, entry)
-        return cls(m)
+        gen = cfg.get("generated") or {}
+        return cls(m, conflict_categories=_conflict_categories(cfg, Path(path)),
+                   name_left_block=frozenset(
+                       name_key(w) for w in _words(gen, "name_left_block", Path(path))))
 
     def find(self, text: str) -> list[PhraseHit[ActorEntry]]:
-        return self.matcher.find(text)
+        """Lexicon hits in ``text``; a generated country-name form right after a
+        ``name_left_block`` word ("New Mexico police") is dropped."""
+        hits = self.matcher.find(text)
+        if not self.name_left_block or not any(h.payload.name_form for h in hits):
+            return hits
+        folded = [t for t, _ in tokens(text or "")]
+        return [h for h in hits if not (h.payload.name_form and h.start > 0
+                                        and folded[h.start - 1] in self.name_left_block)]
+
+    def is_conflict(self, category: Any) -> bool:
+        return str(category or "") in self.conflict_categories
 
     def lookup(self, name: str) -> ActorEntry | None:
         """The entry of the longest phrase in an actor name ("Military Forces of Sudan
@@ -106,6 +127,28 @@ def _klass(value: Any, where: str) -> str:
     if k not in CLASSES:
         raise LexiconError(f"{where}: unknown actor class {value!r}")
     return k
+
+
+def _words(cfg: Mapping[str, Any], key: str, path: Path) -> list[str]:
+    value = cfg.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip()
+                                              for v in value):
+        raise LexiconError(f"{path} {key}: not a list of words")
+    return [v.strip() for v in value]
+
+
+def _conflict_categories(cfg: Mapping[str, Any], path: Path) -> frozenset[str]:
+    from osint.pipeline.extract.schema import EVENT_TYPES  # the event category names
+
+    cats = _words(cfg, "conflict_categories", path)
+    if not cats:
+        raise LexiconError(f"{path} conflict_categories: missing or empty")
+    for c in cats:
+        if c not in EVENT_TYPES:
+            raise LexiconError(f"{path} conflict_categories: unknown event category {c!r}")
+    return frozenset(cats)
 
 
 def _entries(cfg: Mapping[str, Any], path: Path) -> Iterator[tuple[str, ActorEntry]]:
@@ -152,7 +195,8 @@ def _generated(cfg: Mapping[str, Any]) -> Iterator[tuple[str, ActorEntry]]:
     skip = {str(x) for x in gen.get("skip_name_forms") or []}
     blocks = {key: {_klass(k, f"generated.{key}"): [str(x) for x in v or []]
                     for k, v in (gen.get(key) or {}).items()}
-              for key in ("nouns", "demonym_nouns", "of_country", "country_suffix")}
+              for key in ("nouns", "demonym_nouns", "demonym_nouns_conflict", "of_country",
+                          "country_suffix")}
     for c in countries.all_countries():
         adjs = list(dict.fromkeys([*c.demonyms, *extra.get(c.iso2, [])]))
         label = adjs[0] if adjs else c.name
@@ -160,16 +204,19 @@ def _generated(cfg: Mapping[str, Any]) -> Iterator[tuple[str, ActorEntry]]:
         own = [] if c.iso2 in skip else [c.name]
         for key, table in blocks.items():
             for klass, words in table.items():
-                entry = ActorEntry(f"{label} {CLASS_NOUN.get(klass, klass)}", c.iso2, klass)
+                name = f"{label} {CLASS_NOUN.get(klass, klass)}"
+                entry = ActorEntry(name, c.iso2, klass,
+                                   conflict_only=key == "demonym_nouns_conflict")
                 for w in words:
-                    if key == "nouns":
-                        phrases = [f"{a} {w}" for a in (*adjs, *own)]
-                    elif key == "demonym_nouns":
-                        phrases = [f"{a} {w}" for a in adjs]
+                    if key == "nouns":  # "Mexico police" may sit inside "New Mexico police"
+                        named = ActorEntry(name, c.iso2, klass, name_form=True)
+                        pairs = [*((f"{a} {w}", entry) for a in adjs),
+                                 *((f"{n} {w}", named) for n in own)]
+                    elif key.startswith("demonym_nouns"):
+                        pairs = [(f"{a} {w}", entry) for a in adjs]
                     else:  # "Government of Sudan", "Protesters (Kenya)"
-                        phrases = [f"{w} {n}" for n in names]
-                    for p in phrases:
-                        yield p, entry
+                        pairs = [(f"{w} {n}", entry) for n in names]
+                    yield from pairs
 
 
 # ------------------------------------------------------------------- resolution
@@ -190,6 +237,8 @@ def resolve_actors(event: Mapping[str, Any], docs: Sequence[Any], lexicon: Actor
     2. ACLED / UCDP side names through the lexicon;
     3. lexicon hits in every document's title and snippet, role ``mentioned`` (news and
        sensor events only: an ACLED / UCDP document is generated from the side names);
+       generic phrases ("Indian attack", ``conflict_only``) only when ``event['category']``
+       is one of the lexicon's ``conflict_categories``;
     4. the LLM extraction's actor names through the lexicon.
 
     ``docs`` are ``osint.enrich.rules.base.ExtractDoc``-like (``title``, ``snippet``).
@@ -218,10 +267,13 @@ def resolve_actors(event: Mapping[str, Any], docs: Sequence[Any], lexicon: Actor
             hit = lexicon.lookup(str(a.get("name") or ""))
             add({**a, "country": hit.country if hit else None, "source": src})
     if base == "gdelt":
+        conflict = lexicon.is_conflict(event.get("category"))
         for d in docs:
             for text in (getattr(d, "title", ""), getattr(d, "snippet", "")):
                 for h in lexicon.find(text or ""):
                     e = h.payload
+                    if e.conflict_only and not conflict:
+                        continue
                     add({"name": e.name, "role": "mentioned", "type": e.klass,
                          "country": e.country, "source": "rule", "quote": h.text})
     for a in llm_actors:
