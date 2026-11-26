@@ -932,12 +932,13 @@ class SqliteStore:
             return self._db.executemany("UPDATE events SET lifecycle=? WHERE id=?",
                                         [(s, eid) for eid, s in states.items()]).rowcount
 
-    def lifecycle_inputs(self, recent_since: datetime, ids: list[str] | None = None
-                         ) -> list[dict]:
+    def lifecycle_inputs(self, recent_since: datetime, ids: list[str] | None = None, *,
+                         limit: int | None = None) -> list[dict]:
         """{id, origin, t_end, lifecycle, last_doc_at, recent_docs} per event: the newest
         linked article's published_at (GDELT rows excluded) and the articles published at or
         after ``recent_since``. ``ids`` None: every event whose lifecycle is unset or not
-        'closed' (a closed event only reopens when a pass touches it: pass its id)."""
+        'closed' (a closed event only reopens when a pass touches it: pass its id), the
+        first ``limit`` by id when given."""
         base = ("SELECT e.id, e.origin, e.t_end, e.lifecycle, MAX(d.published_at), "
                 "COALESCE(SUM(d.published_at >= ?), 0) FROM events e "
                 "LEFT JOIN event_documents d ON d.event_id = e.id AND d.role != 'gdelt' ")
@@ -945,9 +946,11 @@ class SqliteStore:
         rows: list[tuple] = []
         with self._lock:
             if ids is None:
+                tail = " ORDER BY e.id LIMIT ?" if limit is not None else ""
                 rows = self._db.execute(
                     base + "WHERE e.lifecycle IS NULL OR e.lifecycle != 'closed' "
-                    "GROUP BY e.id", (since,)).fetchall()
+                    "GROUP BY e.id" + tail,
+                    (since, *([int(limit)] if limit is not None else []))).fetchall()
             else:
                 for i in range(0, len(ids), 800):
                     chunk = ids[i: i + 800]

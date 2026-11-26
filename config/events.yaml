@@ -178,3 +178,4 @@ lifecycle:
   developing_min_docs: 2    # ... and at least this many reports within developing_h
   active_h: 48              # newest report at most this old
   cooling_d: 7              # at most this old; older -> closed
+  max_open_per_pass: 20000  # open (not closed) events re-scanned per pass, by id

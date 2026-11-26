@@ -565,7 +565,8 @@ class EventBuilder:
                 self.metrics.inc("event_merge_errors_total")
                 log.exception("event consolidation failed")
         # events this pass created, added a document to, or merged into (spec §2.6)
-        touched = (set(res.changed) | self._merge_survivors) & set(self.clusterer.events)
+        # (ids are read from the store: one already evicted from the in-memory index counts)
+        touched = set(res.changed) | self._merge_survivors
         self._merge_survivors = set()
         newest = max((d.fetched_at for d in docs if d.fetched_at), default=None)
         if newest is not None and (cursor is None or newest > cursor):

@@ -345,6 +345,50 @@ def test_builder_pass_reports_unresolved_countries(tmp_path):
     store.close()
 
 
+def _evicting_builder(tmp_path, monkeypatch):
+    """A builder whose touched events leave the in-memory index during the pass (as an
+    event merged or pruned away would), with refresh_lifecycle's id arguments recorded."""
+    import osint.pipeline.events as events_mod
+    from osint.enrich.actors import ActorLexicon
+    from osint.enrich.rules import RuleSet
+    from osint.pipeline.rule_pass import RulePass
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    title = "Russian shelling of Kyiv kills 3 civilians"
+    lake.write("documents", [
+        _row(1, title, fetched=NOW - timedelta(minutes=50)),
+        _row(2, title, fetched=NOW - timedelta(minutes=40), host="other.example")])
+    b = _builder(store, lake, lambda: NOW)
+    b.rule_pass = RulePass(store, lexicon=ActorLexicon.load(), rules=RuleSet.load(), lake=lake)
+
+    def evict(now, ids=None):
+        for eid in list(ids or ()):
+            b.clusterer._drop_event(eid)
+        return 0
+
+    calls = []
+    real = events_mod.refresh_lifecycle
+
+    def spy(store_, now, cfg, ids=None):
+        calls.append(None if ids is None else set(ids))
+        return real(store_, now, cfg, ids)
+
+    monkeypatch.setattr(b, "consolidate", evict)
+    monkeypatch.setattr(events_mod, "refresh_lifecycle", spy)
+    return b, store, calls
+
+
+def test_touched_events_evicted_from_memory_are_still_refreshed(tmp_path, monkeypatch):
+    b, store, calls = _evicting_builder(tmp_path, monkeypatch)
+    s = b.run_once()
+    [ev] = store.list_events(limit=10)
+    assert ev["id"] not in b.clusterer.events  # gone from memory, still in the store
+    assert {ev["id"]} in calls  # lifecycle refresh of the touched id
+    assert s.rule_events == 1 and ev["actor_countries"] == ["RU"]
+    store.close()
+
+
 def test_new_verdicts_re_run_rule_extraction(tmp_path):
     from osint.enrich.actors import ActorLexicon
     from osint.enrich.rules import RuleSet

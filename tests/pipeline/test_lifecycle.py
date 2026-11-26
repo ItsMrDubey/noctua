@@ -38,7 +38,8 @@ def test_no_time_is_closed():
 def test_thresholds_come_from_events_yaml():
     cfg = EventsConfig.from_file(ROOT / "config" / "events.yaml")
     assert cfg.lifecycle == LifecycleConfig(developing_h=6.0, developing_min_docs=2,
-                                            active_h=48.0, cooling_d=7.0)
+                                            active_h=48.0, cooling_d=7.0,
+                                            max_open_per_pass=20000)
     assert EventsConfig.from_dict({}).lifecycle == LifecycleConfig()
 
 
@@ -90,12 +91,33 @@ def test_refresh_lifecycle_writes_changes_and_reopens_touched_events(tmp_path):
     store.close()
 
 
+def test_open_event_scan_is_capped_per_pass(tmp_path):
+    # the one-off backfill of NULL-lifecycle rows spreads over passes (ordered by id);
+    # classified closed rows leave the open set, so the next pass reaches the rest
+    store = SqliteStore(tmp_path / "s.sqlite")
+    store.save_events([_ev(f"E{i}", NOW - timedelta(days=10)) for i in range(5)])
+    capped = LifecycleConfig(max_open_per_pass=2)
+    assert refresh_lifecycle(store, NOW, capped) == 2
+    assert [store.get_event(f"E{i}")["lifecycle"] for i in range(5)] == [
+        "closed", "closed", None, None, None]
+    assert refresh_lifecycle(store, NOW, capped) == 2
+    assert refresh_lifecycle(store, NOW, capped) == 1
+    assert refresh_lifecycle(store, NOW, capped) == 0
+    assert refresh_lifecycle(store, NOW, capped, ["E0", "E1", "E2"]) == 0  # ids: no cap
+    store.close()
+
+
 def test_open_events_query_uses_partial_index(tmp_path):
     store = SqliteStore(tmp_path / "s.sqlite")
     plan = " ".join(str(tuple(r)) for r in store._db.execute(
         "EXPLAIN QUERY PLAN SELECT e.id FROM events e "
         "WHERE e.lifecycle IS NULL OR e.lifecycle != 'closed'"))
     assert "events_open" in plan
+    capped = " ".join(str(tuple(r)) for r in store._db.execute(
+        "EXPLAIN QUERY PLAN SELECT e.id FROM events e "
+        "WHERE e.lifecycle IS NULL OR e.lifecycle != 'closed' GROUP BY e.id "
+        "ORDER BY e.id LIMIT 5"))
+    assert "events_open" in capped and "TEMP B-TREE" not in capped  # streams, stops early
     store.close()
 
 
