@@ -113,6 +113,17 @@ def default_lexicon() -> ActorLexicon:
     return ActorLexicon.load()
 
 
+def lexicon_for(config_dir: Path) -> ActorLexicon:
+    """The lexicon of ``config_dir`` (actors.yaml + terror_groups.yaml): the shared
+    ``default_lexicon()`` when that is the default config dir (one ~27 MB copy per process),
+    else a fresh load."""
+    actors, groups = Path(config_dir) / "actors.yaml", Path(config_dir) / "terror_groups.yaml"
+    if (actors.resolve() == DEFAULT_ACTORS.resolve()
+            and groups.resolve() == DEFAULT_GROUPS.resolve()):
+        return default_lexicon()
+    return ActorLexicon.load(actors, groups_path=groups)
+
+
 def _country(value: Any, where: str) -> str | None:
     if value is None:
         return None

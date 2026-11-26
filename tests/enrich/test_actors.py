@@ -203,3 +203,17 @@ def test_conflict_categories_must_be_known_event_categories(tmp_path, cats):
 def test_the_shipped_conflict_categories(lex):
     assert lex.conflict_categories == frozenset(
         {"armed_conflict", "maritime_security", "air_activity"})
+
+
+def test_lexicon_for_the_default_config_dir_is_the_shared_default(tmp_path):
+    """The EventBuilder and the ACLED / UCDP writers share one lexicon (~27 MB) when the
+    config dir is the default; another config dir loads its own."""
+    import shutil
+
+    from osint.config import ROOT
+    from osint.enrich.actors import default_lexicon, lexicon_for
+    assert lexicon_for(ROOT / "config") is default_lexicon()
+    for name in ("actors.yaml", "terror_groups.yaml"):
+        shutil.copy(ROOT / "config" / name, tmp_path / name)
+    own = lexicon_for(tmp_path)
+    assert own is not default_lexicon() and len(own) == len(default_lexicon())

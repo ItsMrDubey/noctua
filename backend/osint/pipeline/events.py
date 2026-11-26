@@ -435,7 +435,7 @@ class EventBuilder:
     @classmethod
     def from_settings(cls, settings: Any, store: SqliteStore, lake: Lake,
                       metrics: Metrics | None = None) -> EventBuilder:
-        from osint.enrich.actors import ActorLexicon
+        from osint.enrich.actors import lexicon_for
         from osint.enrich.rules import RuleSet
 
         cfg_dir = Path(settings.config_dir)
@@ -445,10 +445,10 @@ class EventBuilder:
             CorroborationConfig.from_file(cfg_dir / "corroboration.yaml"))
         cfg = EventsConfig.from_file(cfg_dir / "events.yaml")
         embedder = build_embedder(cfg.embedding, Path(settings.data_dir))
-        # a lexicon that fails to load raises LexiconError here: fatal at startup (spec §3)
+        # a lexicon that fails to load raises LexiconError here: fatal at startup (spec §3);
+        # the default config dir shares the ACLED / UCDP writers' default_lexicon()
         rule_pass = RulePass(
-            store, lexicon=ActorLexicon.load(cfg_dir / "actors.yaml",
-                                             groups_path=cfg_dir / "terror_groups.yaml"),
+            store, lexicon=lexicon_for(cfg_dir),
             rules=RuleSet.load(cfg_dir / "extract_rules.yaml"), lake=lake,
             embedder=embedder, metrics=metrics)
         return cls(store, lake, metrics, cfg,

@@ -475,3 +475,19 @@ def test_verdict_ids_survive_a_failed_rule_pass(tmp_path, monkeypatch):
     b.run_once()
     assert calls == [{"E1"}, {"E1"}] and b._verdict_ids == set()
     store.close()
+
+
+def test_from_settings_reuses_the_default_lexicon(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from osint.enrich.actors import default_lexicon
+    monkeypatch.setenv("OSINT_EMBEDDING", "0")
+    store = SqliteStore(tmp_path / "e.sqlite")
+    lake = Lake(tmp_path / "lake")
+    try:
+        b = EventBuilder.from_settings(
+            SimpleNamespace(config_dir=ROOT / "config", data_dir=tmp_path), store, lake)
+        assert b.rule_pass.lexicon is default_lexicon()
+    finally:
+        lake.close()
+        store.close()

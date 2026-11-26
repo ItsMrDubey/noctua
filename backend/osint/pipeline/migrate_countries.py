@@ -249,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     from osint.config import Settings
-    from osint.enrich.actors import ActorLexicon
+    from osint.enrich.actors import lexicon_for
     from osint.enrich.rules import RuleSet
     from osint.pipeline.events import EventsConfig
     from osint.pipeline.extract.store import ExtractionStore
@@ -273,8 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     extractions = ExtractionStore(ext_path, read_only=dry) if ext_path.is_file() else None
     cfg = EventsConfig.from_file(st.config_dir / "events.yaml")
     rule_pass = RulePass(  # the migration's own instance: its snippet LRU is not shared
-        view, lexicon=ActorLexicon.load(st.config_dir / "actors.yaml",
-                                        groups_path=st.config_dir / "terror_groups.yaml"),
+        view, lexicon=lexicon_for(st.config_dir),
         rules=RuleSet.load(st.config_dir / "extract_rules.yaml"), lake=lake,
         extractions=extractions)
     try:
