@@ -35,6 +35,7 @@ from osint.backfill.common import BackfillContext, FetchError, Summary, Window, 
 from osint.core.countries import to_iso2
 from osint.core.geo import h3_cells, utcnow, valid_coord
 from osint.core.models import clip_snippet
+from osint.enrich.actors import default_lexicon, derive, resolve_actors
 
 log = logging.getLogger("osint.backfill.ucdp")
 
@@ -150,16 +151,17 @@ def map_row(row: dict[str, str], dataset: str, now: datetime) -> dict[str, Any] 
     n_sources = _int(row.get("number_of_sources"), 0) or 0
     event_id = f"ucdp-{uid}"
     doc_id = f"ucdp:{uid}"
+    cc = to_iso2(country, "name") if country else None
+    actors = resolve_actors({"id": event_id, "actors": [a for a in (
+        {"name": side_a, "role": "side_a", "type": "", "source": SOURCE},
+        {"name": side_b, "role": "side_b", "type": "", "source": SOURCE}) if a["name"]]},
+        (), default_lexicon())
     event = {
         "id": event_id, "category": CATEGORY, "subcategory": sub, "cameo_root": None,
         "title": title, "summary": summary,
-        "actors": [a for a in ({"name": side_a, "role": "side_a", "type": "", "country": None,
-                                "source": SOURCE},
-                               {"name": side_b, "role": "side_b", "type": "", "country": None,
-                                "source": SOURCE})
-                   if a["name"]],
+        "actors": actors,
         "lat": lat, "lon": lon, "precision": prec, "place_name": place or country or None,
-        "country": to_iso2(country, "name") if country else None, "geo_confidence": geo_conf,
+        "country": cc, "geo_confidence": geo_conf,
         "h3_3": h3.int_to_str(c3), "h3_5": h3.int_to_str(c5), "h3_7": h3.int_to_str(c7),
         "t_start": _iso(t_start), "t_end": _iso(t_end), "status": STATUS,
         "origin": "historical",
@@ -168,6 +170,7 @@ def map_row(row: dict[str, str], dataset: str, now: datetime) -> dict[str, Any] 
         "gdelt_ids": [], "first_seen": _iso(t_end), "updated_at": _iso(t_end),
         "cluster_state": {"source": SOURCE, "dataset": dataset, "ucdp_id": uid,
                           "imported_at": _iso(now)},
+        **derive(actors, cc),
     }
     document = {
         "event_id": event_id, "doc_id": doc_id, "source": SOURCE,

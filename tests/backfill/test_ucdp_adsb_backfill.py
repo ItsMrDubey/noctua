@@ -50,7 +50,10 @@ def test_ucdp_row_mapping_precision_and_time():
     assert ev["t_start"].startswith("2026-10-06T00:00:00") and ev["t_end"].startswith("2026-10-07")
     assert ev["updated_at"] == ev["t_end"]  # history does not look "recently updated"
     assert ev["h3_3"] and ev["lat"] == 34.663769
-    assert ev["country"] == "AF" and [a["source"] for a in ev["actors"]] == ["ucdp", "ucdp"]
+    assert ev["country"] == "AF"
+    assert [(a["country"], a["source"]) for a in ev["actors"]] == [("AF", "ucdp"),
+                                                                  (None, "ucdp")]
+    assert ev["actor_countries"] == ["AF"] and ev["foreign_involved"] is False
     assert ev["source_diversity"] == 2 and "1 killed" in ev["title"]
     fields = {f["field"]: f["value"] for f in m["fields"]}
     assert fields["fatalities_best"] == "1" and fields["fatalities_high"] == "2"

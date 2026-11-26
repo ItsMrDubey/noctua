@@ -1,7 +1,9 @@
 """Actor lexicon (osint.enrich.actors) over config/actors.yaml + terror groups + countries."""
+from types import SimpleNamespace
+
 import pytest
 
-from osint.enrich.actors import ActorLexicon, LexiconError
+from osint.enrich.actors import ActorLexicon, LexiconError, derive, resolve_actors
 
 
 @pytest.fixture(scope="module")
@@ -79,3 +81,46 @@ def test_a_bad_lexicon_is_fatal(tmp_path, body):
 def test_a_missing_lexicon_is_fatal(tmp_path):
     with pytest.raises(LexiconError):
         ActorLexicon.load(tmp_path / "missing.yaml")
+
+
+def _doc(title, snippet=""):
+    return SimpleNamespace(title=title, snippet=snippet)
+
+
+def test_resolution_order_sources_and_dedupe(lex):
+    ev = {"id": "01NEWS", "country": "UA", "actors": [
+        {"name": "Russia", "role": "source", "type": "RUS", "country": "RUS"},  # legacy row
+        {"name": "Ukraine", "role": "target", "type": "UKR", "country": "UA",
+         "cameo": "UKR", "source": "gdelt"},
+        {"name": "Stale", "role": "mentioned", "country": "FR", "source": "rule"}]}
+    docs = [_doc("Russian shelling of Kyiv kills 3", "Russian shelling continued"),
+            _doc("Kyiv under fire")]
+    out = resolve_actors(ev, docs, lex,
+                         [{"name": "Israel Defense Forces", "role": "perpetrator",
+                           "type": None}, {"name": "Unknown gunmen", "role": "other"}])
+    assert [(a["name"], a["country"], a["source"]) for a in out] == [
+        ("Russia", "RU", "gdelt"), ("Ukraine", "UA", "gdelt"),
+        ("Russian forces", "RU", "rule"), ("Israel Defense Forces", "IL", "llm"),
+        ("Unknown gunmen", None, "llm")]
+    assert out[0]["cameo"] == "RUS" and out[2]["role"] == "mentioned"
+    assert out[2]["quote"] == "Russian shelling"
+    assert resolve_actors({**ev, "actors": out}, docs, lex, []) == out[:3]  # idempotent
+
+
+def test_acled_and_ucdp_actors_use_side_names_not_documents(lex):
+    ev = {"id": "ucdp-1", "actors": [
+        {"name": "Government of Afghanistan", "role": "side_a", "type": "", "country": None},
+        {"name": "Civilians", "role": "side_b", "type": "", "country": None}]}
+    out = resolve_actors(ev, [_doc("Government of Afghanistan - Civilians")], lex)
+    assert [(a["country"], a["source"]) for a in out] == [("AF", "ucdp"), (None, "ucdp")]
+
+
+def test_derive():
+    acts = [{"name": "a", "country": "RU"}, {"name": "b", "country": None},
+            {"name": "c", "country": "UA"}, {"name": "d", "country": "RU"}]
+    assert derive(acts, "UA") == {"actor_countries": ["RU", "UA"], "foreign_involved": True,
+                                  "attributed": True}
+    assert derive(acts[:2], "ru")["foreign_involved"] is False
+    assert derive([], "UA") == {"actor_countries": [], "foreign_involved": False,
+                                "attributed": False}
+    assert derive(acts, None)["foreign_involved"] is False  # no location: not "foreign"

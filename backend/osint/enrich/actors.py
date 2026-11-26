@@ -12,7 +12,7 @@ longest phrase wins (``osint.enrich.phrases``). A lexicon that fails to load rai
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -170,3 +170,76 @@ def _generated(cfg: Mapping[str, Any]) -> Iterator[tuple[str, ActorEntry]]:
                         phrases = [f"{w} {n}" for n in names]
                     for p in phrases:
                         yield p, entry
+
+
+# ------------------------------------------------------------------- resolution
+
+
+def _base_source(event: Mapping[str, Any]) -> str:
+    eid = str(event.get("id") or "")
+    return "acled" if eid.startswith("acled-") else "ucdp" if eid.startswith("ucdp-") \
+        else "gdelt"
+
+
+def resolve_actors(event: Mapping[str, Any], docs: Sequence[Any], lexicon: ActorLexicon,
+                   llm_actors: Sequence[Mapping[str, Any]] = ()) -> list[dict[str, Any]]:
+    """The event's actors, each with ``country`` (ISO2 or None) and ``source``
+    (gdelt | acled | ucdp | rule | llm), duplicates removed by (name, country), in order:
+
+    1. GDELT actors: the CAMEO country code (kept as ``cameo``) -> ISO2;
+    2. ACLED / UCDP side names through the lexicon;
+    3. lexicon hits in every document's title and snippet, role ``mentioned`` (news and
+       sensor events only: an ACLED / UCDP document is generated from the side names);
+    4. the LLM extraction's actor names through the lexicon.
+
+    ``docs`` are ``osint.enrich.rules.base.ExtractDoc``-like (``title``, ``snippet``).
+    Earlier ``rule`` / ``llm`` entries in ``event['actors']`` are dropped and re-derived,
+    so the result does not depend on how often it ran."""
+    base = _base_source(event)
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    def add(actor: dict[str, Any]) -> None:
+        key = (name_key(str(actor.get("name") or "")), actor.get("country"))
+        if key[0] and key not in seen:
+            seen.add(key)
+            out.append(actor)
+
+    for a in event.get("actors") or []:
+        src = str(a.get("source") or base)
+        if src in ("rule", "llm"):
+            continue
+        if src == "gdelt":
+            # rows written before the registry kept the CAMEO code in "country"
+            cameo = str((a["cameo"] if "cameo" in a else a.get("country")) or "").strip().upper()
+            add({**a, "country": countries.to_iso2(cameo, "cameo") if cameo else None,
+                 "cameo": cameo, "source": "gdelt"})
+        else:
+            hit = lexicon.lookup(str(a.get("name") or ""))
+            add({**a, "country": hit.country if hit else None, "source": src})
+    if base == "gdelt":
+        for d in docs:
+            for text in (getattr(d, "title", ""), getattr(d, "snippet", "")):
+                for h in lexicon.find(text or ""):
+                    e = h.payload
+                    add({"name": e.name, "role": "mentioned", "type": e.klass,
+                         "country": e.country, "source": "rule", "quote": h.text})
+    for a in llm_actors:
+        nm = str(a.get("name") or "").strip()
+        if not nm:
+            continue
+        hit = lexicon.lookup(nm)
+        add({"name": nm, "role": str(a.get("role") or "other"),
+             "type": str(a.get("type") or (hit.klass if hit else "")),
+             "country": hit.country if hit else None, "source": "llm"})
+    return out
+
+
+def derive(actors: Sequence[Mapping[str, Any]], country: str | None) -> dict[str, Any]:
+    """``actor_countries`` (sorted ISO2, nulls dropped), ``foreign_involved`` (an actor
+    country differs from the event's country) and ``attributed`` (any actor country)."""
+    ccs = sorted({str(a["country"]) for a in actors if a.get("country")})
+    home = (country or "").strip().upper()
+    return {"actor_countries": ccs,
+            "foreign_involved": bool(home) and any(c != home for c in ccs),
+            "attributed": bool(ccs)}

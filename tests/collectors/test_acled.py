@@ -47,7 +47,10 @@ def test_map_row():
     assert e["origin"] == "historical" and e["precision"] == "city"
     assert (e["lat"], e["lon"]) == (13.629, 25.3494)
     assert e["country"] == "SD"
-    assert [a["source"] for a in e["actors"]] == ["acled", "acled"]
+    assert [(a["country"], a["source"]) for a in e["actors"]] == [("SD", "acled"),
+                                                                 ("SD", "acled")]
+    assert e["actor_countries"] == ["SD"] and e["attributed"] is True
+    assert e["foreign_involved"] is False
     assert e["t_start"].startswith("2026-11-20T00:00:00")
     assert e["title"].startswith("Armed clash: Rapid Support Forces vs Military Forces")
     assert "(12 killed)" in e["title"] and e["mention_count"] == 2
@@ -208,3 +211,12 @@ async def test_transport_error_raises_without_secrets(tmp_path):
         with pytest.raises(RuntimeError) as exc:
             await AcledCollector({}).poll(_ctx(http, tmp_path))
     assert str(exc.value) == "acled: ConnectError"
+
+
+def test_map_row_derived_columns_are_stored(tmp_path):
+    m = map_row(acled_row(actor2="Military Forces of Chad (2021-)"), NOW)
+    store = SqliteStore(tmp_path / "s.sqlite")
+    store.save_events([m["event"]], [m["document"]], m["fields"])
+    e = store.get_event("acled-SDN12345")
+    assert e["actor_countries"] == ["SD", "TD"] and e["foreign_involved"] == 1
+    store.close()
