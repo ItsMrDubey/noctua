@@ -133,6 +133,7 @@ def mount_m1(app: FastAPI, runtime: Runtime) -> None:
     __import__("osint.api.signals", fromlist=["mount_signals"]).mount_signals(app, runtime)
     __import__("osint.api.profiles", fromlist=["mount_profiles"]).mount_profiles(app, runtime)
     __import__("osint.api.terror", fromlist=["mount_terror"]).mount_terror(app, runtime)
+    __import__("osint.api.country", fromlist=["mount_country"]).mount_country(app, runtime)
 
     @app.get("/")
     def index():
