@@ -99,6 +99,13 @@ casualties:
          ستة: 6, ست: 6, سبعة: 7, سبع: 7, ثمانية: 8, ثماني: 8, تسعة: 9, تسع: 9, عشرة: 10,
          عشر: 10, أحد عشر: 11, اثنا عشر: 12, ثلاثة عشر: 13, أربعة عشر: 14, خمسة عشر: 15,
          ستة عشر: 16, سبعة عشر: 17, ثمانية عشر: 18, تسعة عشر: 19, عشرون: 20, عشرين: 20}
+  # Tens words: a number word right after one of these ("thirty two", "двадцать один") is part
+  # of a compound above twenty, which is not extracted (no value, never the units word).
+  tens_words: [thirty, forty, fifty, sixty, seventy, eighty, ninety, vingt, trente, quarante,
+               cinquante, soixante, veinte, veinti, treinta, cuarenta, cincuenta, sesenta,
+               setenta, ochenta, noventa, двадцать, тридцать, сорок, пятьдесят, шестьдесят,
+               семьдесят, восемьдесят, девяносто, двадцять, тридцять, п'ятдесят, шістдесят,
+               сімдесят, вісімдесят, дев'яносто]
   killed:
     en:
       - '\b(?:killed|kills|killing|kill)\s+(?:at\s+least\s+|some\s+|about\s+|around\s+|nearly\s+|more\s+than\s+|over\s+)?{n}\b'

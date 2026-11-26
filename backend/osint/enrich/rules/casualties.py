@@ -19,7 +19,7 @@ from typing import Any
 from osint.enrich.rules.base import ExtractDoc, FieldValue
 
 FIELDS = {"killed": "casualties.killed", "injured": "casualties.injured"}
-_SEPARATORS = re.compile("[,  ]")
+_SEPARATORS = re.compile("[,   ]")
 
 
 class CasualtyRules:
@@ -29,8 +29,16 @@ class CasualtyRules:
             for word, value in (table or {}).items():
                 self.words[unicodedata.normalize("NFC", str(word)).casefold()] = int(value)
         alt = "|".join(re.escape(w) for w in sorted(self.words, key=len, reverse=True))
-        num = (r"(?P<n>\d{1,3}(?:[,  ]\d{3})+|\d+" + (f"|{alt}" if alt else "")
+        # Digit groups: NBSP / narrow NBSP / comma / plain space (the latter only as exact
+        # groups of three, "1 200"). Number words need a left guard: not after a word
+        # character or hyphen ("twenty-one" must not read as "one").
+        num = (r"(?P<n>\d{1,3}(?:[,   ]\d{3})+|\d+"
+               + (rf"|(?<![\w-])(?:{alt})" if alt else "")
                + r")(?![\d%-]|[.,]\d)")
+        tens = [unicodedata.normalize("NFC", str(w)).casefold() for w in cfg.get("tens_words") or ()]
+        self._after_tens = (re.compile(
+            r"(?<![\w-])(?:" + "|".join(re.escape(w) for w in tens) + r")(?:\s+(?:y|et|и|та|і))?[\s-]+$")
+            if tens else None)
         self.max_value = int(cfg.get("max_value", 100000))
         self.patterns: dict[str, list[re.Pattern[str]]] = {}
         for field in FIELDS:
@@ -50,6 +58,12 @@ class CasualtyRules:
             return None
         return v if 0 <= v <= self.max_value else None
 
+    def _compound(self, low: str, start: int, raw: str) -> bool:
+        """True for a number word that follows a tens word ("thirty two", "двадцать один"):
+        compounds above twenty are out of scope, never read as their units word."""
+        return (self._after_tens is not None and raw in self.words
+                and self._after_tens.search(low, 0, start) is not None)
+
     def doc_value(self, field: str, text: str) -> tuple[int, str] | None:
         """(largest number, matched span) for ``field`` in ``text``, or None."""
         norm = unicodedata.normalize("NFC", text or "").replace("’", "'")
@@ -58,6 +72,8 @@ class CasualtyRules:
         best: tuple[int, str] | None = None
         for p in self.patterns.get(field, ()):
             for m in p.finditer(low):
+                if self._compound(low, m.start("n"), m.group("n")):
+                    continue
                 v = self._value(m.group("n"))
                 if v is not None and (best is None or v > best[0]):
                     best = (v, src[m.start():m.end()])
