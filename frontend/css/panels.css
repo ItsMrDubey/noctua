@@ -202,3 +202,4 @@
 .state-loading { color: var(--dim); font-family: var(--f-mono); }
 .state-err b { color: var(--red-2); }
 #cmdbar .sp-card .state { padding: 2px 0; }
+.tw-stale .state { padding: 4px 8px; }

@@ -6,7 +6,7 @@ import { DensityLayer } from "/static/js/density.js";
 import { Timeline, RANGES } from "/static/js/timeline.js";
 import { LiveSocket } from "/static/js/livesocket.js";
 import { ReferenceLayers, REF_IDS, BASE_CHIPS, refDetails, airportRunwaysHtml } from "/static/js/reference.js";
-import { $, esc, evTitle } from "/static/js/ui.js";
+import { $, esc, evTitle, settleLoading } from "/static/js/ui.js";
 import { fmtDateTime, onTzChange } from "/static/js/timefmt.js";
 import { createViewer, setupImagery, applyConfig, preloadBaseTiles } from "/static/js/theme/globe.js";
 import { BASE_URL } from "/static/js/layers.js";
@@ -287,16 +287,17 @@ async function main() {
     const it = byKind[selected.kind].items.get(selected.id);
     if (!it) return;
     if (isTrack(selected.kind)) { inspector.track(selected.kind, it, detail && detail.id === selected.id ? detail : null); alerts.squawk(withExtra(it)); }
-    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null, hooks.nearNuclear(it));
+    else if (selected.kind === "events") inspector.event(it, detail && detail.id === selected.id ? detail : null, hooks.nearNuclear(it), detailErr && detailErr.id === selected.id ? detailErr.msg : null);
     else inspector.observation(selected.kind, it);
   }
+  let detailErr = null; // {id, msg} when the full-record fetch for the selected event failed
   async function loadDetail(kind, id) {
-    detail = null;
+    detail = null; detailErr = null;
     if (!isTrack(kind) && kind !== "events") return;
     try {
       const d = await fetchJson((kind === "events" ? "/api/events/" : "/api/track/") + encodeURIComponent(id), 8000);
       if (selected && selected.id === id) { detail = d; refreshSelected(); }
-    } catch (e) { /* older backend or unknown track: the list item is enough */ }
+    } catch (e) { /* older backend or unknown track: the list item is enough */ if (selected && selected.id === id) { detailErr = { id, msg: String((e && e.message) || e) }; refreshSelected(); } }
   }
   // module-rendered selections (webcam, carrier hypothesis) own timers / labels: release them
   const mods = { wc: null, naval: null };
@@ -376,6 +377,7 @@ async function main() {
       savePins(); tracklist.dirty = true; tracklist.render(true); buttons();
     },
   });
+  trails.onState = (key, inFlight, err) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrailState(inFlight, err); };
   trails.onPoints = (key, pts) => { if (selected && key === selected.kind + ":" + selected.id) inspector.setTrail(pts); };
   const fireScore = installFireScore({ viewer, fires, inspector }); // fire conflict score: style, filter, dossier, front line
 
@@ -893,6 +895,7 @@ async function main() {
     feed("fires", "/api/layers/fires?hours=24", fires), feed("quakes", "/api/layers/quakes?hours=24", quakes),
   ];
   poll("events", 60000, () => evFeed.tick(), onErr);
+  settleLoading($("ev-score"), 15000, "Scorecard unavailable");
   poll("events-stats", 60000, () => refreshEventStats(), onErr);
   poll("status", 5000, async () => { lastStatus = await fetchJson("/api/status", 8000); freshness.setStatus(lastStatus); }, onErr);
   poll("aircraft", 10000, ticks[0], onErr);

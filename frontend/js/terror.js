@@ -424,7 +424,11 @@ export class TerrorPanel {
     try {
       [feed, g] = await Promise.all([fetchJson("/api/terror/feed?" + qs, 30000), this.global ? Promise.resolve(this.global) : fetchJson("/api/terror/board/global", 30000).catch(() => null)]);
     } catch (e) {
-      this.el.innerHTML = stateHtml("err", "Terror Watch feed unavailable", String((e && e.message) || e));
+      const msg = String((e && e.message) || e);
+      if (!this.items.length) { this.el.innerHTML = stateHtml("err", "Terror Watch feed unavailable", msg); return; }
+      // already rendered: keep the data, show a one-line non-destructive note above it
+      const note = this.el.querySelector(".tw-stale") || this.el.insertAdjacentElement("afterbegin", Object.assign(document.createElement("div"), { className: "tw-stale" }));
+      note.innerHTML = stateHtml("err", "Showing last data", "Refresh failed: " + msg);
       return;
     }
     this.items = (feed && feed.items) || []; this.global = g;

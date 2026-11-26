@@ -43,6 +43,7 @@ export class Trails {
     const now = Date.now();
     if (!force && key === this.selKey && now - this.lastSel < 8000) return;
     this.selKey = key; this.lastSel = now;
+    if (this.onState) this.onState(key, true, null);
     try {
       const d = await fetchJson("/api/tracks/" + encodeURIComponent(id) + "?hours=6");
       if (this.selKey !== key) return; // selection changed while fetching
@@ -52,7 +53,7 @@ export class Trails {
       this.points = d.points || [];
       if (this.onPoints) this.onPoints(key, this.points);
       this.scene.requestRender();
-    } catch (e) { /* keep previous trail */ }
+    } catch (e) { if (this.selKey === key && this.onState) this.onState(key, false, String((e && e.message) || e)); /* keep previous trail */ }
   }
 
   async refreshMil() {

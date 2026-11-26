@@ -45,3 +45,28 @@ def test_state_helpers():
     assert out["b"] == '<div class="state state-loading"><b>Loading</b></div>'
     assert 'state-err' in out["settled"] and "Gone" in out["settled"] and "No answer within 0 s" in out["settled"]
     assert out["kept"] == '<div class="state state-empty">E</div>'
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed")
+def test_trail_state():
+    src = (ROOT / "frontend" / "js" / "panels" / "inspector.js").read_text(encoding="utf-8")
+    m = re.search(r"^export function trailState.*?^}\n", src, re.S | re.M)
+    assert m, "trailState not found in inspector.js"
+    code = m.group(0).replace("export ", "")
+    pts = "[{}, {}]"
+    script = code + """
+const o = [
+  trailState({ inFlight: true, pts: null }),
+  trailState({ inFlight: true, pts: [{}] }),
+  trailState({ inFlight: false, pts: [{}] }),
+  trailState({ inFlight: false, pts: [] }),
+  trailState({ inFlight: false, pts: null, error: "boom" }),
+  trailState({ inFlight: false, pts: null }),
+  trailState({ inFlight: true, pts: %s }),
+  trailState({ inFlight: false, pts: %s, error: "x" }),
+];
+console.log(JSON.stringify(o));
+""" % (pts, pts)
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "loading", "empty", "empty", "error", "off", "ready", "ready"]
