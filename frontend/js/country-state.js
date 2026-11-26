@@ -129,5 +129,6 @@ export function controlSelector(ds) {
   if (ds.cat) return '[data-cat="' + q(ds.cat) + '"]';
   if (ds.date) return '[data-date="' + q(ds.date) + '"]';
   if (ds.cx === "uncp") return '[data-cx="uncp"]';
+  if (ds.cp) return '[data-cp="' + q(ds.cp) + '"]';
   return null;
 }

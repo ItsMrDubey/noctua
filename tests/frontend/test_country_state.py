@@ -209,6 +209,7 @@ def test_control_selector_refinds_each_filter_control():
     assert run(
         'return [S.controlSelector({k:"location",v:"inside"}), S.controlSelector({cat:"disaster"}),'
         ' S.controlSelector({date:"from"}), S.controlSelector({cx:"uncp"}), S.controlSelector({cx:"adv"}),'
+        ' S.controlSelector({cp:"RU"}),'
         ' S.controlSelector(null)];'
     ) == [
         '[data-k="location"][data-v="inside"]',
@@ -216,5 +217,6 @@ def test_control_selector_refinds_each_filter_control():
         '[data-date="from"]',
         '[data-cx="uncp"]',
         None,
+        '[data-cp="RU"]',
         None,
     ]

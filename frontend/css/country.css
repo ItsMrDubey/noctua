@@ -57,3 +57,18 @@
 .ds-pane .cx-cats .chip.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
 .ds-pane .cx-cats .chip:not(.on) { color: var(--dim) !important; border-color: var(--line); background: transparent; }
 .cx-loading .cx-seg button b { opacity: .45; }
+.ds-pane .cx-pair.chip.on { border-color: var(--amber); color: var(--amber); background: rgba(var(--acc-rgb), .08); font: 11px var(--f-mono); }
+
+/* counterpart breakdown */
+.cx-cp { display: flex; flex-direction: column; gap: 4px; }
+.cx-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cx-bars button { width: 100%; display: grid; grid-template-columns: minmax(0, 12em) 1fr 3.5em; align-items: center; gap: 8px; padding: 2px 4px; background: transparent; border: 1px solid transparent; color: var(--fg); font: 11px var(--f-body); text-align: left; cursor: pointer; }
+.cx-bars button:hover { background: var(--raise); }
+.cx-bars button.on { border-color: var(--amber); }
+.cx-bn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-bn small { font: 11px var(--f-mono); color: var(--dim); }
+.cx-bar { height: 6px; background: var(--line); }
+.cx-bar i { display: block; height: 100%; background: var(--amber); opacity: .75; }
+.cx-bars button.on .cx-bar i { opacity: 1; }
+.cx-bv { font: 11px var(--f-mono); color: var(--fg-2); text-align: right; }
+.cx-none { padding: 6px 0; font: 11px var(--f-mono); color: var(--dim); }

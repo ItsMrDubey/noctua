@@ -73,6 +73,7 @@ class CountryPane {
   paintSummary() {
     this.renderHead();
     if (!(this.filtersBusy() && this.countsOnly())) this.renderFilters(); // focus inside the bar: only the numbers change
+    this.renderCounterparts();
     this.root.querySelector(".cx-filters").classList.toggle("cx-loading", this.loadingN > 0);
   }
   // keyboard focus / an open date picker live inside .cx-filters: never rebuild it from under them on a refresh
@@ -88,14 +89,30 @@ class CountryPane {
   set(next) {
     this.st = normState(next);
     this.hooks.setSpec(this.st);
-    this.renderHead(); this.renderFilters(); // state changed: always a full repaint (focus is restored)
+    this.renderHead(); this.renderFilters(); this.renderCounterparts(); // state changed: always a full repaint (focus is restored)
     this.load("reset");
   }
-  renderFilters() {
-    const act = document.activeElement, host = this.root.querySelector(".cx-filters");
+  renderFilters() { this.keepFocus(".cx-filters", () => this.paintFilters()); }
+  // rebuild a section's innerHTML, then focus the same control again (the rebuild drops focus)
+  keepFocus(cls, paint) {
+    const act = document.activeElement, host = this.root.querySelector(cls);
     const sel = host && act && host.contains(act) ? controlSelector(act.dataset) : null;
-    this.paintFilters();
-    if (sel) { const el = host.querySelector(sel); if (el) el.focus(); } // innerHTML rebuild drops focus: find the same control again
+    paint();
+    if (sel) { const el = host.querySelector(sel); if (el) el.focus(); }
+  }
+  renderCounterparts() { this.keepFocus(".cx-cp", () => this.paintCounterparts()); }
+  paintCounterparts() {
+    const el = this.root.querySelector(".cx-cp"), s = this.summary;
+    if (this.sumErr && !s) { el.innerHTML = '<div class="cx-err"><b>Counterparts unavailable</b><button type="button" data-cx="retry">Retry</button></div>'; return; }
+    if (!s) { el.innerHTML = ""; return; }
+    const list = s.counterparts || [], max = Math.max(1, ...list.map((c) => +c.n || 0)), home = this.name(this.st.cc);
+    el.innerHTML = '<div class="cx-sub">Counterparts <small>foreign-involved events</small></div>' + (list.length
+      ? '<ul class="cx-bars">' + list.map((c) => {
+        const on = this.st.counterpart === c.cc, nm = c.name || this.name(c.cc);
+        return '<li><button type="button" data-cp="' + esc(c.cc) + '" class="' + (on ? "on" : "") + '" aria-pressed="' + on + '" title="' + esc(nm + ": " + nf(c.as_location) + " as location, " + nf(c.as_actor) + " as actor. " + (on ? "Click to remove the filter" : "Click to filter " + home + " ↔ " + nm)) + '">' +
+          '<span class="cx-bn">' + esc(flagOf(c.cc) ? flagOf(c.cc) + " " : "") + esc(nm) + ' <small>' + esc(c.cc) + '</small></span><span class="cx-bar"><i style="width:' + (((+c.n || 0) / max) * 100).toFixed(1) + '%"></i></span><span class="cx-bv">' + nf(c.n) + "</span></button></li>";
+      }).join("") + "</ul>"
+      : '<div class="cx-none">No foreign counterparts in this window</div>');
   }
   paintFilters() {
     const st = this.st, c = (this.summary && this.summary.counts) || null, tot = c ? c.inside + c.abroad : null;
@@ -106,7 +123,7 @@ class CountryPane {
     const inv = seg("involvement", INVOLVEMENTS, ["ALL", "DOMESTIC", "FOREIGN", "UNATTRIB."], c && { all: tot, domestic: c.domestic, foreign: c.foreign, unattributed: c.unattributed });
     const win = seg("window", WINDOWS, ["24H", "7D", "30D", "CUSTOM"], null);
     const dates = st.window === "custom" ? '<span class="cx-dates"><input type="date" data-date="from" value="' + esc(st.from || "") + '" aria-label="From (UTC)"><span aria-hidden="true">→</span><input type="date" data-date="to" value="' + esc(st.to || "") + '" aria-label="To (UTC)"></span>' : "";
-    const pair = st.counterpart ? '<button type="button" class="cx-pair" data-cx="uncp" title="Remove the counterpart filter">' + esc(pairLabel(st, this.names)) + ' <span aria-hidden="true">×</span></button>' : "";
+    const pair = st.counterpart ? '<button type="button" class="chip on cx-pair" data-cx="uncp" aria-label="' + esc("Remove counterpart " + this.name(st.counterpart)) + '" title="Remove the counterpart filter">' + esc(pairLabel(st, this.names)) + ' <span aria-hidden="true">×</span></button>' : "";
     const on = (k) => !st.cats || st.cats.includes(k);
     const cats = '<div class="chips cx-cats" role="group" aria-label="Categories">' + this.allCats.map((k) => '<button type="button" class="chip' + (on(k) ? " on" : "") + '" data-cat="' + k + '" aria-pressed="' + on(k) + '" style="--c:' + EVENT_CATS[k][1] + '" title="' + esc(EVENT_CATS[k][0]) + '">' + esc(EVENT_CATS[k][0]) + "</button>").join("") + "</div>";
     this.root.querySelector(".cx-filters").innerHTML = '<div class="cx-frow">' + loc + inv + '</div><div class="cx-frow">' + win + dates + pair + "</div>" + cats;
@@ -173,6 +190,7 @@ class CountryPane {
     else if (a === "uncp") this.set({ ...st, counterpart: null });
     else if (t.dataset.k) this.set({ ...st, [t.dataset.k]: t.dataset.v });
     else if (t.dataset.cat) this.set({ ...st, cats: toggleCat(st.cats, t.dataset.cat, this.allCats) });
+    else if (t.dataset.cp) this.set({ ...st, counterpart: st.counterpart === t.dataset.cp ? null : t.dataset.cp });
   }
 }
 
