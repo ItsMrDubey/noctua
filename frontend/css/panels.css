@@ -7,7 +7,7 @@
 #right .close { position: absolute; top: 8px; right: 6px; width: 26px; height: 26px; padding: 0; font: 300 20px/1 var(--f-body); letter-spacing: 0; z-index: 2; }
 .dz-head { --threat: var(--acc); position: relative; display: flex; gap: 12px; padding: 14px 40px 12px 14px; border-bottom: 1px solid var(--line);
   background: linear-gradient(90deg, color-mix(in srgb, var(--threat) 14%, transparent), transparent 70%); }
-.dz-head::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--threat); box-shadow: 0 0 10px var(--threat); }
+.dz-head::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--threat); }
 .dz-glyph { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--threat) 55%, transparent); background: rgba(0, 0, 0, .3); position: relative; }
 .dz-glyph img { width: 30px; height: 30px; }
 .dz-glyph::after { content: ""; position: absolute; inset: 3px; border: 1px dashed color-mix(in srgb, var(--threat) 30%, transparent); pointer-events: none; }
@@ -19,9 +19,10 @@
 .tag.hp { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
 .tag.mil { color: var(--acc); border-color: rgba(var(--acc-rgb), .45); }
 .tag.stale { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
-.dz-sec { padding: 10px 14px 0; }
-.dz-sec > h3 { margin-bottom: 6px; display: flex; gap: 8px; align-items: baseline; }
-.dz-sec > h3 small { margin-left: auto; font: 11px var(--f-mono); letter-spacing: 0; text-transform: none; color: var(--dim); }
+.dz-sec { padding: 8px 16px 0; }
+.dz-sec > h3 { margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; }
+.dz-sec > h3::after, .grp > header::after { content: ""; flex: 1 1 auto; order: 1; min-width: 12px; border-bottom: 1px dotted var(--line-2); align-self: center; }
+.dz-sec > h3 small { order: 2; font: 11px var(--f-mono); letter-spacing: 0; text-transform: none; color: var(--fg-2); }
 .spark { display: grid; grid-template-columns: 52px 1fr 64px; align-items: center; gap: 8px; height: 26px; }
 .spark span { font: 600 11px var(--f-head); letter-spacing: .16em; color: var(--dim); }
 .spark b { font: 500 11px var(--f-mono); text-align: right; color: var(--fg); }
@@ -30,10 +31,10 @@
 .spark polygon { fill: rgba(var(--acc-rgb), .1); stroke: none; }
 .spark circle { fill: var(--acc); }
 .dz-empty { font: 11px var(--f-mono); color: var(--dim); padding: 2px 0 4px; }
-.kv { display: grid; grid-template-columns: 96px 1fr; gap: 0; margin: 0; font-size: 12px; }
-.kv span, .kv div { padding: 3.5px 0; border-bottom: 1px solid rgba(255, 255, 255, .035); }
-.kv span { font: 600 11px/1.9 var(--f-head); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
-.kv div { font: 11.5px/1.5 var(--f-mono); color: var(--fg); word-break: break-word; }
+.kv { display: grid; grid-template-columns: 104px 1fr; gap: 0 8px; margin: 0; font-size: 12px; }
+.kv span, .kv div { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.kv span { font: 500 11px/1.7 var(--f-mono); letter-spacing: .02em; text-transform: uppercase; color: var(--dim); }
+.kv div { font: 12px/1.5 var(--f-mono); color: var(--fg); word-break: break-word; }
 .prov { display: grid; gap: 3px; font: 11px var(--f-mono); color: var(--fg-2); }
 .prov div { display: flex; gap: 8px; align-items: center; }
 .prov i { width: 5px; height: 5px; background: var(--acc); flex: none; }
@@ -100,17 +101,18 @@
 .tabs { margin-left: auto; display: flex; } .tabs .tab { padding: 4px 8px; font-size: 11px; margin-left: -1px; border-radius: 0; }
 .tabs .tab.on { background: transparent; box-shadow: inset 0 -2px 0 var(--acc); }
 .gi { display: inline-block; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--g) center / contain no-repeat; mask: var(--g) center / contain no-repeat; }
-.dz-glyph .gi { width: 30px; height: 30px; filter: drop-shadow(0 0 4px currentColor); }
+.dz-glyph .gi { width: 30px; height: 30px; }
 .vrow .g .gi { width: 14px; height: 14px; }
 #right .actions { position: sticky; bottom: -10px; padding-bottom: 10px; background: linear-gradient(180deg, transparent, var(--glass-hi) 30%); }
 .dk-unit { color: var(--dim); opacity: .7; }
 
 /* ---- events: list rows, status pills, inspector sections ---- */
-.pill { font: 600 11px/1 var(--f-head); letter-spacing: .12em; text-transform: uppercase; padding: 2px 5px; border: 1px solid var(--line-2); color: var(--fg-2); white-space: nowrap; }
-.pill.st-multi-source { color: var(--ion); border-color: color-mix(in srgb, var(--ion) 50%, transparent); }
-.pill.st-sensor-corroborated { color: var(--green); border-color: color-mix(in srgb, var(--green) 55%, transparent); background: color-mix(in srgb, var(--green) 8%, transparent); }
-.pill.st-sensor-detected { color: var(--acc); border-color: var(--acc); }
-.pill.st-official { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.pill { font: 600 11px/1 var(--f-head); letter-spacing: .08em; text-transform: uppercase; padding: 2px 5px; border: 1px solid var(--st, var(--line-2)); color: var(--st, var(--fg-2)); white-space: nowrap; }
+.pill.st-reported { --st: var(--st-reported); border-style: dashed; }
+.pill.st-multi-source { --st: var(--st-multi-source); }
+.pill.st-sensor-detected { --st: var(--st-sensor-detected); }
+.pill.st-sensor-corroborated { --st: var(--st-sensor-corroborated); }
+.pill.st-official { --st: var(--st-official); background: color-mix(in srgb, var(--st-official) 10%, transparent); }
 .erow { position: absolute; left: 0; right: 0; height: 42px; display: grid; grid-template-columns: 26px 1fr; grid-template-rows: 1fr 1fr; align-items: center; cursor: pointer; border-bottom: 1px solid rgba(255, 255, 255, .03); padding-right: 8px; }
 .erow:hover { background: rgba(var(--acc-rgb), .07); }
 .erow.act { background: rgba(var(--acc-rgb), .14); box-shadow: inset 2px 0 0 var(--acc); }

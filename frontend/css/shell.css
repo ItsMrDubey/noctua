@@ -131,7 +131,8 @@ body.left-collapsed #left { display: none; }
 .grp > header h3::before { content: "▾"; display: inline-block; width: 12px; color: var(--dim); font-size: 11px; transition: transform var(--t-fast); }
 .grp.closed > header h3::before { transform: rotate(-90deg); }
 .grp.closed > :not(header) { display: none !important; }
-.grp > header b { margin-left: auto; font-size: 11px; color: var(--acc); font-weight: 500; }
+.grp > header b, .grp > header .g-on { order: 2; }
+.grp > header b { font: 500 11px var(--f-mono); color: var(--acc); }
 .grp > header b.tag { color: var(--violet); font: 600 11px var(--f-head); letter-spacing: .16em; text-transform: uppercase; border: 1px solid color-mix(in srgb, var(--violet) 40%, transparent); padding: 2px 5px; }
 .grp.flash { animation: grp-flash 700ms var(--ease); }
 @keyframes grp-flash { 0% { background: rgba(var(--acc-rgb), .14); } 100% { background: transparent; } }
