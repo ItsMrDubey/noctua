@@ -87,3 +87,12 @@
 .cx-empty button:hover, .cx-more:hover { border-color: var(--amber); }
 .cx-more { align-self: center; margin-top: 6px; }
 .cx-more:disabled { color: var(--dim); cursor: default; }
+
+/* "Country context" links (Terror Watch boards and feed, intel country tile) */
+/* [href] lifts it over `a[data-pivot]` (panels.css) and `.tw-disclaimer a` (terror.css) */
+a.tw-ctx[href], a.cx-link[href] { color: var(--acc); text-decoration: underline dotted; text-underline-offset: 2px; font: 11px var(--f-mono); white-space: nowrap; }
+a.cx-link[href] { display: inline-block; margin-bottom: 6px; }
+
+/* one-time Alt+click hint (country.js): under #pick-tip, dismissible */
+.cx-hint { z-index: 26; /* above the #toasts stack (25) for its few seconds */ top: calc(var(--bar-h) + 56px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border-color: var(--line-2); font: 11px var(--f-mono); color: var(--fg); max-width: calc(100vw - 32px); }
+.cx-hint-x { padding: 3px 8px; color: var(--acc); }

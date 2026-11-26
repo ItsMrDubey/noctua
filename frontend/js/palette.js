@@ -95,7 +95,9 @@ export class Palette {
         const it = p.item;
         out.push({ group: "Places", s: s + (p.kind === "country" ? 5 : p.kind === "base" ? 3 : 0), label: p.name, sub: { airport: "Airport", medairport: "Airport", port: "Seaport", base: "Military installation", chokepoint: "Chokepoint", country: "Country" }[p.kind] || p.kind,
           glyph: '<span style="color:#3ddcc2">' + uiGlyph("ref") + "</span>",
-          run: () => { if (p.ref) c.showRef(p.ref); c.flyTo(it.lat, it.lon, p.kind === "country" ? 3e6 : p.kind === "chokepoint" ? 1e6 : 2.5e5); } });
+          // a country opens its context pane (country.js), then the camera flies there; other places
+          // (and a country the pane does not know) keep the reference details
+          run: () => { const pane = p.kind === "country" && it.iso_a2 && c.country ? c.country.open(it.iso_a2) : null; if (!pane && p.ref) c.showRef(p.ref); c.flyTo(it.lat, it.lon, p.kind === "country" ? 3e6 : p.kind === "chokepoint" ? 1e6 : 2.5e5); } });
       }
     }
     // layers (from the tree, so labels match what the user sees)

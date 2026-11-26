@@ -166,7 +166,9 @@ export class ReferenceLayers {
     if (this.loaded.countries) return this.loaded.countries;
     this.loaded.countries = (async () => {
       try {
-        const d = await fetchJson("/api/reference/countries", 15000);
+        // ?v=iso2: items now carry iso_a2 (palette -> country pane); skips a browser copy cached
+        // (max-age 1 day) from before that field existed
+        const d = await fetchJson("/api/reference/countries?v=iso2", 15000);
         const fill = col(CYAN, 0.7), outline = col("#000", 0.7), ddc = new C.DistanceDisplayCondition(1.5e6, 4e7);
         for (const c of d.items || []) {
           this.countryItems.push(c);

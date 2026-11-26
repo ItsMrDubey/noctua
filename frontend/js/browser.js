@@ -22,6 +22,7 @@
 import { esc } from "/static/js/ui.js";
 import { fmtDateTime, utcTitle } from "/static/js/timefmt.js";
 import { fetchJson } from "/static/js/api.js";
+import { wantsNewPane } from "/static/js/country-entry.js";
 import { renderIntel, intelKey } from "/static/js/panels/intel-view.js";
 import { renderStoryline, storyKey } from "/static/js/panels/storyline-view.js";
 
@@ -531,7 +532,9 @@ export class Dossier {
         let spec = null;
         try { spec = JSON.parse(t.dataset.pivot); } catch (err) { return; }
         if (e.target.closest("[data-fly]") && t.dataset.fly && !e.shiftKey) { const [la, lo] = t.dataset.fly.split(",").map(Number); this.flyTo(la, lo, 2.5e4); }
-        if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec);
+        // Shift / Ctrl, or a link marked data-newpane="1" (e.g. "Country context"), opens beside
+        e.preventDefault(); // href="#" links: no hash change, and Ctrl+click opens a pane, not a browser tab
+        if (wantsNewPane(e, t.dataset)) this.open(spec); else this.navigate(pane, spec);
       } else if (t.dataset.sel) this.select("events", t.dataset.sel);
       else if (t.dataset.qid) { const spec = { type: "entity", qid: t.dataset.qid }; if (e.shiftKey || e.ctrlKey) this.open(spec); else this.navigate(pane, spec); }
       else if (t.dataset.tab) this._setTab(pane, t.dataset.tab);
