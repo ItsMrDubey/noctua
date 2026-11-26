@@ -7,7 +7,8 @@ For a selected country X (ISO 3166-1 alpha-2):
                abroad        events.country is not X (or NULL) and X is in actor_countries
   involvement  domestic      attributed and every known country (location + actors) = X
                foreign       some actor or location country != X
-               unattributed  inside and not attributed (involvement unknown)
+               unattributed  not attributed, and inside (or location unknown with X the
+                             only actor): involvement unknown, so never domestic
 
 Unattributed events are never domestic. Historical (curated UCDP) rows are excluded."""
 
@@ -22,12 +23,20 @@ COUNTRY_COLUMNS = ("actor_countries", "attributed", "lifecycle")
 LIFECYCLE_RANK_SQL = ("CASE events.lifecycle WHEN 'developing' THEN 0 WHEN 'active' THEN 1 "
                       "WHEN 'cooling' THEN 2 WHEN 'closed' THEN 3 ELSE 4 END")
 
-_ACTOR_IS = ("EXISTS (SELECT 1 FROM json_each(events.actor_countries) "
-             "WHERE json_each.value = ?)")
-_ACTOR_NOT = ("EXISTS (SELECT 1 FROM json_each(events.actor_countries) "
-              "WHERE json_each.value != ?)")
+# actor_countries as as_list() reads it: only a JSON array counts (anything else is no actors),
+# and only its non-empty text elements are countries
+_ACTORS = ("(CASE WHEN json_valid(events.actor_countries) THEN CASE WHEN "
+           "json_type(events.actor_countries) = 'array' THEN events.actor_countries END END)")
+_ACTOR_IS = (f"EXISTS (SELECT 1 FROM json_each({_ACTORS}) "
+             "WHERE json_each.type = 'text' AND json_each.value = ?)")
+_ACTOR_NOT = (f"EXISTS (SELECT 1 FROM json_each({_ACTORS}) "
+              "WHERE json_each.type = 'text' AND json_each.value != '' "
+              "AND json_each.value != ?)")
+_ATTRIBUTED = "coalesce(events.attributed, 0) != 0"
 _INSIDE = "events.country = ?"
 _ABROAD = f"((events.country IS NULL OR events.country != ?) AND {_ACTOR_IS})"
+# event_ctx's first rule: inside and not attributed is unattributed, whatever the actors say
+_INSIDE_UNATTR = f"(events.country IS ? AND NOT {_ATTRIBUTED})"
 
 
 def country_where(cc: str, location: str = "all", involvement: str = "all",
@@ -44,16 +53,21 @@ def country_where(cc: str, location: str = "all", involvement: str = "all",
     else:
         where.append(f"({_INSIDE} OR {_ABROAD})")
         params += [cc, cc, cc]
+    # the involvement filters mirror event_ctx branch by branch (row in F <=> ctx(row) == F),
+    # including rows whose columns disagree (inside, not attributed, foreign actors)
     if involvement == "domestic":
-        where.append("(events.attributed = 1 AND (events.country IS NULL OR events.country = ?)"
+        where.append(f"({_ATTRIBUTED} AND (events.country IS NULL OR events.country = ?)"
                      f" AND NOT {_ACTOR_NOT})")
         params += [cc, cc]
     elif involvement == "foreign":
-        where.append(f"((events.country IS NOT NULL AND events.country != ?) OR {_ACTOR_NOT})")
-        params += [cc, cc]
+        where.append(f"(NOT {_INSIDE_UNATTR} AND ((events.country IS NOT NULL AND "
+                     f"events.country != ?) OR {_ACTOR_NOT}))")
+        params += [cc, cc, cc]
     elif involvement == "unattributed":
-        where.append("(events.country = ? AND coalesce(events.attributed, 0) = 0)")
-        params.append(cc)
+        # inside and not attributed, or location unknown, X the only actor, not attributed
+        where.append(f"(NOT {_ATTRIBUTED} AND (events.country = ? OR "
+                     f"(events.country IS NULL AND NOT {_ACTOR_NOT})))")
+        params += [cc, cc]
     if counterpart:
         where.append(f"(events.country = ? OR {_ACTOR_IS})")
         params += [counterpart, counterpart]
