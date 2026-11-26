@@ -149,6 +149,15 @@ HISTORICAL_STATUS = "historical"
 # source_state cursor written by osint.pipeline.migrate_countries once events.country and
 # actors[].country hold ISO2 codes ({"done": true, "at": ..., "rewritten": n})
 COUNTRY_MIGRATION_STATE = "country_migration"
+# Deterministic extraction (osint.pipeline.rule_pass): columns derived from an event's actors.
+# Not in EVENT_COLUMNS, so the clusterer's upsert never overwrites them; writers that know
+# them put them in the event dict (save_events) or call set_event_derived.
+DERIVED_COLUMNS = ("actor_countries", "foreign_involved", "attributed")
+RULE_SOURCE = "rule"  # event_fields.source of rule-extracted values ('' = clusterer/LLM)
+_DERIVED_SQL = ("UPDATE events SET actor_countries=?, foreign_involved=?, attributed=? "
+                "WHERE id=?")
+_DERIVED_ACTORS_SQL = ("UPDATE events SET actors=?, actor_countries=?, foreign_involved=?, "
+                       "attributed=? WHERE id=?")
 _JSON_DEFAULTS: dict[str, object] = {"actors": [], "gdelt_ids": [], "cluster_state": {}}
 _UPSERT_EVENT = (
     f"INSERT INTO events ({', '.join(EVENT_COLUMNS)}) "
@@ -163,7 +172,8 @@ _EVENT_DOC_COLUMNS = ("event_id", "doc_id", "source", "url", "title", "published
                       "language", "role", "added_at")
 SLIM_EVENT_COLUMNS = ("id", "lat", "lon", "precision", "category", "status", "confidence",
                       "title", "mention_count", "source_diversity", "t_start", "t_end",
-                      "updated_at", "place_name", "country", "subcategory")
+                      "updated_at", "place_name", "country", "subcategory", "lifecycle",
+                      "actor_countries", "foreign_involved", "attributed")
 
 
 def iso(dt: datetime) -> str:
@@ -180,6 +190,25 @@ def _json_col(value: object, column: str) -> str:
 def _dump_json(value: object) -> str | None:
     return None if value is None else json.dumps(value, ensure_ascii=False,
                                                   separators=(",", ":"))
+
+
+def _derived_params(r: dict) -> tuple:
+    return (json.dumps(sorted(set(r.get("actor_countries") or [])), separators=(",", ":")),
+            int(bool(r.get("foreign_involved"))), int(bool(r.get("attributed"))))
+
+
+def _write_derived(db: sqlite3.Connection, rows: list[dict]) -> int:
+    """UPDATE the derived columns (and ``actors`` when the row has it); caller holds the
+    store lock and the transaction."""
+    n = 0
+    for r in rows:
+        if "actors" in r:
+            cur = db.execute(_DERIVED_ACTORS_SQL, (_json_col(r["actors"], "actors"),
+                                                   *_derived_params(r), r["id"]))
+        else:
+            cur = db.execute(_DERIVED_SQL, (*_derived_params(r), r["id"]))
+        n += cur.rowcount
+    return n
 
 
 def _bbox_cols(bbox) -> tuple:
@@ -226,6 +255,8 @@ def _event_out(row: sqlite3.Row, *, keep_state: bool = False) -> dict:
     for c in _JSON_DEFAULTS:
         if c in d:
             d[c] = json.loads(d[c])
+    if "actor_countries" in d:
+        d["actor_countries"] = json.loads(d["actor_countries"] or "[]")
     if not keep_state:
         d.pop("cluster_state", None)
     return d
@@ -282,6 +313,7 @@ class SqliteStore:
         self._db.executescript(VERIFICATION_SCHEMA)
         self._db.executescript(IMPACT_SCHEMA)
         self._migrate_origin(heal=migrate)
+        self._migrate_derived()
         self._db.executescript(STATUS_HISTORY_SCHEMA)
         if migrate:
             self._status_baseline()
@@ -308,6 +340,33 @@ class SqliteStore:
                 "UPDATE events SET origin='sensor' WHERE origin='news' AND id IN "
                 "(SELECT event_id FROM sensor_events)")
             self._db.execute("CREATE INDEX IF NOT EXISTS events_origin ON events(origin)")
+
+    def _migrate_derived(self) -> None:
+        """Add the deterministic-extraction columns, the events(country) index and
+        event_fields.source (idempotent; tolerates another process adding them first)."""
+        with self._lock, self._db:
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(events)")}
+            for col, ddl in (("actor_countries", "TEXT NOT NULL DEFAULT '[]'"),
+                             ("foreign_involved", "INTEGER NOT NULL DEFAULT 0"),
+                             ("attributed", "INTEGER NOT NULL DEFAULT 0"),
+                             ("lifecycle", "TEXT")):
+                if col not in cols:
+                    try:
+                        self._db.execute(f"ALTER TABLE events ADD COLUMN {col} {ddl}")
+                    except sqlite3.OperationalError as e:
+                        if "duplicate column" not in str(e):
+                            raise
+            self._db.execute("CREATE INDEX IF NOT EXISTS events_country ON events(country)")
+            fcols = {r[1] for r in self._db.execute("PRAGMA table_info(event_fields)")}
+            if "source" not in fcols:
+                try:
+                    self._db.execute(
+                        "ALTER TABLE event_fields ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" not in str(e):
+                        raise
+            self._db.execute("CREATE INDEX IF NOT EXISTS event_fields_source "
+                             "ON event_fields(source, event_id)")
 
     def _status_baseline(self) -> None:
         """One 'baseline' history row (status as of now) for events that predate history
@@ -435,16 +494,24 @@ class SqliteStore:
         dec_rows = [(d["gdelt_event_id"], d["decision"], d["reason"], d.get("event_id"),
                      d.get("doc_id"), d.get("category"), d["decided_at"])
                     for d in decisions or ()]
+        derived = [{"id": e["id"], **{c: e[c] for c in DERIVED_COLUMNS}}
+                   for e in events if all(c in e for c in DERIVED_COLUMNS)]
+        life = [(e["lifecycle"], e["id"]) for e in events if e.get("lifecycle")]
         with self._lock, self._db:
             if ev_rows:
                 self._db.executemany(_UPSERT_EVENT, ev_rows)
+            if derived:
+                _write_derived(self._db, derived)
+            if life:
+                self._db.executemany("UPDATE events SET lifecycle=? WHERE id=?", life)
             if doc_rows:
                 self._db.executemany(
                     f"INSERT OR IGNORE INTO event_documents ({', '.join(_EVENT_DOC_COLUMNS)}) "
                     f"VALUES ({','.join('?' * len(_EVENT_DOC_COLUMNS))})", doc_rows)
             if field_rows:
                 self._db.executemany(
-                    "INSERT OR IGNORE INTO event_fields VALUES (?,?,?,?,?)", field_rows)
+                    "INSERT OR IGNORE INTO event_fields (event_id, field, value, doc_id, quote) "
+                    "VALUES (?,?,?,?,?)", field_rows)
             if dec_rows:
                 self._db.executemany(
                     "INSERT OR IGNORE INTO gdelt_decisions VALUES (?,?,?,?,?,?,?)", dec_rows)
@@ -844,6 +911,112 @@ class SqliteStore:
                                                  "role": r[5]})
         return out
 
+    # ------------------------------------------------- deterministic extraction
+
+    def set_event_derived(self, rows: list[dict]) -> int:
+        """Write ``{id, actor_countries, foreign_involved, attributed[, actors]}`` rows
+        (osint.pipeline.rule_pass); returns the events updated (unknown ids are skipped)."""
+        if not rows:
+            return 0
+        with self._lock, self._db:
+            return _write_derived(self._db, rows)
+
+    def set_lifecycle(self, states: dict[str, str]) -> int:
+        """event id -> lifecycle state (osint.pipeline.lifecycle)."""
+        if not states:
+            return 0
+        with self._lock, self._db:
+            return self._db.executemany("UPDATE events SET lifecycle=? WHERE id=?",
+                                        [(s, eid) for eid, s in states.items()]).rowcount
+
+    def lifecycle_inputs(self, recent_since: datetime, ids: list[str] | None = None
+                         ) -> list[dict]:
+        """{id, origin, t_end, lifecycle, last_doc_at, recent_docs} per event: the newest
+        linked article's published_at (GDELT rows excluded) and the articles published at or
+        after ``recent_since``. ``ids`` None: every event whose lifecycle is unset or not
+        'closed' (a closed event only reopens when a pass touches it: pass its id)."""
+        base = ("SELECT e.id, e.origin, e.t_end, e.lifecycle, MAX(d.published_at), "
+                "COALESCE(SUM(d.published_at >= ?), 0) FROM events e "
+                "LEFT JOIN event_documents d ON d.event_id = e.id AND d.role != 'gdelt' ")
+        since = iso(recent_since)
+        rows: list[tuple] = []
+        with self._lock:
+            if ids is None:
+                rows = self._db.execute(
+                    base + "WHERE e.lifecycle IS NULL OR e.lifecycle != 'closed' "
+                    "GROUP BY e.id", (since,)).fetchall()
+            else:
+                for i in range(0, len(ids), 800):
+                    chunk = ids[i: i + 800]
+                    rows += self._db.execute(
+                        base + f"WHERE e.id IN ({','.join('?' * len(chunk))}) GROUP BY e.id",
+                        (since, *chunk)).fetchall()
+        return [{"id": r[0], "origin": r[1], "t_end": r[2], "lifecycle": r[3],
+                 "last_doc_at": r[4], "recent_docs": int(r[5] or 0)} for r in rows]
+
+    def replace_rule_fields(self, event_ids: list[str], fields: list[dict]) -> None:
+        """Replace the ``source='rule'`` rows of ``event_ids`` with ``fields``
+        ({event_id, field, value, doc_id, quote}); rows of other sources are untouched."""
+        rows = [(f["event_id"], f["field"], str(f["value"]), f["doc_id"],
+                 f.get("quote") or "", RULE_SOURCE) for f in fields]
+        with self._lock, self._db:
+            for i in range(0, len(event_ids), 800):
+                chunk = event_ids[i: i + 800]
+                self._db.execute(
+                    f"DELETE FROM event_fields WHERE source = ? AND event_id IN "
+                    f"({','.join('?' * len(chunk))})", (RULE_SOURCE, *chunk))
+            if rows:
+                self._db.executemany(
+                    "INSERT OR IGNORE INTO event_fields (event_id, field, value, doc_id, quote, "
+                    "source) VALUES (?,?,?,?,?,?)", rows)
+
+    def rule_fields(self, event_ids: list[str]) -> dict[str, list[dict]]:
+        """event id -> its ``source='rule'`` rows {field, value, doc_id, quote}."""
+        out: dict[str, list[dict]] = {}
+        for i in range(0, len(event_ids), 800):
+            chunk = event_ids[i: i + 800]
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT event_id, field, value, doc_id, quote FROM event_fields WHERE "
+                    f"source = ? AND event_id IN ({','.join('?' * len(chunk))}) "
+                    "ORDER BY event_id, field, value, doc_id", (RULE_SOURCE, *chunk)).fetchall()
+            for eid, f, v, d, q in rows:
+                out.setdefault(eid, []).append({"field": f, "value": v, "doc_id": d,
+                                                "quote": q})
+        return out
+
+    def rule_documents(self, event_ids: list[str]) -> dict[str, list[dict]]:
+        """event id -> its documents except GDELT rows, oldest first: {doc_id, source, url,
+        title, published_at, language, role} (rule extraction input)."""
+        out: dict[str, list[dict]] = {}
+        for i in range(0, len(event_ids), 800):
+            chunk = event_ids[i: i + 800]
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT event_id, doc_id, source, url, title, published_at, language, role "
+                    "FROM event_documents WHERE role != 'gdelt' AND event_id IN "
+                    f"({','.join('?' * len(chunk))}) ORDER BY event_id, published_at, doc_id",
+                    chunk).fetchall()
+            for r in rows:
+                out.setdefault(r[0], []).append({
+                    "doc_id": r[1], "source": r[2], "url": r[3], "title": r[4],
+                    "published_at": r[5], "language": r[6], "role": r[7]})
+        return out
+
+    def events_for_rules(self, event_ids: list[str]) -> dict[str, dict]:
+        """event id -> {id, origin, country, actors, title, summary, t_end}."""
+        out: dict[str, dict] = {}
+        for i in range(0, len(event_ids), 800):
+            chunk = event_ids[i: i + 800]
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT id, origin, country, actors, title, summary, t_end FROM events "
+                    f"WHERE id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+            for r in rows:
+                out[r[0]] = {"id": r[0], "origin": r[1], "country": r[2],
+                             "actors": json.loads(r[3] or "[]"), "title": r[4],
+                             "summary": r[5] or "", "t_end": r[6]}
+        return out
     def merge_events(self, merges: list[dict], events: list[dict]) -> int:
         """Fold merged-away news events into their survivors, atomically and in order.
 
@@ -890,7 +1063,8 @@ class SqliteStore:
                            (lo, sv, m.get("similarity"), now))
                 db.execute("DELETE FROM event_redirects WHERE old_id=?", (sv,))
                 db.execute("DELETE FROM events WHERE id=?", (lo,))
-                db.executemany("INSERT OR IGNORE INTO event_fields VALUES (?,?,?,?,?)", [
+                db.executemany("INSERT OR IGNORE INTO event_fields (event_id, field, value, "
+                               "doc_id, quote) VALUES (?,?,?,?,?)", [
                     (f["event_id"], f["field"], str(f["value"]), f["doc_id"],
                      f.get("quote") or "") for f in m.get("fields") or ()])
                 done += 1
