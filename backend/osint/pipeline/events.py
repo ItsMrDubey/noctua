@@ -51,6 +51,7 @@ from osint.pipeline.cluster import (
 )
 from osint.pipeline.corroborate import CorroborationConfig, Corroborator
 from osint.pipeline.embed import EmbeddingConfig, build_embedder
+from osint.pipeline.lifecycle import LifecycleConfig, refresh_lifecycle
 from osint.store.lake import FileLock, Lake
 from osint.store.sqlite import SqliteStore
 
@@ -123,6 +124,7 @@ class EventsConfig:
     recency_half_life_h: float = 24.0
     verification: dict[str, float] = field(default_factory=lambda: {
         "unsupported_cap": 0.2, "mismatch_penalty": 0.25, "supported_bonus": 0.1})
+    lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
 
     def window_h(self, category: str) -> float:
         return float(self.time_window_h.get(category, self.time_window_h.get("default", 24)))
@@ -214,6 +216,7 @@ class EventsConfig:
                                                base.recency_half_life_h)),
             verification={**base.verification, **{
                 str(k): float(v) for k, v in (d.get("verification") or {}).items()}},
+            lifecycle=LifecycleConfig.from_dict(d.get("lifecycle")),
         )
 
     @classmethod
@@ -372,6 +375,7 @@ class PassStats:
     sensor_corroborated: int = 0
     joins: dict[str, int] = field(default_factory=dict)  # join path -> documents
     merged: int = 0  # events folded into another (consolidation)
+    lifecycle_changed: int = 0  # events whose lifecycle state changed this pass
     seconds: float = 0.0
 
 
@@ -401,6 +405,7 @@ class EventBuilder:
             lambda eid: self.verdicts.get(eid)),
                                    cameo_category=cameo_category, embedder=embedder)
         self._seen: dict[str, datetime] = {}  # doc id -> fetched_at (overlap window)
+        self._merge_survivors: set[str] = set()  # merge survivors since the last pass
         try:
             self._lake_time_window = "start" in inspect.signature(lake.query).parameters
         except (TypeError, ValueError):
@@ -541,6 +546,9 @@ class EventBuilder:
             except Exception:  # consolidation must never stop event building
                 self.metrics.inc("event_merge_errors_total")
                 log.exception("event consolidation failed")
+        # events this pass created, added a document to, or merged into (spec §2.6)
+        touched = (set(res.changed) | self._merge_survivors) & set(self.clusterer.events)
+        self._merge_survivors = set()
         newest = max((d.fetched_at for d in docs if d.fetched_at), default=None)
         if newest is not None and (cursor is None or newest > cursor):
             cursor = newest
@@ -561,6 +569,13 @@ class EventBuilder:
         except Exception:  # impact upgrades must never stop event building
             self.metrics.inc("impact_errors_total")
             log.exception("applying impact sites failed")
+        lifecycle_changed = 0
+        try:  # touched events first (a closed event can reopen), then every open one
+            lifecycle_changed = refresh_lifecycle(self.store, now, self.cfg.lifecycle, touched)
+            lifecycle_changed += refresh_lifecycle(self.store, now, self.cfg.lifecycle)
+        except Exception:  # lifecycle must never stop event building
+            self.metrics.inc("lifecycle_errors_total")
+            log.exception("lifecycle refresh failed")
         cres = None
         if self.corroborator is not None:
             try:
@@ -579,7 +594,8 @@ class EventBuilder:
                           corroboration_evaluated=cres.evaluated if cres else 0,
                           sensor_corroborated=len(cres.newly_corroborated) if cres else 0,
                           verdicts_applied=verified, joins=dict(res.joins),
-                          merged=merged, seconds=time.perf_counter() - t0)
+                          merged=merged, lifecycle_changed=lifecycle_changed,
+                          seconds=time.perf_counter() - t0)
         self._record(stats)
         return stats
 
@@ -665,6 +681,7 @@ class EventBuilder:
         rows = [self.clusterer.events[e].to_row() for e in sorted(final)
                 if e in self.clusterer.events]
         n = self.store.merge_events(recs, rows)
+        self._merge_survivors |= final
         for m in merges:
             score = self.sensor_scores.pop(m.loser, None)
             if score is not None:
@@ -852,6 +869,7 @@ class EventBuilder:
         m.inc("events_created_total", s.created)
         m.inc("events_updated_total", s.updated)
         m.inc("documents_clustered_total", s.clustered)
+        m.inc("event_lifecycle_changes_total", s.lifecycle_changed)
         for path, n in s.joins.items():
             m.inc("documents_joined_total", n, path=path)
         emb = getattr(self.clusterer.embedder, "stats", None)

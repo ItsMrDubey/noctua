@@ -357,6 +357,9 @@ class SqliteStore:
                         if "duplicate column" not in str(e):
                             raise
             self._db.execute("CREATE INDEX IF NOT EXISTS events_country ON events(country)")
+            # keeps the per-pass "every not-yet-closed event" lifecycle scan off closed history
+            self._db.execute("CREATE INDEX IF NOT EXISTS events_open ON events(id) WHERE "
+                             "lifecycle IS NULL OR lifecycle != 'closed'")
             fcols = {r[1] for r in self._db.execute("PRAGMA table_info(event_fields)")}
             if "source" not in fcols:
                 try:
