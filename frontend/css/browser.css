@@ -6,7 +6,7 @@
   left: calc(var(--gap) * 3 + 42px + 266px);
   right: calc(var(--gap) * 2 + 360px);
   display: flex; flex-direction: column;
-  background: color-mix(in srgb, var(--void) 86%, transparent);
+  background: var(--deep);
   border: 1px solid var(--line-2);
   animation: ds-in 220ms var(--ease) both;
   transition: left var(--t-med) var(--ease), right var(--t-med) var(--ease);
@@ -17,7 +17,7 @@
 .dossier::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
 .dossier::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
 
-.ds-bar { flex: none; display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(var(--acc-rgb), .05), transparent); }
+.ds-bar { flex: none; display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); background: var(--raise); }
 .ds-brand { display: flex; align-items: center; gap: 8px; font: 600 11px/1 var(--f-head); letter-spacing: .32em; color: var(--fg); }
 .ds-brand i { width: 6px; height: 6px; background: var(--acc); box-shadow: 0 0 8px var(--acc); transform: rotate(45deg); }
 .ds-count { font: 11px var(--f-mono); letter-spacing: 0; color: var(--acc); padding: 1px 5px; border: 1px solid rgba(var(--acc-rgb), .35); }
@@ -39,14 +39,14 @@
 .ds-empty-in b { display: block; font: 600 13px var(--f-head); letter-spacing: .2em; text-transform: uppercase; color: var(--fg-2); margin-bottom: 6px; }
 
 /* ---- pane ---- */
-.ds-pane { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: color-mix(in srgb, var(--void) 92%, transparent); border: 1px solid var(--line); container-type: inline-size; transition: border-color var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast); }
+.ds-pane { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--deep); border: 1px solid var(--line); container-type: inline-size; transition: border-color var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast); }
 .ds-pane.enter { animation: pane-in 240ms var(--ease) both; }
 @keyframes pane-in { from { opacity: 0; transform: scale(.975); } }
 .ds-pane.focus { border-color: var(--line-2); box-shadow: none; }
 .ds-pane.master .ds-ph::after { content: "MASTER"; position: absolute; right: 8px; top: -7px; font: 11px/1 var(--f-mono); letter-spacing: .2em; color: var(--acc); background: var(--void); padding: 1px 4px; border: 1px solid rgba(var(--acc-rgb), .35); }
 .ds-pane.dragging { opacity: .45; }
 .ds-pane.drop { border-color: var(--amber); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent); }
-.ds-ph { position: relative; flex: none; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 4px 0 9px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; background: rgba(0, 0, 0, .25); }
+.ds-ph { position: relative; flex: none; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 4px 0 9px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; background: var(--raise); }
 .ds-ph:active { cursor: grabbing; }
 .ds-ico svg { width: 14px; height: 14px; display: block; fill: none; stroke: var(--acc); stroke-width: 1.4; }
 .ds-pt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
