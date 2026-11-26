@@ -46,6 +46,8 @@ def test_map_row():
     assert e["subcategory"] == "armed clash" and e["status"] == "historical"
     assert e["origin"] == "historical" and e["precision"] == "city"
     assert (e["lat"], e["lon"]) == (13.629, 25.3494)
+    assert e["country"] == "SD"
+    assert [a["source"] for a in e["actors"]] == ["acled", "acled"]
     assert e["t_start"].startswith("2026-11-20T00:00:00")
     assert e["title"].startswith("Armed clash: Rapid Support Forces vs Military Forces")
     assert "(12 killed)" in e["title"] and e["mention_count"] == 2

@@ -10,6 +10,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from osint.core.countries import to_iso2
 from osint.core.geo import haversine_km
 from osint.enrich.coords import grounded_coordinate
 from osint.pipeline.extract.schema import (
@@ -144,7 +145,9 @@ def normalise(raw: dict, text: str) -> dict:
         "where": {
             "place_name": _str(where.get("place_name"), 120),
             "admin1": _str(where.get("admin1"), 120),
-            "country": country if re.fullmatch(r"[A-Z]{2}", country) else None,
+            # ISO2 per the instruction, checked against the registry; a non-ISO2 answer
+            # such as "UK" resolves through the country names
+            "country": to_iso2(country, "auto"),
             "precision": where.get("precision") if where.get("precision") in PRECISIONS
             else "unknown",
         },

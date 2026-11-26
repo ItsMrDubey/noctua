@@ -47,10 +47,12 @@ from urllib.parse import quote
 import httpx
 import numpy as np
 
+from osint.core.countries import to_iso2
 from osint.core.geo import haversine_km
 from osint.intel import astro, passes
 from osint.signals.aviation import persistent as sq_persistent
 from osint.signals.aviation import reports as sq_reports
+from osint.store.sqlite import COUNTRY_MIGRATION_STATE
 from osint.timeline.build import bearing_deg, compass, parse_ts
 
 log = logging.getLogger(__name__)
@@ -467,14 +469,32 @@ def country_names(runtime) -> dict[str, str]:
     return _country_names[str(path)]
 
 
+def _countries_migrated(runtime) -> bool:
+    get = getattr(getattr(runtime, "store", None), "get_cursor", None)
+    if get is None:
+        return False
+    try:
+        return bool((get(COUNTRY_MIGRATION_STATE) or {}).get("done"))
+    except sqlite3.Error:
+        return False
+
+
 def resolve_cc(runtime, subj: dict) -> str | None:
-    c = ((subj.get("event") or {}).get("country") or "").strip()
-    if len(c) == 2 and c.isalpha():
-        return c.upper()
-    if subj.get("lat") is None:
-        return None
-    s = settlements(runtime)
-    return s.country_at(subj["lat"], subj["lon"]) if s else None
+    """ISO2 of the subject. ``events.country`` is trusted once the country migration
+    (``osint.pipeline.migrate_countries``) has normalised it; before that a two-letter
+    value may still be a FIPS code, so the lat/lon reverse geocode wins and the stored
+    value is only a fallback."""
+    raw = ((subj.get("event") or {}).get("country") or "").strip()
+    if raw and _countries_migrated(runtime):
+        cc = to_iso2(raw, "iso2")
+        if cc:
+            return cc
+    if subj.get("lat") is not None:
+        s = settlements(runtime)
+        cc = s.country_at(subj["lat"], subj["lon"]) if s else None
+        if cc:
+            return cc
+    return to_iso2(raw, "auto") if raw else None
 
 
 # ------------------------------------------------------------------ infrastructure exposure
@@ -791,7 +811,8 @@ def section_country(runtime, subj: dict, now: datetime) -> dict:
     if not cc:
         return {"error": "no country for this location"}
     name = country_names(runtime).get(cc)
-    names = [x for x in [name, *UCDP_ALIASES.get(cc, [])] if x]
+    # the ISO2 code first: UCDP rows normalised by osint.pipeline.migrate_countries
+    names = [x for x in [cc, name, *UCDP_ALIASES.get(cc, [])] if x]
     hist = runtime.store.country_history(names)
     months: dict[str, dict] = {}
     by_type: dict[str, int] = {}

@@ -110,7 +110,7 @@ class PlaceHit(msgspec.Struct, frozen=True, kw_only=True):
     """A place found in a document (gazetteer match or coded geo)."""
 
     name: str
-    country: str  # ISO 3166-1 alpha-2 ("" if unknown; GDELT coded geo uses FIPS 10-4)
+    country: str  # ISO 3166-1 alpha-2 ("" if unknown; GDELT FIPS codes are converted)
     lat: float
     lon: float
     precision: str  # "city" | "admin1" | "country"

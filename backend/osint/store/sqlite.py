@@ -146,6 +146,9 @@ EVENT_COLUMNS = (
 # (curated datasets such as UCDP GED) rows are never touched by event maintenance.
 ORIGINS = ("news", "sensor", "historical")
 HISTORICAL_STATUS = "historical"
+# source_state cursor written by osint.pipeline.migrate_countries once events.country and
+# actors[].country hold ISO2 codes ({"done": true, "at": ..., "rewritten": n})
+COUNTRY_MIGRATION_STATE = "country_migration"
 _JSON_DEFAULTS: dict[str, object] = {"actors": [], "gdelt_ids": [], "cluster_state": {}}
 _UPSERT_EVENT = (
     f"INSERT INTO events ({', '.join(EVENT_COLUMNS)}) "

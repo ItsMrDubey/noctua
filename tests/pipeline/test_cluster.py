@@ -418,3 +418,23 @@ def test_event_ids_are_deterministic_by_primary_article():
     a.process([art(1, "Missile strike on Kharkiv")], NOW)
     b.process([art(1, "Missile strike on Kharkiv")], NOW + timedelta(hours=1))
     assert list(a.events) == list(b.events) and len(next(iter(a.events))) == 26
+
+
+# ------------------------------------------------------------ country normalisation
+
+
+def test_gdelt_geo_and_actor_countries_become_iso2():
+    g = gdelt(1)
+    g.attrs.update({"geo_country": "GM", "actor1_country": "RUS", "actor2_country": "IGO"})
+    assert Clusterer._country(g) == "DE"  # FIPS GM is Germany, not Gambia
+    a1, a2 = g.actors()
+    assert (a1["country"], a1["cameo"], a1["source"]) == ("RU", "RUS", "gdelt")
+    assert a2["country"] is None and a2["cameo"] == "IGO"
+    assert Clusterer._country(gdelt(2)) == "UA"  # fixture code "UP"
+
+
+def test_article_place_country_is_checked_against_the_registry():
+    assert Clusterer._country(art(1, "Strike hits Kharkiv")) == "UA"
+    bad = art(2, "Strike hits Kharkiv")
+    bad.places[0]["country"] = "XX"
+    assert Clusterer._country(bad) is None
