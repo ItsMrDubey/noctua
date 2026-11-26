@@ -33,6 +33,8 @@ def test_event_ctx_rules():
     assert event_ctx("UA", "UA", "[]", None) == INSIDE_UNATTR  # never domestic
     # location unknown, only X acts: every KNOWN country is X
     assert event_ctx("UA", None, ["UA"], 1) == {"location": "abroad", "involvement": "domestic"}
+    # location NULL, only X acts, not attributed: never domestic (matches the SQL buckets)
+    assert event_ctx("UA", None, ["UA"], 0)["involvement"] != "domestic"
     assert as_list('["RU","UA"]') == ["RU", "UA"]
     assert as_list(None) == [] and as_list("bad json") == [] and as_list(["UA", None]) == ["UA"]
 
@@ -97,3 +99,13 @@ def test_country_events_and_spark(store):
     assert [r["id"] for r in only] == ["E4"]
     assert store.country_events("UA", since=T0 - timedelta(minutes=15)) != []
     assert store.country_spark("UA", T0 - timedelta(days=30)) == [("2026-11-21", 5)]
+
+
+def test_unattributed_actor_only_row_is_never_domestic(store):
+    # location NULL, actors [UA], attributed 0: not domestic in ctx nor in the SQL
+    with store._lock, store._db:
+        store._db.execute("UPDATE events SET country=NULL, actor_countries='[\"UA\"]', "
+                          "attributed=0 WHERE id='E5'")
+    got = {it["id"]: it for it in store.list_events(country="UA")}
+    assert got["E5"]["ctx"]["involvement"] != "domestic"
+    assert "E5" not in ids(store.list_events(country="UA", involvement="domestic"))

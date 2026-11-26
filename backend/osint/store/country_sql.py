@@ -83,6 +83,8 @@ def event_ctx(cc: str, country: str | None, actor_countries, attributed) -> dict
         involvement = "unattributed"
     elif (country is not None and country != cc) or any(a != cc for a in actors):
         involvement = "foreign"
+    elif not attributed:
+        involvement = "unattributed"  # never domestic (location unknown, X the only actor)
     else:
         involvement = "domestic"
     return {"location": location, "involvement": involvement}
