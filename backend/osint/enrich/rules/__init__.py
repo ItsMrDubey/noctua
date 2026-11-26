@@ -18,6 +18,7 @@ import yaml
 
 from osint.config import ROOT
 from osint.enrich.rules.base import ExtractDoc, FieldValue
+from osint.enrich.rules.casualties import CasualtyRules, casualties
 from osint.enrich.rules.text import SUMMARY_MAX, headline_summary
 from osint.enrich.rules.weapons import WeaponLexicon, weapons
 
@@ -33,6 +34,7 @@ Extractor = Callable[[Mapping[str, Any], Sequence[ExtractDoc]], list[FieldValue]
 class RuleSet:
     summary_max_chars: int
     weapons: WeaponLexicon
+    casualties: CasualtyRules
 
     @classmethod
     def load(cls, path: Path = DEFAULT_RULES) -> RuleSet:
@@ -42,11 +44,12 @@ class RuleSet:
         if not len(lex):
             raise ValueError(f"{path}: empty weapons lexicon")
         return cls(summary_max_chars=int(cfg.get("summary_max_chars", SUMMARY_MAX)),
-                   weapons=lex)
+                   weapons=lex, casualties=CasualtyRules(cfg.get("casualties") or {}))
 
     def extractors(self) -> list[tuple[str, Extractor]]:
         return [("headline_summary", partial(headline_summary,
                                              max_chars=self.summary_max_chars)),
+                ("casualties", partial(casualties, rules=self.casualties)),
                 ("weapons", partial(weapons, lexicon=self.weapons))]
 
     def run(self, event: Mapping[str, Any], docs: Sequence[ExtractDoc]

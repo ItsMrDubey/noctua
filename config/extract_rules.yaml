@@ -70,3 +70,74 @@ weapons_subsumed:
 # phrases that contain a weapon word but are not weapons
 weapons_ignore: ["think tank*", "oil tank*", "fuel tank*", "water tank*", "storage tank*",
                  "septic tank*", "gas tank*"]
+
+# Casualties: regex templates per field and language, matched on the case-folded title and
+# snippet; {n} is a number (digits, "1,200", Arabic-Indic digits, or a number word below).
+# Per document the largest number counts; per event the lower median over distinct domains.
+casualties:
+  max_value: 100000
+  number_words:
+    en: {one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+         ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+         sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20}
+    fr: {un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8,
+         neuf: 9, dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15,
+         seize: 16, dix-sept: 17, dix-huit: 18, dix-neuf: 19, vingt: 20}
+    # "once" (11) is left out: it is an English word
+    es: {uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8,
+         nueve: 9, diez: 10, doce: 12, trece: 13, catorce: 14, quince: 15, dieciséis: 16,
+         diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20}
+    ru: {один: 1, одна: 1, два: 2, две: 2, три: 3, четыре: 4, пять: 5, шесть: 6, семь: 7,
+         восемь: 8, девять: 9, десять: 10, одиннадцать: 11, двенадцать: 12, тринадцать: 13,
+         четырнадцать: 14, пятнадцать: 15, шестнадцать: 16, семнадцать: 17,
+         восемнадцать: 18, девятнадцать: 19, двадцать: 20}
+    uk: {один: 1, одна: 1, два: 2, дві: 2, три: 3, чотири: 4, "п'ять": 5, шість: 6, сім: 7,
+         вісім: 8, "дев'ять": 9, десять: 10, одинадцять: 11, дванадцять: 12, тринадцять: 13,
+         чотирнадцять: 14, "п'ятнадцять": 15, шістнадцять: 16, сімнадцять: 17,
+         вісімнадцять: 18, "дев'ятнадцять": 19, двадцять: 20}
+    ar: {واحد: 1, اثنان: 2, اثنين: 2, ثلاثة: 3, ثلاث: 3, أربعة: 4, أربع: 4, خمسة: 5, خمس: 5,
+         ستة: 6, ست: 6, سبعة: 7, سبع: 7, ثمانية: 8, ثماني: 8, تسعة: 9, تسع: 9, عشرة: 10,
+         عشر: 10, أحد عشر: 11, اثنا عشر: 12, ثلاثة عشر: 13, أربعة عشر: 14, خمسة عشر: 15,
+         ستة عشر: 16, سبعة عشر: 17, ثمانية عشر: 18, تسعة عشر: 19, عشرون: 20, عشرين: 20}
+  killed:
+    en:
+      - '\b(?:killed|kills|killing|kill)\s+(?:at\s+least\s+|some\s+|about\s+|around\s+|nearly\s+|more\s+than\s+|over\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:more|other|others|people|persons|civilians|soldiers|servicemen|troops|militants|fighters|children|women|police(?:\s+officers)?|officers|workers|migrants|passengers|residents))?(?:\s+(?:were|was|are|have\s+been|has\s+been|had\s+been|reportedly))*\s+(?:killed|dead|died|confirmed\s+dead)\b'
+      - '\bdeath\s+toll\s+(?:has\s+)?(?:rises|rose|risen|climbs|climbed|reaches|reached|stands|stood|of|is|at|to)(?:\s+(?:to|at))?\s+(?:at\s+least\s+)?{n}\b'
+      - '\b{n}\s+deaths?\b'
+    fr:
+      - '\b{n}(?:\s+(?:personnes|civils|soldats|militaires|enfants))?(?:\s+(?:ont\s+été|ont\s+ete|sont|auraient\s+été))?\s+(?:morts?|tués?|tuées?|décédés?|décès)\b'
+      - '\b(?:tué|tuant|tue)\s+(?:au\s+moins\s+|plus\s+de\s+|près\s+de\s+)?{n}\b'
+      - '\bbilan\s+(?:de|est\s+de|s''élève\s+à|grimpe\s+à|passe\s+à)\s+(?:au\s+moins\s+)?{n}\s+morts?\b'
+    es:
+      - '\b{n}(?:\s+(?:personas|civiles|soldados|militares|niños|mujeres))?(?:\s+(?:fueron|han\s+sido|resultaron))?\s+(?:muertos?|muertas?|fallecidos?|fallecidas?|asesinados?|asesinadas?)\b'
+      - '\b(?:mató|matando|mata)\s+a\s+(?:al\s+menos\s+|más\s+de\s+)?{n}\b'
+      - '\b(?:murieron|mueren|fallecieron)\s+(?:al\s+menos\s+)?{n}\b'
+    ru:
+      - '(?<!\w)(?:погибли|погибло|погиб|погибла|убиты|убито|убит)\s+(?:по\s+меньшей\s+мере\s+|не\s+менее\s+|как\s+минимум\s+|более\s+|около\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:человек|человека|людей|мирных\s+жителей|военных|военнослужащих|детей))?\s+(?:погибли|погибло|погибших|убиты|убито|убитых)\b'
+    uk:
+      - '(?<!\w)(?:загинули|загинуло|загинув|загинула|вбито|убито|вбиті)\s+(?:щонайменше\s+|принаймні\s+|понад\s+|близько\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:людей|людини|осіб|особи|цивільних|військових|дітей))?\s+(?:загинули|загинуло|загиблих|вбито|убито)\b'
+    ar:
+      - '(?<!\w)و?(?:مقتل|قتل|استشهاد|سقوط|ارتفاع\s+عدد\s+القتلى\s+إلى|ارتفاع\s+حصيلة\s+القتلى\s+إلى)\s+{n}(?!\w)'
+      - '(?<!\w){n}\s+(?:قتلى|قتيلا|قتيلاً|قتيل|شهداء|شهيدا|شهيداً|شهيد)'
+  injured:
+    en:
+      - '\b(?:injuring|injured|injures|wounding|wounded|wounds)\s+(?:at\s+least\s+|some\s+|about\s+|around\s+|nearly\s+|more\s+than\s+|over\s+|another\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:more|other|others|people|persons|civilians|soldiers|servicemen|troops|children|women|police(?:\s+officers)?|officers|workers|passengers|residents))?(?:\s+(?:were|was|are|have\s+been|has\s+been|had\s+been|reportedly))*\s+(?:injured|wounded|hurt)\b'
+    fr:
+      - '\b{n}(?:\s+(?:personnes|civils|soldats|militaires|enfants))?(?:\s+(?:ont\s+été|sont))?\s+(?:blessés?|blessées?)\b'
+      - '\b(?:blessant|blessé)\s+(?:au\s+moins\s+|plus\s+de\s+)?{n}\b'
+    es:
+      - '\b{n}(?:\s+(?:personas|civiles|soldados|militares|niños))?(?:\s+(?:fueron|han\s+sido|resultaron))?\s+(?:heridos?|heridas?|lesionados?|lesionadas?)\b'
+      - '\b(?:hirió|hiriendo)\s+a\s+(?:al\s+menos\s+|más\s+de\s+)?{n}\b'
+    ru:
+      - '(?<!\w)(?:ранены|ранено|ранен|пострадали|пострадало|пострадал)\s+(?:по\s+меньшей\s+мере\s+|не\s+менее\s+|как\s+минимум\s+|более\s+|около\s+|ещё\s+|еще\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:человек|человека|людей|мирных\s+жителей|военных|детей))?\s+(?:ранены|ранено|раненых|пострадали|пострадавших)\b'
+    uk:
+      - '(?<!\w)(?:поранені|поранено|поранений|постраждали|постраждало|постраждав)\s+(?:щонайменше\s+|принаймні\s+|понад\s+|близько\s+|ще\s+)?{n}\b'
+      - '\b{n}(?:\s+(?:людей|людини|осіб|особи|цивільних|військових|дітей))?\s+(?:поранені|поранено|поранених|постраждали|постраждалих)\b'
+    ar:
+      - '(?<!\w)و?(?:إصابة|اصابة|جرح|إصابات)\s+{n}(?!\w)'
+      - '(?<!\w){n}\s+(?:جرحى|جريحا|جريحاً|مصابين|مصابا|مصاباً|إصابات)'
