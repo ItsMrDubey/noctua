@@ -192,3 +192,68 @@ def test_verification_fields_and_unsupported_hidden(client, store):
         {"field": "casualties", "quote": "two killed", "verbatim": True}]}
     assert client.get(f"/api/events/{_event(2, lat=0, lon=0)['id']}").json()[
         "verification"] is None
+
+
+from osint.api.events import field_precedence
+
+RULE_ROWS = [
+    {"field": "headline", "value": "Missile hits Kharkiv", "doc_id": "d1", "quote": "x"},
+    {"field": "summary", "value": "A missile hit Kharkiv.", "doc_id": "d1", "quote": "x"},
+    {"field": "casualties.killed", "value": "12", "doc_id": "d2", "quote": "12 killed"},
+    {"field": "weapons_platforms", "value": "missile", "doc_id": "d1", "quote": "missile"},
+    {"field": "weapons_platforms", "value": "drone", "doc_id": "d2", "quote": "drone"}]
+
+
+def _ext(verdict, **result):
+    return {"status": "done", "verdict": verdict, "result": {
+        "summary": "LLM summary.", "casualties": {"killed": 14, "injured": None},
+        "weapons_platforms": [], **result}}
+
+
+def test_supported_llm_values_outrank_rule_values():
+    out = field_precedence(RULE_ROWS, _ext("supported"))
+    assert out["extracted"] == {"headline": "Missile hits Kharkiv", "summary": "LLM summary.",
+                                "casualties": {"killed": 14, "injured": None},
+                                "weapons_platforms": ["drone", "missile"]}
+    assert out["field_source"] == {"headline": "rule", "summary": "llm",
+                                   "casualties.killed": "llm", "casualties.injured": None,
+                                   "weapons_platforms": "rule"}
+
+
+def test_rule_values_without_a_supported_extraction():
+    for ext in (None, _ext("mismatch"), _ext("unsupported"),
+                {"status": "error", "verdict": None, "result": None}):
+        out = field_precedence(RULE_ROWS, ext)
+        assert out["extracted"]["summary"] == "A missile hit Kharkiv."
+        assert out["extracted"]["casualties"]["killed"] == 12
+        assert set(out["field_source"].values()) <= {"rule", None}
+    empty = field_precedence([], None)
+    assert empty["extracted"]["weapons_platforms"] == [] and empty["extracted"]["headline"] is None
+
+
+class _Ext:
+    def __init__(self, recs):
+        self.recs = recs
+
+    def get(self, eid):
+        return self.recs.get(eid)
+
+    def get_many(self, ids):
+        return {i: self.recs[i] for i in ids if i in self.recs}
+
+
+def test_event_detail_reports_extracted_fields_and_their_source(store):
+    eid = _event(1, lat=0, lon=0)["id"]
+    store.replace_rule_fields([eid], [{**r, "event_id": eid} for r in RULE_ROWS])
+    rt = _RT(store)
+    rt.extraction_store = _Ext({eid: _ext("supported")})
+    app = FastAPI()
+    mount_events(app, rt)
+    d = TestClient(app).get(f"/api/events/{eid}").json()
+    assert d["extracted"]["casualties"]["killed"] == 14
+    assert d["field_source"]["casualties.killed"] == "llm"
+    assert d["field_source"]["headline"] == "rule"
+    rt.extraction_store = None
+    d = TestClient(app).get(f"/api/events/{eid}").json()
+    assert d["extracted"]["casualties"]["killed"] == 12
+    assert d["field_source"]["casualties.killed"] == "rule"

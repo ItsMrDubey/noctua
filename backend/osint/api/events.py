@@ -10,6 +10,7 @@ from fastapi.responses import Response
 
 from osint.api import kml
 from osint.core.sensor_status import SIGNAL_DETECTORS, detection_kinds, sensor_label
+from osint.enrich.rules import RULE_FIELDS
 from osint.translate import english
 from osint.translate import job as translate_job
 
@@ -144,6 +145,47 @@ def impact_layer_item(rec: dict) -> dict:
                       for a in rec["areas"]]}
 
 
+def field_precedence(rule_rows: list[dict], extraction: dict | None) -> dict:
+    """Extracted fields of an event (deterministic extraction spec §2.4): a value of an LLM
+    extraction whose verdict is ``supported`` outranks the rule value (``event_fields``
+    ``source='rule'``); otherwise the rule value is used. ``field_source`` says which one
+    each field came from (None: neither has a value). Both stay stored."""
+    rule: dict[str, list[dict]] = {}
+    for r in rule_rows:
+        rule.setdefault(r["field"], []).append(r)
+    rec = extraction or {}
+    llm: dict[str, object] = {}
+    if rec.get("status") == "done" and rec.get("verdict") == "supported":
+        res = rec.get("result") or {}
+        cas = res.get("casualties") or {}
+        llm = {"summary": str(res.get("summary") or "").strip() or None,
+               "casualties.killed": cas.get("killed"),
+               "casualties.injured": cas.get("injured"),
+               "weapons_platforms": sorted({str(w) for w in res.get("weapons_platforms") or []
+                                            if w}) or None}
+    values: dict[str, object] = {}
+    source: dict[str, str | None] = {}
+    for f in RULE_FIELDS:
+        if llm.get(f) is not None:
+            values[f], source[f] = llm[f], "llm"
+            continue
+        rows = rule.get(f)
+        if not rows:
+            values[f] = [] if f == "weapons_platforms" else None
+            source[f] = None
+        elif f == "weapons_platforms":
+            values[f], source[f] = sorted({r["value"] for r in rows}), "rule"
+        elif f.startswith("casualties."):
+            values[f], source[f] = int(rows[0]["value"]), "rule"
+        else:
+            values[f], source[f] = rows[0]["value"], "rule"
+    return {"extracted": {"headline": values["headline"], "summary": values["summary"],
+                          "casualties": {"killed": values["casualties.killed"],
+                                         "injured": values["casualties.injured"]},
+                          "weapons_platforms": values["weapons_platforms"]},
+            "field_source": source}
+
+
 def mount_events(app: FastAPI, runtime) -> None:
     store = runtime.store
 
@@ -227,6 +269,11 @@ def mount_events(app: FastAPI, runtime) -> None:
         rec = (await asyncio.to_thread(store.impacts, [event_id])).get(event_id)
         ev["impact"] = impact_detail(rec)
         ev["impact_precision"] = ((rec or {}).get("best") or {}).get("precision")
+        rule_rows = (await asyncio.to_thread(store.rule_fields, [event_id])).get(event_id, [])
+        ext_store = getattr(runtime, "extraction_store", None)
+        ext_rec = (await asyncio.to_thread(ext_store.get, event_id)
+                   if ext_store is not None else None)
+        ev.update(field_precedence(rule_rows, ext_rec))
         return _json(ev)
 
     @app.get("/kml/events.kml")
