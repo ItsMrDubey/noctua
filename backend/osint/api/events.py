@@ -18,6 +18,7 @@ from osint.translate import job as translate_job
 
 MAX_LIMIT = 10000
 COUNTRY_WINDOW = timedelta(days=7)  # default time window of the country view
+MAX_COUNTRY_WINDOW = timedelta(days=365)  # the widest window a country query may span
 IMPACT_LIMIT = 3000
 KML_LIMIT = 5000
 _ENCODER = msgspec.json.Encoder()
@@ -81,6 +82,11 @@ def _bad(error: str) -> JSONResponse:
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def clamp_since(since: datetime, until: datetime) -> datetime:
+    """``since`` no earlier than ``until`` minus MAX_COUNTRY_WINDOW (bounds country queries)."""
+    return max(since, until - MAX_COUNTRY_WINDOW)
 
 
 def events_kml(items: list[dict]) -> str:
@@ -258,7 +264,8 @@ def mount_events(app: FastAPI, runtime) -> None:
         ``since`` defaults to now - 7 days and ``until`` to now, and the envelope then also reports the effective
         ``since``/``until`` (ISO) so a client paging with ``offset`` can pass the first page's
         ``until`` back and get a stable window. ``ids=true`` returns only the matching ids
-        (the globe's dimming set). Without ``country`` the response is unchanged."""
+        (the globe's dimming set) plus ``truncated`` (true when as many ids as ``limit`` came
+        back, so more may exist). ``since`` is clamped to at most 365 days before ``until``. Without ``country`` the response is unchanged."""
         since_dt, until_dt = parse_since(since), parse_since(until)
         cc = cp = None
         if country:
@@ -280,6 +287,7 @@ def mount_events(app: FastAPI, runtime) -> None:
                 until_dt = now  # pins the window, so offset paging is stable
             if since_dt is None:
                 since_dt = now - COUNTRY_WINDOW
+            since_dt = clamp_since(since_dt, until_dt)
         items = await asyncio.to_thread(
             store.list_events, bbox=parse_bbox(bbox), since=since_dt, until=until_dt,
             category=category, status=status, min_confidence=min_confidence, limit=limit,
@@ -288,7 +296,7 @@ def mount_events(app: FastAPI, runtime) -> None:
             involvement=involvement, counterpart=cp)
         if ids:
             return _json({"layer": "events", "count": len(items),
-                          "ids": [it["id"] for it in items]})
+                          "ids": [it["id"] for it in items], "truncated": len(items) >= limit})
         await asyncio.to_thread(add_corroboration, store, items)
         await asyncio.to_thread(add_impacts, store, items)
         await asyncio.to_thread(add_english, items)

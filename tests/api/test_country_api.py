@@ -81,7 +81,8 @@ def test_window_paging_ids_and_category(client):
     assert ids(client.get(Q + "&limit=2")) == ["E1", "E2"]
     assert ids(client.get(Q + "&limit=2&offset=2")) == ["E6", "E3"]
     j = client.get(Q + "&ids=true").json()
-    assert j == {"layer": "events", "count": 5, "ids": ["E1", "E2", "E6", "E3", "E4"]}
+    assert j == {"layer": "events", "count": 5, "ids": ["E1", "E2", "E6", "E3", "E4"],
+                 "truncated": False}
     assert "E4" not in ids(client.get(Q + "&category=armed_conflict"))
     assert client.get(Q + "&until=never").status_code == 422
     assert client.get(Q + "&offset=-1").status_code == 422
@@ -114,3 +115,20 @@ def test_bad_input_is_400(client):
     assert r.status_code == 400 and r.json() == {"error": "bad_involvement"}
     r = client.get(Q + "&counterpart=ua")
     assert r.status_code == 400 and r.json() == {"error": "bad_counterpart"}
+
+
+def test_since_is_clamped_to_365_days(client):
+    j = client.get(Q + "&since=2020-01-01T00:00:00Z").json()
+    assert j["until"].startswith("2026-11-21T13:00:00")
+    assert j["since"].startswith("2025-11-21T13:00:00")  # until - 365 days
+    # a narrower explicit window is untouched
+    assert client.get(Q + "&since=2026-11-21T11:00:00Z").json()["since"].startswith(
+        "2026-11-21T11:00:00")
+
+
+def test_ids_truncated_flag(client):
+    full = client.get(Q + "&ids=true").json()
+    assert full["truncated"] is False and full["count"] > 1
+    cut = client.get(Q + f"&ids=true&limit={full['count']}").json()
+    assert cut["truncated"] is True
+    assert client.get(Q + "&ids=true&limit=1").json()["truncated"] is True
