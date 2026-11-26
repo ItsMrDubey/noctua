@@ -8,6 +8,13 @@ from pathlib import Path
 
 from osint.core.geo import utcnow
 from osint.core.models import TrackInfo
+from osint.store.country_sql import (
+    COUNTRY_COLUMNS,
+    LIFECYCLE_RANK_SQL,
+    as_list,
+    country_where,
+    event_ctx,
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
@@ -621,13 +628,21 @@ class SqliteStore:
                     since: datetime | None = None, category: str | None = None,
                     status: str | None = None, min_confidence: float | None = None,
                     limit: int = 1000, slim: bool = True, include_unlocated: bool = True,
-                    map_default: bool = False, origin: str | None = None) -> list[dict]:
+                    map_default: bool = False, origin: str | None = None,
+                    until: datetime | None = None, offset: int = 0,
+                    country: str | None = None, location: str = "all",
+                    involvement: str = "all", counterpart: str | None = None) -> list[dict]:
         """Events, most recently updated first. bbox = (west, south, east, north); west > east
         wraps the antimeridian. Comma-separated category/status values match any of them.
 
         ``include_unlocated=False`` drops events without coordinates. ``map_default`` keeps
         only events worth showing on the map: status multi-source / sensor-corroborated /
-        sensor-detected / official, or reported with city/point precision and confidence >= 0.5."""
+        sensor-detected / official, or reported with city/point precision and confidence >= 0.5.
+
+        ``country`` (ISO2) keeps the non-historical events that concern that country, narrowed
+        by ``location`` / ``involvement`` / ``counterpart`` (store.country_sql). Each item then
+        also carries ``actor_countries``, ``attributed``, ``lifecycle`` and ``ctx``, and the
+        order is lifecycle (developing first), then most recently updated."""
         where: list[str] = []
         params: list[object] = []
         if not include_unlocated:
@@ -651,6 +666,9 @@ class SqliteStore:
         if since is not None:
             where.append("updated_at >= ?")
             params.append(iso(since))
+        if until is not None:
+            where.append("updated_at <= ?")
+            params.append(iso(until))
         for col, raw in (("category", category), ("status", status), ("origin", origin)):
             values = [v.strip() for v in (raw or "").split(",") if v.strip()]
             if values:
@@ -659,15 +677,28 @@ class SqliteStore:
         if min_confidence is not None:
             where.append("confidence >= ?")
             params.append(min_confidence)
+        if country:
+            cw, cp = country_where(country, location, involvement, counterpart)
+            where += cw
+            params += cp
         cols = ", ".join(SLIM_EVENT_COLUMNS) if slim else "*"
+        if country and slim:
+            cols += "".join(f", {c}" for c in COUNTRY_COLUMNS if c not in SLIM_EVENT_COLUMNS)
         sql = f"SELECT {cols} FROM events"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY updated_at DESC, id DESC LIMIT ?"
-        params.append(max(0, int(limit)))
+        order = f"{LIFECYCLE_RANK_SQL}, " if country else ""
+        sql += f" ORDER BY {order}updated_at DESC, id DESC LIMIT ? OFFSET ?"
+        params += [max(0, int(limit)), max(0, int(offset))]
         with self._lock:
             rows = self._db.execute(sql, params).fetchall()
-        return [_event_out(r) for r in rows]
+        out = [_event_out(r) for r in rows]
+        if country:
+            for it in out:
+                it["actor_countries"] = as_list(it.get("actor_countries"))
+                it["ctx"] = event_ctx(country, it.get("country"), it["actor_countries"],
+                                      it.get("attributed"))
+        return out
 
     def search_events(self, q: str, *, since: datetime | None = None, limit: int = 200
                       ) -> list[dict]:
@@ -748,6 +779,48 @@ class SqliteStore:
                 "SELECT substr(t_start, 1, 10), category, count(*) FROM events "
                 "WHERE country = ? AND t_start >= ? AND origin != 'historical' GROUP BY 1, 2",
                 (cc, iso(since))).fetchall()
+
+    def country_events(self, cc: str, *, since: datetime, until: datetime | None = None,
+                       category: str | None = None) -> list[dict]:
+        """Non-historical events in ``cc``'s location set (inside or abroad) updated in
+        [since, until], for the country summary: id, country, actor_countries (list),
+        attributed, lifecycle, actors (list) and ``ctx``."""
+        where, params = country_where(cc)
+        where.append("events.updated_at >= ?")
+        params.append(iso(since))
+        if until is not None:
+            where.append("events.updated_at <= ?")
+            params.append(iso(until))
+        cats = [v.strip() for v in (category or "").split(",") if v.strip()]
+        if cats:
+            where.append(f"events.category IN ({','.join('?' * len(cats))})")
+            params += cats
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, country, actor_countries, attributed, lifecycle, actors FROM events "
+                f"WHERE {' AND '.join(where)}", params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["actor_countries"] = as_list(d["actor_countries"])
+            try:
+                d["actors"] = json.loads(d["actors"] or "[]")
+            except ValueError:
+                d["actors"] = []
+            d["ctx"] = event_ctx(cc, d["country"], d["actor_countries"], d["attributed"])
+            out.append(d)
+        return out
+
+    def country_spark(self, cc: str, since: datetime) -> list[tuple[str, int]]:
+        """(first-report day, events) for ``cc``'s location set with t_start >= since."""
+        where, params = country_where(cc)
+        where.append("events.t_start >= ?")
+        params.append(iso(since))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT substr(t_start, 1, 10), count(*) FROM events WHERE "
+                f"{' AND '.join(where)} GROUP BY 1 ORDER BY 1", params).fetchall()
+        return [(d, n) for d, n in rows]
 
     def document_volume(self, bbox: tuple[float, float, float, float], since: datetime
                         ) -> list[tuple]:
