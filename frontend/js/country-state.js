@@ -7,6 +7,8 @@ export const INVOLVEMENTS = ["all", "domestic", "foreign", "unattributed"];
 export const WINDOWS = ["24h", "7d", "30d", "custom"];
 export const LIFECYCLES = ["developing", "active", "cooling", "closed"];
 export const PAGE = 200;
+export const ITEMS_MAX = 2000; // rows a pane keeps across refreshes (rows paged in by "load more" are never trimmed)
+export const LIFECYCLE_RANK = { developing: 0, active: 1, cooling: 2, closed: 3 };
 const HOURS = { "24h": 24, "7d": 168, "30d": 720 };
 const CC = /^[A-Z]{2}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -107,6 +109,62 @@ export function mergeTop(items, page) {
   return { items: top.concat((items || []).map((e) => fresh.get(e.id) || e)), added: top.length };
 }
 
+// server order of the country list: lifecycle (developing first), then latest update, then id (both desc)
+export function listOrder(a, b) {
+  const ra = LIFECYCLE_RANK[a.lifecycle] ?? 4, rb = LIFECYCLE_RANK[b.lifecycle] ?? 4;
+  if (ra !== rb) return ra - rb;
+  const ua = String(a.updated_at || ""), ub = String(b.updated_at || "");
+  if (ua !== ub) return ua < ub ? 1 : -1;
+  const ia = String(a.id), ib = String(b.id);
+  return ia === ib ? 0 : ia < ib ? 1 : -1;
+}
+
+const ms = (v) => { const t = Date.parse(v || ""); return Number.isFinite(t) ? t : null; };
+
+// a refresh merged into the shown rows (mergeTop), then put back in server order, rows that
+// left the window (updated before `since`, ISO) dropped and the list trimmed to `max` rows.
+// added: new rows; trimmed: rows cut by `max` (the lowest in the order)
+export function mergeRefresh(items, page, { since = null, max = ITEMS_MAX } = {}) {
+  const m = mergeTop(items, page), lo = ms(since);
+  let out = lo == null ? m.items : m.items.filter((e) => { const t = ms(e.updated_at); return t == null || t >= lo; });
+  out = out.slice().sort(listOrder);
+  const trimmed = Math.max(0, out.length - max);
+  if (trimmed) out = out.slice(0, max);
+  return { items: out, added: m.added, trimmed };
+}
+
+// delay before retrying a source after its n-th consecutive failure: 10, 20, 40, then 60 s,
+// never shorter than that source's request timeout (a stalled server is not hammered)
+export const BACKOFF_MS = [10000, 20000, 40000, 60000];
+export function retryDelay(fails, timeoutMs = 0) {
+  const n = Math.max(1, Math.floor(+fails || 1));
+  return Math.max(BACKOFF_MS[Math.min(n, BACKOFF_MS.length) - 1], +timeoutMs || 0);
+}
+
+// sources of a pane due for a request: not in flight, and their next time reached (or forced,
+// e.g. the pane just became visible). srcs: {kind: {busy, next}} -> [kind]
+export function dueSources(srcs, now, force = false) {
+  return Object.keys(srcs || {}).filter((k) => { const s = srcs[k]; return !s.busy && (force || !(now < (s.next || 0))); });
+}
+
+// fn delayed until `wait` ms passed without another call (filter clicks / date typing);
+// .cancel() drops a pending call, .flush() runs it now
+export function debounce(fn, wait) {
+  let t = null, args = null;
+  const run = () => { t = null; const a = args; args = null; fn(...a); };
+  const d = (...a) => { args = a; if (t) clearTimeout(t); t = setTimeout(run, wait); };
+  d.cancel = () => { if (t) clearTimeout(t); t = null; args = null; };
+  d.flush = () => { if (t) { clearTimeout(t); run(); } };
+  d.pending = () => t != null;
+  return d;
+}
+
+// before migrate_countries has backfilled actor countries (summary.migrated false) abroad,
+// involvement and counterparts are partial: the pane says so
+export const UNMIGRATED_NOTE = "Actor countries not backfilled yet — abroad, involvement and counterparts are partial (run migrate_countries)";
+export const migrationNote = (s) => (s && s.migrated === false ? UNMIGRATED_NOTE : "");
+export const counterpartsEmpty = (s) => migrationNote(s) || "No foreign counterparts in this window";
+
 // polyline path of daily counts across a w x h box (half-pixel inset so the stroke stays inside)
 export function sparkPath(spark, w, h) {
   const v = (spark || []).map((d) => +d.n || 0);
@@ -175,12 +233,16 @@ function actorList(v) {
 // the pane's filtered set from /api/events?ids=true. When the server capped that set (truncated),
 // an event missing from it may still match, so only events that cannot be in any filtered set of
 // country `cc` (located elsewhere and without `cc` among their actor countries) are dimmed; an
-// event whose country fields are absent counts as unknown and stays undimmed.
-export function focusPredicate(ids, { truncated = false, cc = "" } = {}) {
+// event whose country fields are absent counts as unknown and stays undimmed. `fetchedAt` (ms or
+// ISO): when the ids set was read; an event updated after it is unknown too (it arrived after the
+// set, so it stays undimmed until the next ids refresh decides)
+export function focusPredicate(ids, { truncated = false, cc = "", fetchedAt = null } = {}) {
   if (!ids) return null;
-  if (!truncated) return (it) => ids.has(it.id);
+  const at = typeof fetchedAt === "number" ? fetchedAt : ms(fetchedAt);
+  const fresh = (it) => at != null && (ms(it.updated_at) ?? -Infinity) > at;
+  if (!truncated) return (it) => ids.has(it.id) || fresh(it);
   return (it) => {
-    if (ids.has(it.id)) return true;
+    if (ids.has(it.id) || fresh(it)) return true;
     if (!("country" in it) && !("actor_countries" in it)) return true; // unknown
     return it.country === cc || actorList(it.actor_countries).includes(cc);
   };

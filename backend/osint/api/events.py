@@ -264,7 +264,8 @@ def mount_events(app: FastAPI, runtime) -> None:
         ``since`` defaults to now - 7 days and ``until`` to now, and the envelope then also reports the effective
         ``since``/``until`` (ISO) so a client paging with ``offset`` can pass the first page's
         ``until`` back and get a stable window. ``ids=true`` returns only the matching ids
-        (the globe's dimming set; most recently updated first, rows are not decoded) plus ``truncated`` (true when as many ids as ``limit`` came
+        (the globe's dimming set; most recently updated first, rows are not decoded), ``as_of``
+        (when the set was read) plus ``truncated`` (true when as many ids as ``limit`` came
         back, so more may exist). ``since`` is clamped to at most 365 days before ``until``. Without ``country`` the response is unchanged."""
         since_dt, until_dt = parse_since(since), parse_since(until)
         cc = cp = None
@@ -294,10 +295,11 @@ def mount_events(app: FastAPI, runtime) -> None:
                    "map_default": not all_ and not status, "country": cc,
                    "location": location, "involvement": involvement, "counterpart": cp}
         if ids:  # ids only: no row decoding, ctx, annotations or lifecycle sort
+            as_of = _utcnow()  # events updated after this may be missing from the set
             got = await asyncio.to_thread(store.list_event_ids, limit=limit, offset=offset,
                                           **filters)
             return _json({"layer": "events", "count": len(got), "ids": got,
-                          "truncated": len(got) >= limit})
+                          "truncated": len(got) >= limit, "as_of": as_of.isoformat()})
         items = await asyncio.to_thread(store.list_events, limit=limit, offset=offset, **filters)
         await asyncio.to_thread(add_corroboration, store, items)
         await asyncio.to_thread(add_impacts, store, items)

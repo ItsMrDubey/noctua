@@ -83,7 +83,7 @@ def test_window_paging_ids_and_category(client):
     j = client.get(Q + "&ids=true").json()
     # ids only: most recently updated first (no lifecycle sort)
     assert j == {"layer": "events", "count": 5, "ids": ["E1", "E2", "E3", "E4", "E6"],
-                 "truncated": False}
+                 "truncated": False, "as_of": (T0 + timedelta(hours=1)).isoformat()}
     assert "E4" not in ids(client.get(Q + "&category=armed_conflict"))
     assert client.get(Q + "&until=never").status_code == 422
     assert client.get(Q + "&offset=-1").status_code == 422

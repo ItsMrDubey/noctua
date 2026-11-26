@@ -5,19 +5,20 @@ import { fetchJson } from "/static/js/api.js";
 import { esc, nf, evTitle, stateHtml, settleLoading } from "/static/js/ui.js";
 import { EVENT_CATS, threatColor } from "/static/js/symbology.js";
 import { eventRowInner } from "/static/js/eventlist.js";
-import { controlSelector, LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, PAGE, normState, resetFilters, eventsQuery, mergePage, mergeTop, summaryQuery, toggleCat, ctxLabel, flagEmoji, sparkPath, emptyText, threatTier, summaryNames, pairLabel } from "/static/js/country-state.js";
+import { controlSelector, LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, PAGE, ITEMS_MAX, normState, resetFilters, eventsQuery, mergePage, mergeRefresh, summaryQuery, toggleCat, ctxLabel, flagEmoji, sparkPath, emptyText, threatTier, summaryNames, pairLabel, windowRange, retryDelay, dueSources, debounce, migrationNote, counterpartsEmpty } from "/static/js/country-state.js";
 
 const ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 14.5V2"/><path d="M3.5 2.5h9l-2.2 3 2.2 3h-9"/></svg>';
 const REFRESH_MS = 60000; // the live event poll's cadence (app.js)
 const IDS_MAX = 10000; // the API's MAX_LIMIT: the dimming set asks for all of it (truncated = capped)
-// globe sync (country-globe.js), installed by country.js: fit(cc, summary), setIds(cc, Set, truncated)
+// globe sync (country-globe.js), installed by country.js: fit(cc, summary), setIds(cc, Set, truncated, fetchedAt)
 const noop = () => {};
 let sink = { fit: noop, setIds: noop };
 export function setCountrySink(s) { sink = s || { fit: noop, setIds: noop }; }
 const SUMMARY_MS = 20000; // summary request timeout
 const EVENTS_MS = 20000; // event list request timeout
-const RETRY_MS = 10000; // a failed load retries sooner than the refresh (busy server at start-up)
-const TICK_MS = 2000; // visibility / due check; nothing is fetched while the pane is hidden
+const TIMEOUT = { summary: SUMMARY_MS, list: EVENTS_MS, ids: EVENTS_MS };
+const TICK_MS = 2000; // visibility / due check; nothing is fetched while the pane or the tab is hidden
+const SET_MS = 250; // filter clicks / date typing settle this long before the pane reloads
 let REGION = null;
 try { REGION = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" }); } catch { /* old engine: codes stay codes */ }
 // Windows has no flag glyphs: a regional-indicator pair renders as the two letters, so skip it there
@@ -54,6 +55,13 @@ class CountryPane {
     // pageN counts the rows fetched under that pin (the next offset; rows a refresh adds don't shift it)
     this.items = []; this.more = false; this.listErr = null; this.listLoading = true; this.listSeq = 0; this.idSeq = 0;
     this.pageAt = null; this.pageUntil = null; this.pageN = 0; this.moreBusy = false; this.listDirty = false; this.selId = null;
+    // per data source: request in flight (busy + its AbortController), next due time, consecutive
+    // failures (backoff 10/20/40/60 s). A due tick never starts a second request of a kind while
+    // one is pending (the API can stall for a minute); a newer request of a kind aborts the older
+    this.src = {};
+    for (const k of ["summary", "list", "ids"]) this.src[k] = { busy: false, ctl: null, next: 0, fails: 0 };
+    this.reload = debounce(() => this.load("reset"), SET_MS);
+    this.onVis = () => { if (document.visibilityState === "visible") { this.wasHidden = true; this.tick(); } };
     body.innerHTML = '<div class="dk-root cx-pane"><div class="cx-head"></div><div class="cx-filters"></div><div class="cx-cp"></div><div class="cx-list"></div></div>';
     this.root = body.firstElementChild;
     this.root.addEventListener("click", (e) => this.click(e));
@@ -69,8 +77,9 @@ class CountryPane {
     });
   }
   dead() { return this.hooks.stale() || !this.body.isConnected; }
-  // minimised / closed dossier or inactive tab: display:none ancestors give offsetParent null
-  hidden() { return this.body.offsetParent === null; }
+  // minimised / closed dossier or inactive tab: display:none ancestors give offsetParent null;
+  // a background browser tab polls nothing either
+  hidden() { return this.body.offsetParent === null || document.visibilityState === "hidden"; }
   name(cc) { return countryName(this.names, cc) || cc; }
   title(s) {
     this.hooks.head({ title: (flagOf(this.st.cc) + " " + (s ? s.name : this.name(this.st.cc))).trim(), sub: this.st.cc + " · COUNTRY CONTEXT", icon: "country",
@@ -81,38 +90,73 @@ class CountryPane {
     this.renderAll();
     this.wasHidden = this.hidden();
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    document.addEventListener("visibilitychange", this.onVis);
     if (!this.wasHidden) await this.load("reset");
   }
+  stop() {
+    clearInterval(this.timer); this.reload.cancel();
+    document.removeEventListener("visibilitychange", this.onVis);
+    for (const k in this.src) this.cancel(k);
+  }
   tick() {
-    if (this.dead()) { clearInterval(this.timer); return; } // disposed / replaced: stop the timer now
+    if (this.dead()) { this.stop(); return; } // disposed / replaced: stop the timer, drop requests
     if (this.hidden()) { this.wasHidden = true; return; }
-    const due = this.lastTry + (this.sumErr || this.listErr ? RETRY_MS : REFRESH_MS);
-    if (this.wasHidden || !(Date.now() < due)) { this.wasHidden = false; this.load("refresh"); }
+    if (this.reload.pending()) return; // a filter change reloads every source in a moment
+    const force = this.wasHidden; // shown again: refresh now (a source in flight still waits)
+    this.wasHidden = false;
+    for (const k of dueSources(this.src, Date.now(), force)) {
+      if (k === "summary") this.loadSummary(); else if (k === "list") this.loadList("refresh"); else this.loadIds();
+    }
+  }
+  // a source's request starts: the previous one of that kind is superseded (aborted)
+  begin(kind) {
+    this.cancel(kind);
+    const s = this.src[kind];
+    s.ctl = new AbortController(); s.busy = true;
+    return s.ctl;
+  }
+  cancel(kind) {
+    const s = this.src[kind];
+    if (s.ctl) { s.ctl.abort(); s.ctl = null; }
+    s.busy = false;
+  }
+  // a source's request settled; only the current one schedules the next (60 s, or the backoff)
+  end(kind, ctl, ok) {
+    const s = this.src[kind];
+    if (s.ctl !== ctl) return; // superseded / cancelled
+    s.ctl = null; s.busy = false;
+    s.fails = ok ? 0 : s.fails + 1;
+    s.next = Date.now() + (ok ? REFRESH_MS : retryDelay(s.fails, TIMEOUT[kind]));
   }
   // every data source of the pane: "reset" after a filter change, "refresh" on the timer
   load(mode) { return Promise.all([this.loadSummary(), this.loadList(mode), this.loadIds()]); }
   // the whole filtered set (not just the shown page) for the globe's dimming
   async loadIds() {
-    const seq = ++this.idSeq, cc = this.st.cc;
+    const seq = ++this.idSeq, cc = this.st.cc, ctl = this.begin("ids"), at = Date.now();
+    let ok = false;
     try {
-      const r = await fetchJson("/api/events?" + eventsQuery(this.st, { limit: IDS_MAX, allCats: this.allCats, ids: true }), EVENTS_MS);
+      const r = await fetchJson("/api/events?" + eventsQuery(this.st, { limit: IDS_MAX, allCats: this.allCats, ids: true }), EVENTS_MS, { signal: ctl.signal });
+      ok = true;
       if (this.dead() || seq !== this.idSeq) return;
-      sink.setIds(cc, new Set(r.ids || []), !!r.truncated);
+      // as_of: when the server read the set; events updated later stay undimmed until the next read
+      sink.setIds(cc, new Set(r.ids || []), !!r.truncated, r.as_of || at);
     } catch (err) {
       if (this.dead() || seq !== this.idSeq) return;
       console.warn("country ids", err); // the globe keeps the previous set; the list shows the error
+    } finally {
+      this.end("ids", ctl, ok);
     }
   }
   renderAll() { this.paintSummary(); this.renderList(); }
   // pages of PAGE events, sorted by the server (lifecycle, then last update). "reset" starts over
   // (filter change) and pins the window; "more" appends the next page under that pin; "refresh"
-  // reads only the newest PAGE with a fresh window and merges it (mergeTop): new ids on top, shown
-  // rows updated in place, older pages and the pin left alone
+  // reads only the newest PAGE with a fresh window and merges it (mergeRefresh): new ids in, shown
+  // rows updated in place, all back in server order; older pages and the pin left alone
   async loadList(mode) {
     if (mode !== "more" && mode !== "reset" && this.pageUntil == null) mode = "reset"; // never loaded (hidden at start / failed): a first load
     const more = mode === "more", refresh = mode === "refresh";
     if (refresh && this.moreBusy) return; // a "load more" in flight wins; the next tick refreshes
-    const seq = ++this.listSeq;
+    const seq = ++this.listSeq, ctl = this.begin("list");
     if (mode === "reset") { this.items = []; this.more = false; this.listErr = null; this.pageAt = this.pageUntil = null; this.pageN = 0; }
     this.moreBusy = more;
     const now = more && this.pageAt ? this.pageAt : Date.now(), until = more ? this.pageUntil : null;
@@ -125,14 +169,19 @@ class CountryPane {
       const b = el.querySelector(".cx-more");
       if (b) { b.disabled = true; b.textContent = "Loading…"; }
     }
-    let first = null, added = 0;
+    let first = null, added = 0, ok = false;
     try {
-      const page = await fetchJson("/api/events?" + eventsQuery(this.st, { offset, limit: refresh ? limit : limit + 1, now, until, allCats: this.allCats }), EVENTS_MS);
+      const page = await fetchJson("/api/events?" + eventsQuery(this.st, { offset, limit: refresh ? limit : limit + 1, now, until, allCats: this.allCats }), EVENTS_MS, { signal: ctl.signal });
+      ok = true;
       if (this.dead() || seq !== this.listSeq) return;
       const all = page.items || [], got = all.slice(0, limit); // a first / more load asks one extra row: are there more?
       if (refresh) {
-        const m = mergeTop(this.items, got);
-        this.items = m.items; added = m.added; // this.more / the pin are about the pinned pages: unchanged
+        // fresh copies in place, new rows in, then server order again (lifecycle, last update);
+        // rows that left the sliding window go and the list stays bounded. Rows paged in by
+        // "load more" are never trimmed, and pageN is the pin's own count, so paging stays correct
+        const m = mergeRefresh(this.items, got, { since: windowRange(this.st, now).since, max: Math.max(ITEMS_MAX, this.pageN) });
+        this.items = m.items; added = m.added;
+        if (m.trimmed) this.more = true; // the trimmed tail is still reachable through "load more"
       } else if (more) {
         const n = this.items.length;
         this.items = mergePage(this.items, got);
@@ -146,6 +195,8 @@ class CountryPane {
     } catch (err) {
       if (this.dead() || seq !== this.listSeq) return;
       this.listErr = err && err.name === "AbortError" ? "No answer within " + EVENTS_MS / 1000 + " s." : String((err && err.message) || err);
+    } finally {
+      this.end("list", ctl, ok);
     }
     this.moreBusy = false; this.listLoading = false;
     this.renderList(mode, first, added);
@@ -237,12 +288,17 @@ class CountryPane {
     bs.forEach((b, i) => { b.textContent = nf(v[i]); });
     return true;
   }
-  // any filter change: new state into the pane spec (persisted), redraw, reload (the seq guard drops superseded loads)
+  // any filter change: new state into the pane spec (persisted) and redrawn now; the reload waits
+  // SET_MS for more clicks / typing. Requests of the old filters are aborted and their answers dropped
   set(next) {
     this.st = normState(next);
     this.hooks.setSpec(this.st);
+    for (const k in this.src) this.cancel(k);
+    this.sumSeq++; this.listSeq++; this.idSeq++;
+    this.moreBusy = false; this.loadingN = 1;
     this.renderHead(); this.renderFilters(); this.renderCounterparts(); // state changed: always a full repaint (focus is restored)
-    this.load("reset");
+    this.root.querySelector(".cx-filters").classList.add("cx-loading");
+    this.reload();
   }
   renderFilters() { this.keepFocus(".cx-filters", () => this.paintFilters()); }
   // rebuild a section's innerHTML, then focus the same control again (the rebuild drops focus)
@@ -264,7 +320,7 @@ class CountryPane {
         return '<li><button type="button" data-cp="' + esc(c.cc) + '" class="' + (on ? "on" : "") + '" aria-pressed="' + on + '" title="' + esc(nm + ": " + nf(c.as_location) + " as location, " + nf(c.as_actor) + " as actor. " + (on ? "Click to remove the filter" : "Click to filter " + home + " ↔ " + nm)) + '">' +
           '<span class="cx-bn">' + esc(flagOf(c.cc) ? flagOf(c.cc) + " " : "") + esc(nm) + ' <small>' + esc(c.cc) + '</small></span><span class="cx-bar"><i style="width:' + (((+c.n || 0) / max) * 100).toFixed(1) + '%"></i></span><span class="cx-bv">' + nf(c.n) + "</span></button></li>";
       }).join("") + "</ul>"
-      : '<div class="cx-none">No foreign counterparts in this window</div>');
+      : '<div class="cx-none">' + esc(counterpartsEmpty(s)) + "</div>");
   }
   paintFilters() {
     const st = this.st, c = (this.summary && this.summary.counts) || null, tot = c ? c.inside + c.abroad : null;
@@ -285,14 +341,15 @@ class CountryPane {
     if (d) this.set({ ...this.st, window: "custom", [d.dataset.date]: d.value || null });
   }
   async loadSummary() {
-    const seq = ++this.sumSeq;
+    const seq = ++this.sumSeq, ctl = this.begin("summary");
+    let ok = false;
     this.loadingN = 1; this.root.querySelector(".cx-filters").classList.add("cx-loading"); // stale counts read as dimmed until this lands
-    this.lastTry = Date.now();
     if (this.sumErr) { this.sumErr = null; if (!this.summary) this.renderHead(); } // retry: back to loading
     // backstop: never stuck on "Loading…"; armed only when a request starts (a hidden pane loads nothing)
     if (!this.summary) settleLoading(this.root.querySelector(".cx-head"), SUMMARY_MS + 2000, "Summary unavailable", () => seq === this.sumSeq);
     try {
-      const s = await fetchJson("/api/country/" + encodeURIComponent(this.st.cc) + "/summary?" + summaryQuery(this.st, { allCats: this.allCats }), SUMMARY_MS);
+      const s = await fetchJson("/api/country/" + encodeURIComponent(this.st.cc) + "/summary?" + summaryQuery(this.st, { allCats: this.allCats }), SUMMARY_MS, { signal: ctl.signal });
+      ok = true;
       if (this.dead() || seq !== this.sumSeq) return;
       this.loadingN = 0;
       this.summary = s; this.sumErr = null; this.names = summaryNames(s);
@@ -303,6 +360,8 @@ class CountryPane {
       if (this.dead() || seq !== this.sumSeq) return;
       this.loadingN = 0;
       this.sumErr = err && err.name === "AbortError" ? "No answer within " + SUMMARY_MS / 1000 + " s." : String((err && err.message) || err);
+    } finally {
+      this.end("summary", ctl, ok);
     }
     this.paintSummary();
   }
@@ -316,7 +375,8 @@ class CountryPane {
       el.innerHTML = stateHtml("loading", "Loading " + this.name(this.st.cc) + " summary…");
       return;
     }
-    const stale = this.sumErr ? '<div class="cx-stale" role="status">Showing last data · retrying</div>' : "";
+    const stale = (this.sumErr ? '<div class="cx-stale" role="status">Showing last data · retrying</div>' : "") +
+      (migrationNote(s) ? '<div class="cx-stale cx-unmig" role="note">' + esc(migrationNote(s)) + "</div>" : "");
     const t = s.threat, advs = (t && t.advisories) || [], tier = threatTier(t);
     const threat = t
       ? '<button type="button" class="cx-threat' + (tier == null ? "" : " thr-" + tier) + '" data-cx="adv" aria-expanded="' + this.advOpen + '" title="' + esc(t.as_of ? "As of " + t.as_of : "Official threat level") + '"><b>' + esc(t.level || "No official level") + "</b>" +

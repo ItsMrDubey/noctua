@@ -24,15 +24,20 @@ export async function signedUrl(path) {
   return j.url;
 }
 export const cacheBust = (u) => u + (u.includes("?") ? "&" : "?") + "t=" + Date.now();
-export async function fetchJson(url, timeoutMs = 15000) {
+// opts.signal: an optional AbortSignal of the caller (a superseded request is aborted early);
+// the timeout still applies. Either abort rejects with an AbortError.
+export async function fetchJson(url, timeoutMs = 15000, { signal = null } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  const stop = () => ctl.abort();
+  if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener("abort", stop, { once: true }); }
   try {
     const res = await fetch(url, { signal: ctl.signal, headers: { Accept: "application/json", ...authHeaders() } });
     if (!res.ok) throw new Error("HTTP " + res.status);
     return await res.json();
   } finally {
     clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", stop);
   }
 }
 

@@ -38,7 +38,8 @@ export class CountryGlobe {
     this._setFocus(null);
     this._clearOutline();
   }
-  setIds(cc, ids, truncated = false) { this.sets.set(cc, { ids, truncated: !!truncated }); if (this.active === cc) this._dim(); }
+  // fetchedAt: when the server read the set (ISO or ms); events updated after it stay undimmed
+  setIds(cc, ids, truncated = false, fetchedAt = null) { this.sets.set(cc, { ids, truncated: !!truncated, fetchedAt }); if (this.active === cc) this._dim(); }
   fit(cc, summary) {
     if (this.fitted.has(cc) || !summary) return;
     if (this.active !== cc) { this.pendingFit.set(cc, summary); return; }
@@ -60,7 +61,7 @@ export class CountryGlobe {
   }
   _dim() {
     const s = this.active ? this.sets.get(this.active) : null;
-    this._setFocus(s ? focusPredicate(s.ids, { truncated: s.truncated, cc: this.active }) : null);
+    this._setFocus(s ? focusPredicate(s.ids, { truncated: s.truncated, cc: this.active, fetchedAt: s.fetchedAt }) : null);
   }
   _setFocus(pred) {
     const t0 = performance.now();
