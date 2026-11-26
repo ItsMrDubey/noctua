@@ -14,13 +14,28 @@ const DIM = { brightness: 0.55, contrast: 1.15, saturation: 0.35, hue: 0.03 };
 const FULL = { brightness: 1.0, contrast: 1.0, saturation: 1.0, hue: 0 };
 const LABEL = { esri: "Esri World Imagery", bing: "Bing Maps Aerial", photo: "Google Photorealistic 3D" };
 
+// Stored state is versioned: installs from before v2 saved dim:false whenever only the source changed, so
+// they never saw the "Dim for data" default. A stored object without v >= 2 is migrated once (dim on); after
+// that an explicit choice sticks.
+const VER = 2;
+export function loadBasemapState(store) {
+  const st = { src: "esri", dim: true, v: VER };
+  try {
+    const stored = JSON.parse(store.getItem(KEY) || "null");
+    if (stored && typeof stored === "object") { Object.assign(st, stored); if (!(stored.v >= VER)) { st.dim = true; st.v = VER; } }
+  } catch (e) { /* storage disabled or corrupt */ }
+  return st;
+}
+
 /** Mounts the controls under the Imagery heading. ``cfgP`` resolves to /api/config;
  * ``onPhoto(on)`` is told when photorealistic tiles take over the surface. */
 export function installBasemap({ viewer, cfgP, onPhoto = () => {} }) {
   const scene = viewer.scene, layers = viewer.imageryLayers;
-  const st = { src: "esri", dim: true }; // dim is the default until the viewer stores a choice
-  try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { /* storage disabled */ }
+  let store = null;
+  try { store = localStorage; } catch (e) { /* storage disabled */ }
+  const st = store ? loadBasemapState(store) : { src: "esri", dim: true, v: VER };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* ignore */ } };
+  save(); // persists the one-time migration
 
   const head = [...document.querySelectorAll('[data-g="map"] h4.sub-h')].find((h) => /imagery/i.test(h.textContent));
   const box = document.createElement("div");
@@ -28,7 +43,7 @@ export function installBasemap({ viewer, cfgP, onPhoto = () => {} }) {
     '<label class="row field" title="Base imagery. Bing and Google need the Cesium ion token; Google 3D shows below ' + PHOTO_MAX_EYE / 1e3 + ' km eye altitude">Basemap ' +
     '<select id="bm-src" class="mini"><option value="esri">' + LABEL.esri + '</option><option value="bing">' + LABEL.bing + " (ion)</option>" +
     '<option value="photo">' + LABEL.photo + " (ion)</option></select></label>" +
-    '<label class="row sub" title="Darken and desaturate the base imagery so data layers stand out"><input type="checkbox" id="bm-dim"><span class="sw half" style="--c:#7d8792"></span>Dim for data</label>' +
+    '<label class="row sub" title="Darken and desaturate the base imagery so data layers stand out"><input type="checkbox" id="bm-dim"><span class="sw half" style="--c:var(--fg-2)"></span>Dim for data</label>' +
     '<div id="bm-status" class="row sub muted" hidden></div>';
   if (head) head.after(...box.children);
   const sel = document.getElementById("bm-src"), dim = document.getElementById("bm-dim"), msg = document.getElementById("bm-status");
