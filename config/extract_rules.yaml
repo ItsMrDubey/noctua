@@ -1,0 +1,72 @@
+# Deterministic rule extractors (osint.enrich.rules), written to event_fields with
+# source='rule'. A value from an LLM extraction whose verdict is supported outranks these
+# in the API (field_source).
+
+summary_max_chars: 280   # the summary is the picked document's snippet cut at a sentence end
+
+# Weapons / platforms: canonical label -> phrases (whole words on case-, diacritic- and
+# punctuation-folded text; the longest phrase wins; a trailing * makes the last word a
+# prefix). Quote phrases with * or punctuation.
+weapons:
+  drone: [drone, drones, uav, uavs, "unmanned aerial vehicle*", "kamikaze drone*",
+          "attack drone*", "loitering munition*", "fpv drone*", "shahed*", "geran*", "шахед*",
+          "герань*", "беспилотник*", "бпла", "дрон*", "безпілотник*", "طائرة مسيرة",
+          "طائرات مسيرة", "طائرة بدون طيار", "طائرات بدون طيار", "مسيرة مفخخة", "dron",
+          "drones kamikazes"]
+  naval drone: ["sea drone*", "naval drone*", "unmanned surface vessel*", usv, usvs,
+                "морской дрон*", "морський дрон*"]
+  ballistic missile: ["ballistic missile*", "iskander*", "kn-23", "fateh-110", "atacms",
+                      "баллистическая ракета", "баллистической ракетой", "баллистические ракеты",
+                      "баллистических ракет", "балістична ракета", "балістичні ракети",
+                      "балістичних ракет", "صاروخ باليستي", "صواريخ باليستية",
+                      "missile balistique", "missiles balistiques", "misil balístico",
+                      "misiles balísticos"]
+  cruise missile: ["cruise missile*", "kalibr*", "kh-101", "kh-555", "х-101", "tomahawk*",
+                   "storm shadow*", "scalp", "крылатая ракета", "крылатые ракеты",
+                   "крылатых ракет", "крилата ракета", "крилаті ракети", "крилатих ракет",
+                   "صاروخ كروز", "صواريخ كروز", "missile de croisière", "missiles de croisière",
+                   "misil de crucero", "misiles de crucero"]
+  missile: [missile, missiles, ракета, ракеты, ракет, ракетой, ракети, ракетами, صاروخ,
+            صواريخ, misil, misiles]
+  rocket: [rocket, rockets, "roquette*", "cohete*"]
+  MLRS: [mlrs, "multiple rocket launcher*", "himars", "grad", "smerch", "uragan", "tornado-s",
+         "рсзо", "град", "ураган", "смерч", "راجمة صواريخ", "راجمات صواريخ"]
+  artillery: [artillery, shelling, shells, "howitzer*", "артиллери*", "артобстрел*",
+              "артилері*", "артобстріл*", "قصف مدفعي", "مدفعية", "artillerie", "obus",
+              "artillería"]
+  mortar: ["mortar*", "миномет*", "мінометн*", "قذائف هاون", "هاون", "mortier*", "mortero*"]
+  airstrike: ["airstrike*", "air strike*", "air raid*", "aerial bombardment",
+              "aerial bombing", "авиаудар*", "авиационный удар", "авіаудар*", "غارة جوية",
+              "غارات جوية", "غارة", "غارات", "frappe aérienne", "frappes aériennes",
+              "bombardement aérien", "ataque aéreo", "ataques aéreos", "bombardeo aéreo"]
+  IED: [ied, ieds, "improvised explosive device*", "roadside bomb*",
+        "самодельное взрывное устройство", "сву", "عبوة ناسفة", "عبوات ناسفة",
+        "engin explosif improvisé", "artefacto explosivo improvisado"]
+  VBIED: [vbied, vbieds, "car bomb*", "vehicle-borne ied*", "vehicle borne ied*", "truck bomb*",
+          "suicide car bomb*", "سيارة مفخخة", "voiture piégée", "coche bomba"]
+  tank: [tank, tanks, "танк*", دبابة, دبابات]
+  frigate: ["frigate*", "фрегат*", فرقاطة, "frégate*", "fragata*"]
+  destroyer: ["destroyer*", "эсминец", "эсминца", "есмінець", مدمرة]
+  corvette: ["corvette*", "корвет*", "corbeta*"]
+  submarine: ["submarine*", "подводная лодка", "подводной лодки", "подводную лодку",
+              "подлодк*", "підводний човен", "підводного човна", غواصة, "sous-marin*",
+              "submarino*"]
+  aircraft carrier: ["aircraft carrier*", "авианос*", "авіанос*", "حاملة طائرات",
+                     "porte-avions", "portaaviones"]
+  landing ship: ["landing ship*", "amphibious assault ship*", "большой десантный корабль",
+                 "бдк", "десантний корабель"]
+  patrol boat: ["patrol boat*", "patrol vessel*", "fast attack craft", "патрульный катер",
+                "сторожевой корабль", "زورق دورية"]
+  warship: ["warship*", "naval vessel*", "military vessel*", "военный корабль",
+            "военные корабли", "военного корабля", "військовий корабель", "бойовий корабель",
+            "سفينة حربية", "سفن حربية", "navire de guerre", "buque de guerra"]
+# a generic label is dropped when a more specific one is found in the same event
+weapons_subsumed:
+  missile: [ballistic missile, cruise missile]
+  drone: [naval drone]
+  rocket: [MLRS]
+  IED: [VBIED]
+  warship: [frigate, destroyer, corvette, submarine, aircraft carrier, landing ship, patrol boat]
+# phrases that contain a weapon word but are not weapons
+weapons_ignore: ["think tank*", "oil tank*", "fuel tank*", "water tank*", "storage tank*",
+                 "septic tank*", "gas tank*"]
