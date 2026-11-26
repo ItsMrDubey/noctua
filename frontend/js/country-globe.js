@@ -84,6 +84,10 @@ export class CountryGlobe {
     if (seq !== this.seq || this.active !== cc || !polys.length) return;
     const line = cesiumColor("--line-2");
     const fill = cesiumColor("--amber", FILL_ALPHA);
+    // one Material shared by every polyline of this outline (not one per ring); it lives and dies
+    // with this PolylineCollection, which _clearOutline() destroys. Built fresh per outline, never
+    // reused across collections; 8 open/close cycles left the primitive count at its baseline
+    // with no console errors
     const mat = C.Material.fromType("Color", { color: line });
     const inst = [];
     const edges = new C.PolylineCollection();

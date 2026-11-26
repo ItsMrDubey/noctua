@@ -211,3 +211,16 @@ export function outlineRuns(ring) {
   }
   return runs.map((r) => r.flat());
 }
+
+// what the globe sync does on a dossier notification ("noctua:dossier" detail: {state, focused,
+// specs}) while `active` (ISO2 or null) is the active country: "deactivate" when the dossier is no
+// longer open (closed / minimised, e.g. by Esc) or the active country's pane is gone, "activate"
+// (with cc) when a country pane has focus, otherwise "keep" (another pane focused beside it,
+// an inner layer such as a zoomed pane or lightbox closed by Esc)
+export function globeAction(detail, active) {
+  const d = detail || {}, cc = (s) => String((s && s.cc) || "").toUpperCase();
+  if (d.state !== "open") return active ? { op: "deactivate" } : { op: "keep" };
+  if (d.focused && d.focused.type === "country" && cc(d.focused)) return { op: "activate", cc: cc(d.focused) };
+  if (active && !(d.specs || []).some((s) => s && s.type === "country" && cc(s) === active)) return { op: "deactivate" };
+  return { op: "keep" };
+}

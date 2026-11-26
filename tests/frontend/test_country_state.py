@@ -289,3 +289,33 @@ def test_outline_runs_close_rings_and_drop_the_antimeridian_seam():
     assert east == [[180, 10, 170, 10, 170, 0, 180, 0]]
     assert west == [[-180, 0, -170, 0, -170, 10, -180, 10]]
     assert short == [] and none == []
+
+
+def test_globe_action_follows_the_dossier_not_esc():
+    r = run(
+        'const ua = {type: "country", cc: "ua"}, ru = {type: "country", cc: "RU"},'
+        ' intel = {type: "intel", kind: "event", id: "x"};'
+        "return ["
+        ' S.globeAction({state: "open", focused: ua, specs: [ua]}, null),'
+        ' S.globeAction({state: "open", focused: ru, specs: [ua, ru]}, "UA"),'
+        ' S.globeAction({state: "open", focused: intel, specs: [ua, intel]}, "UA"),'
+        ' S.globeAction({state: "open", focused: ua, specs: [ua]}, "UA"),'
+        ' S.globeAction({state: "min", focused: ua, specs: [ua]}, "UA"),'
+        ' S.globeAction({state: "closed", focused: null, specs: []}, "UA"),'
+        ' S.globeAction({state: "min", focused: ua, specs: [ua]}, null),'
+        ' S.globeAction({state: "open", focused: intel, specs: [intel]}, "UA"),'
+        ' S.globeAction({state: "open", focused: null, specs: []}, null),'
+        " S.globeAction(null, null)];"
+    )
+    assert r == [
+        {"op": "activate", "cc": "UA"},
+        {"op": "activate", "cc": "RU"},
+        {"op": "keep"},  # intel pane focused beside the country pane: context stays
+        {"op": "activate", "cc": "UA"},  # inner-layer Esc re-announces the same state: no reset
+        {"op": "deactivate"},  # Esc / B minimised the dossier
+        {"op": "deactivate"},
+        {"op": "keep"},
+        {"op": "deactivate"},  # the country pane was closed
+        {"op": "keep"},
+        {"op": "keep"},
+    ]
