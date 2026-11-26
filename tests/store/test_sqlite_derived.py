@@ -126,6 +126,18 @@ def test_lifecycle_inputs_and_set_lifecycle(store):
     assert store.get_event("E1")["lifecycle"] == "developing"
 
 
+def test_an_older_build_deleting_an_event_drops_its_rule_rows(store):
+    """Older builds sharing the database delete events without knowing event_rule_fields:
+    a trigger drops the rule rows with the event row."""
+    store.save_events([_ev("E1"), _ev("E2")])
+    store.replace_rule_fields(["E1", "E2"], [
+        {"event_id": e, "field": "headline", "value": e, "doc_id": "d", "quote": e}
+        for e in ("E1", "E2")])
+    with store._db:
+        store._db.execute("DELETE FROM events WHERE id='E1'")
+    assert set(store.rule_fields(["E1", "E2"])) == {"E2"}
+
+
 def test_an_existing_database_gets_the_new_columns(tmp_path):
     path = tmp_path / "old.sqlite"
     db = sqlite3.connect(path)

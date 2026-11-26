@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS event_rule_fields (
   quote TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,
   PRIMARY KEY (event_id, field, value, doc_id));
 CREATE INDEX IF NOT EXISTS event_rule_fields_event ON event_rule_fields(event_id);
+-- older builds sharing the database delete events without knowing this table
+CREATE TRIGGER IF NOT EXISTS events_rule_fields_del AFTER DELETE ON events BEGIN
+  DELETE FROM event_rule_fields WHERE event_id = OLD.id;
+END;
 CREATE TABLE IF NOT EXISTS gdelt_decisions (
   gdelt_event_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL,
   event_id TEXT, doc_id TEXT, category TEXT, decided_at TEXT NOT NULL);
