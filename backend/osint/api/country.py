@@ -72,7 +72,8 @@ def gazetteer_point(runtime, cc: str) -> tuple[float, float] | None:
                     try:
                         for c, lat, lon in db.execute(
                                 "SELECT cc, lat, lon FROM places WHERE feature = 'COUNTRY'"):
-                            if isinstance(c, str) and len(c) == 2 and lat is not None                                     and lon is not None:
+                            ok = lat is not None and lon is not None
+                            if isinstance(c, str) and len(c) == 2 and ok:
                                 pts.setdefault(c.upper(), (float(lat), float(lon)))
                     finally:
                         db.close()
