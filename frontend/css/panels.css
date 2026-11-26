@@ -58,7 +58,8 @@
 .seg { display: flex; }
 .seg button { padding: 4px 8px; font: 600 11px/1 var(--f-head); letter-spacing: .08em; text-transform: uppercase; margin-left: -1px; border-radius: 0; border-color: var(--line); background: transparent; color: var(--dim); }
 .seg button:hover { color: var(--fg); background: transparent; border-color: var(--line); }
-.seg button.on { color: var(--fg); background: transparent; border-color: var(--line); box-shadow: inset 0 -2px 0 var(--acc); }
+.seg button.on { color: var(--fg); background: color-mix(in srgb, var(--acc) 18%, transparent); border-color: var(--acc); box-shadow: none; } /* multi-select toggles: on-chip state */
+.seg .tab.on { background: transparent; border-color: var(--line); box-shadow: inset 0 -2px 0 var(--acc); } /* single-select tabs: amber underline */
 .tk-tools input { flex: 1; min-width: 0; font-size: 11px; padding: 4px 7px; }
 .tk-tools .num { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .tk-body { flex: 1; overflow: auto; position: relative; outline: none; }
