@@ -4,7 +4,7 @@
 import { fetchJson } from "/static/js/api.js";
 import { esc, nf, stateHtml, settleLoading } from "/static/js/ui.js";
 import { EVENT_CATS } from "/static/js/symbology.js";
-import { LIFECYCLES, normState, summaryQuery, flagEmoji, sparkPath, threatTier, summaryNames } from "/static/js/country-state.js";
+import { LOCATIONS, INVOLVEMENTS, WINDOWS, LIFECYCLES, normState, summaryQuery, toggleCat, flagEmoji, sparkPath, threatTier, summaryNames, pairLabel } from "/static/js/country-state.js";
 
 const ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 14.5V2"/><path d="M3.5 2.5h9l-2.2 3 2.2 3h-9"/></svg>';
 const REFRESH_MS = 60000; // the live event poll's cadence (app.js)
@@ -44,6 +44,7 @@ class CountryPane {
     body.innerHTML = '<div class="dk-root cx-pane"><div class="cx-head"></div><div class="cx-filters"></div><div class="cx-cp"></div><div class="cx-list"></div></div>';
     this.root = body.firstElementChild;
     this.root.addEventListener("click", (e) => this.click(e));
+    this.root.addEventListener("change", (e) => this.change(e));
   }
   dead() { return this.hooks.stale() || !this.body.isConnected; }
   // minimised / closed dossier or inactive tab: display:none ancestors give offsetParent null
@@ -68,7 +69,32 @@ class CountryPane {
   }
   load() { return this.loadSummary(); }
   renderAll() { this.paintSummary(); }
-  paintSummary() { this.renderHead(); }
+  paintSummary() { this.renderHead(); this.renderFilters(); }
+  // any filter change: new state into the pane spec (persisted), redraw, reload (the seq guard drops superseded loads)
+  set(next) {
+    this.st = normState(next);
+    this.hooks.setSpec(this.st);
+    this.renderAll();
+    this.load("reset");
+  }
+  renderFilters() {
+    const st = this.st, c = (this.summary && this.summary.counts) || null, tot = c ? c.inside + c.abroad : null;
+    const seg = (key, values, labels, counts) => '<span class="seg cx-seg" role="group" aria-label="' + key + '">' + values.map((v, i) =>
+      '<button type="button" data-k="' + key + '" data-v="' + v + '" class="tab' + (st[key] === v ? " on" : "") + '" aria-pressed="' + (st[key] === v) + '">' + labels[i] +
+      (counts && counts[v] != null ? " <b>" + nf(counts[v]) + "</b>" : "") + "</button>").join("") + "</span>";
+    const loc = seg("location", LOCATIONS, ["ALL", "INSIDE", "ABROAD"], c && { all: tot, inside: c.inside, abroad: c.abroad });
+    const inv = seg("involvement", INVOLVEMENTS, ["ALL", "DOMESTIC", "FOREIGN", "UNATTRIB."], c && { all: tot, domestic: c.domestic, foreign: c.foreign, unattributed: c.unattributed });
+    const win = seg("window", WINDOWS, ["24H", "7D", "30D", "CUSTOM"], null);
+    const dates = st.window === "custom" ? '<span class="cx-dates"><input type="date" data-date="from" value="' + esc(st.from || "") + '" aria-label="From (UTC)"><span aria-hidden="true">→</span><input type="date" data-date="to" value="' + esc(st.to || "") + '" aria-label="To (UTC)"></span>' : "";
+    const pair = st.counterpart ? '<button type="button" class="cx-pair" data-cx="uncp" title="Remove the counterpart filter">' + esc(pairLabel(st, this.names)) + ' <span aria-hidden="true">×</span></button>' : "";
+    const on = (k) => !st.cats || st.cats.includes(k);
+    const cats = '<div class="chips cx-cats">' + this.allCats.map((k) => '<button type="button" class="chip' + (on(k) ? " on" : "") + '" data-cat="' + k + '" aria-pressed="' + on(k) + '" style="--c:' + EVENT_CATS[k][1] + '" title="' + esc(EVENT_CATS[k][0]) + '">' + esc(EVENT_CATS[k][0]) + "</button>").join("") + "</div>";
+    this.root.querySelector(".cx-filters").innerHTML = '<div class="cx-frow">' + loc + inv + '</div><div class="cx-frow">' + win + dates + pair + "</div>" + cats;
+  }
+  change(e) {
+    const d = e.target.closest("[data-date]");
+    if (d) this.set({ ...this.st, window: "custom", [d.dataset.date]: d.value || null });
+  }
   async loadSummary() {
     const seq = ++this.sumSeq;
     this.lastTry = Date.now();
@@ -118,8 +144,12 @@ class CountryPane {
   click(e) {
     const t = e.target.closest("button");
     if (!t || !this.root.contains(t)) return;
-    if (t.dataset.cx === "retry") this.loadSummary();
-    else if (t.dataset.cx === "adv") { this.advOpen = !this.advOpen; this.renderHead(); }
+    const st = this.st, a = t.dataset.cx;
+    if (a === "retry") this.loadSummary();
+    else if (a === "adv") { this.advOpen = !this.advOpen; this.renderHead(); }
+    else if (a === "uncp") this.set({ ...st, counterpart: null });
+    else if (t.dataset.k) this.set({ ...st, [t.dataset.k]: t.dataset.v });
+    else if (t.dataset.cat) this.set({ ...st, cats: toggleCat(st.cats, t.dataset.cat, this.allCats) });
   }
 }
 

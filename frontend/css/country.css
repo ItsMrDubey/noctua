@@ -42,3 +42,17 @@
 .cx-head > .state { padding: 0; }
 .cx-sub { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font: 600 11px var(--f-head); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-2); padding: 4px 0; border-bottom: 1px solid var(--line); }
 .cx-sub small { font: 11px var(--f-mono); letter-spacing: 0; text-transform: none; color: var(--dim); }
+
+/* filter bar */
+.cx-filters { display: flex; flex-direction: column; gap: 6px; }
+.cx-frow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cx-seg button b { font: 11px var(--f-mono); color: var(--dim); margin-left: 2px; }
+.cx-seg button.on b { color: var(--amber); }
+.cx-dates { display: inline-flex; align-items: center; gap: 4px; font: 11px var(--f-mono); color: var(--dim); }
+.cx-dates input { font: 11px var(--f-mono); color: var(--fg); background: transparent; border: 1px solid var(--line-2); padding: 2px 4px; color-scheme: dark; }
+.cx-pair { font: 11px var(--f-mono); padding: 3px 8px; border: 1px solid var(--amber); color: var(--amber); background: rgba(var(--acc-rgb), .08); cursor: pointer; }
+.cx-cats { padding: 0; }
+.cx-cats .chip { cursor: pointer; }
+.ds-pane .cx-cats .chip { font-size: 11px; }
+.ds-pane .cx-cats .chip.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
+.ds-pane .cx-cats .chip:not(.on) { color: var(--dim) !important; border-color: var(--line); background: transparent; }
