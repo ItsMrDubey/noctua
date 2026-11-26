@@ -333,6 +333,23 @@ class SqliteStore:
         if migrate:
             self._status_baseline()
 
+    @classmethod
+    def open_read_only(cls, path: Path) -> "SqliteStore":
+        """A store on a read-only connection (URI ``mode=ro``): no schema creation, no
+        column adds, no healing; any write raises. For report-only runs against a live
+        database (``migrate_countries --dry-run``); readers of columns the database does
+        not have yet fail."""
+        self = cls.__new__(cls)
+        self.path = path
+        self._lock = threading.Lock()
+        self._db = connect(path, read_only=True)
+        self._db.row_factory = sqlite3.Row
+        return self
+
+    def has_column(self, table: str, column: str) -> bool:
+        with self._lock:
+            return column in {r[1] for r in self._db.execute(f"PRAGMA table_info({table})")}
+
     def _migrate_origin(self, heal: bool = True) -> None:
         """Add/backfill ``events.origin`` (idempotent; cheap on later starts)."""
         with self._lock:
@@ -1040,6 +1057,27 @@ class SqliteStore:
                              "actors": json.loads(r[3] or "[]"), "title": r[4],
                              "summary": r[5] or "", "t_end": r[6]}
         return out
+
+    def event_countries(self) -> list[tuple[str, str, str | None]]:
+        """(id, origin, country) of every event (country migration)."""
+        with self._lock:
+            return [(r[0], r[1], r[2]) for r in self._db.execute(
+                "SELECT id, origin, country FROM events ORDER BY id").fetchall()]
+
+    def set_event_countries(self, rows: list[tuple[str | None, str]]) -> int:
+        """Write (country, event id) pairs to events.country; returns rows updated."""
+        n = 0
+        with self._lock, self._db:
+            for i in range(0, len(rows), WRITE_CHUNK):
+                n += self._db.executemany("UPDATE events SET country=? WHERE id=?",
+                                          rows[i: i + WRITE_CHUNK]).rowcount
+        return n
+
+    def event_ids_since(self, since: datetime) -> list[str]:
+        """Ids of events of any origin with t_end >= ``since``."""
+        with self._lock:
+            return [r[0] for r in self._db.execute(
+                "SELECT id FROM events WHERE t_end >= ? ORDER BY id", (iso(since),))]
 
     def merge_events(self, merges: list[dict], events: list[dict]) -> int:
         """Fold merged-away news events into their survivors, atomically and in order.

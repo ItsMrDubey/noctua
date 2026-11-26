@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from osint.core.metrics import Metrics
@@ -51,6 +51,8 @@ class RulePassStats:
     attributed: int = 0
     foreign: int = 0
     seconds: float = 0.0
+    # rule field (e.g. "casualties.killed") -> events that got a value for it
+    field_events: Counter[str] = field(default_factory=Counter)
 
 
 def _llm_actors(rec: Mapping[str, Any] | None) -> list[dict]:
@@ -158,6 +160,7 @@ class RulePass:
             if values is not None:
                 rule_ids.append(eid)
                 rule_rows += rows
+                stats.field_events.update({r["field"] for r in rows})
         stats.fields += len(rule_rows)
         if write and (derived or rule_ids):
             self.store.write_rule_results(derived, rule_ids, rule_rows)  # one transaction
