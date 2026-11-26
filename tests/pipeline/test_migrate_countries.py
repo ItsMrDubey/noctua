@@ -1,4 +1,5 @@
 import hashlib
+import socket
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
@@ -243,4 +244,63 @@ def test_cli_dry_run_leaves_no_side_files(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("OSINT_DATA_DIR", str(tmp_path))
     assert main(["--dry-run"]) == 0
     assert sorted(p.name for p in tmp_path.iterdir()) == before
-    assert "Stop the server" not in capsys.readouterr().out  # real-run notice only
+    cap = capsys.readouterr()
+    assert "Stop every server" not in cap.out + cap.err  # real-run notice only
+
+
+def _free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _real_run_db(tmp_path, monkeypatch, port):
+    db = tmp_path / "osint.sqlite"
+    s = SqliteStore(db)
+    _fill(s)
+    s.close()
+    monkeypatch.setenv("OSINT_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OSINT_PORT", str(port))
+    monkeypatch.setenv("OSINT_EMBEDDING", "0")
+    return db
+
+
+def test_cli_real_run_refuses_while_a_server_listens(tmp_path, monkeypatch, capsys):
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen()
+        db = _real_run_db(tmp_path, monkeypatch, srv.getsockname()[1])
+        before = _digest(db)
+        assert main([]) != 0
+        err = capsys.readouterr().err
+        assert "server" in err and "--force" in err
+        assert _digest(db) == before and not rebuild_lock_path(db).exists()
+        s = SqliteStore.open_read_only(db)
+        try:
+            assert s.get_cursor(COUNTRY_MIGRATION_STATE) is None
+        finally:
+            s.close()
+        assert main(["--force"]) == 0  # an explicit override runs anyway
+    s = SqliteStore.open_read_only(db)
+    try:
+        assert s.get_cursor(COUNTRY_MIGRATION_STATE)["done"] is True
+    finally:
+        s.close()
+
+
+def test_cli_real_run_without_a_server_runs_and_prints_the_notice(tmp_path, monkeypatch,
+                                                                  capsys):
+    _real_run_db(tmp_path, monkeypatch, _free_port())
+    assert main([]) == 0
+    err = capsys.readouterr().err
+    assert ("Stop every server in every worktree that does not run this version, and back up "
+            "data/ (osint.sqlite, extraction.sqlite, embeddings.sqlite incl. -wal/-shm) "
+            "before running without --dry-run.") in err
+
+
+def test_cli_dry_run_ignores_a_listening_server(tmp_path, monkeypatch, capsys):
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen()
+        _real_run_db(tmp_path, monkeypatch, srv.getsockname()[1])
+        assert main(["--dry-run"]) == 0

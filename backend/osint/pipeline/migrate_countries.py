@@ -11,7 +11,9 @@ GDELT), ISO3 / CAMEO when three, else as a name. Re-resolves every event's actor
 --rebuild-events``): the server's EventBuilder pauses meanwhile and reloads its index
 afterwards. Prints a before/after report (country-code formats, FIPS / names rewritten,
 unresolved values, attributed share). ``--dry-run`` writes nothing: it opens the databases
-read-only (no schema upgrade either), takes no lock and writes no marker.
+read-only (no schema upgrade either), takes no lock and writes no marker. A real run
+refuses to start while a server answers on 127.0.0.1:<OSINT_PORT> (default 8765) unless
+``--force`` is given.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import socket
 import sys
 import time
 from collections import Counter
@@ -239,12 +242,29 @@ def _drop_created_side_files(seen: dict[Path, bool]) -> None:
             log.warning("could not remove %s", p)
 
 
+PRECONDITION_NOTICE = (
+    "Stop every server in every worktree that does not run this version, and back up data/ "
+    "(osint.sqlite, extraction.sqlite, embeddings.sqlite incl. -wal/-shm) before running "
+    "without --dry-run.")
+
+
+def server_listening(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -> bool:
+    """True when ``host:port`` accepts a TCP connection (an OSINT server is running)."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="osint.pipeline.migrate_countries", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="report only, write nothing")
     ap.add_argument("--days", type=float, default=30.0,
                     help="run the rule extractors for events of the last N days")
+    ap.add_argument("--force", action="store_true",
+                    help="run even though a server answers on 127.0.0.1:<OSINT_PORT>")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -262,9 +282,11 @@ def main(argv: list[str] | None = None) -> int:
     ext_path = st.data_dir / "extraction.sqlite"
     seen = {**_side_files(st.sqlite_path), **_side_files(ext_path)} if dry else {}
     if not dry:
-        print("Stop the server (or upgrade it to this version) and back up data/ before "
-              "running without --dry-run; the run holds the rebuild lock and adds "
-              "columns/indexes.", file=sys.stderr)
+        print(PRECONDITION_NOTICE, file=sys.stderr)
+        if server_listening(int(st.port)) and not args.force:
+            print(f"A server is running on 127.0.0.1:{st.port}: stop it first (or pass "
+                  "--force to run anyway). Nothing was changed.", file=sys.stderr)
+            return 2
     store = SqliteStore.open_read_only(st.sqlite_path) if dry else SqliteStore(st.sqlite_path)
     view: Any = store
     if dry and not store.has_column("event_rule_fields", "event_id"):
