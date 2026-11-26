@@ -49,3 +49,41 @@ def test_headline_and_summary_values():
         ("summary", "A missile hit Kharkiv overnight. Officials said two people died.", "d1")]
     assert vals[0].quote == "Missile hits Kharkiv"
     assert [v.field for v in headline_summary({}, [_d(1, "Title only")])] == ["headline"]
+
+
+def test_cut_summary_does_not_split_on_abbreviations():
+    lead = ("Defence officials confirmed the strike on Tuesday morning near the northern front "
+            "line, the ministry said in a statement, while Gen. Brown told reporters that "
+            "forces had advanced well beyond the river line " + "and on " * 40)
+    out = cut_summary(lead)
+    assert len(out) <= 280 and out.endswith("…")
+    assert not out.endswith("Gen.…") and "Brown told reporters" in out
+
+
+def test_cut_summary_us_acronym_and_initials_and_titles():
+    long = ("U.S. forces said they struck two sites near the border on Monday " + "x " * 20
+            + "after warnings. Second sentence follows here " + "y " * 150)
+    out = cut_summary(long)
+    assert out.endswith("after warnings.") and out.startswith("U.S. forces")
+    mid = ("Troops moved in overnight across the northern provinces according to the ministry, "
+           "and the U.S. forces said they would respond " + "later " * 50)
+    assert "U.S. forces said" in cut_summary(mid)
+    mr = "Mr. Smith said the talks " + "went on " * 8 + "late. " + "Z " * 200
+    assert cut_summary(mr).endswith("late.")
+    assert cut_summary("J. Smith said " + "go " * 120).endswith("…")
+    assert cut_summary("Talks ended at 3 p.m. local time on a long day " + "q " * 150).endswith("…")
+
+
+def test_cut_summary_short_first_sentence():
+    first = "Rebels shelled the town today."
+    out = cut_summary(first + " " + "And then it went on " * 20)
+    assert out == first
+
+
+def test_cut_summary_no_terminator_and_non_latin():
+    out = cut_summary("word " * 100)
+    assert len(out) <= 280 and out.endswith("…")
+    ar = "هل وقع الهجوم؟ " + "كلمة " * 100
+    assert cut_summary(ar) == "هل وقع الهجوم؟"
+    zh = "袭击发生了。" + "继续" * 200
+    assert cut_summary(zh) == "袭击发生了。"
