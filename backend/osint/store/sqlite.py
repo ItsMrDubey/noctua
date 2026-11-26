@@ -1007,19 +1007,21 @@ class SqliteStore:
         return out
 
     def events_for_rules(self, event_ids: list[str]) -> dict[str, dict]:
-        """event id -> {id, origin, country, actors, title, summary, t_end}."""
+        """event id -> {id, origin, category, country, actors, title, summary, t_end}
+        (``category`` gates the conflict-only actor phrases of ``resolve_actors``)."""
         out: dict[str, dict] = {}
         for i in range(0, len(event_ids), 800):
             chunk = event_ids[i: i + 800]
             with self._lock:
                 rows = self._db.execute(
-                    "SELECT id, origin, country, actors, title, summary, t_end FROM events "
-                    f"WHERE id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+                    "SELECT id, origin, country, actors, title, summary, t_end, category "
+                    f"FROM events WHERE id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
             for r in rows:
-                out[r[0]] = {"id": r[0], "origin": r[1], "country": r[2],
+                out[r[0]] = {"id": r[0], "origin": r[1], "category": r[7], "country": r[2],
                              "actors": json.loads(r[3] or "[]"), "title": r[4],
                              "summary": r[5] or "", "t_end": r[6]}
         return out
+
     def merge_events(self, merges: list[dict], events: list[dict]) -> int:
         """Fold merged-away news events into their survivors, atomically and in order.
 

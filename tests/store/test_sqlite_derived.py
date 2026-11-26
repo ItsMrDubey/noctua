@@ -90,6 +90,7 @@ def test_rule_documents_and_events_for_rules(store):
     ev = store.events_for_rules(["E1", "nope"])
     assert set(ev) == {"E1"} and ev["E1"]["actors"][0]["country"] == "RUS"
     assert ev["E1"]["origin"] == "news" and ev["E1"]["summary"] == "s"
+    assert ev["E1"]["category"] == _ev()["category"]
 
 
 def test_lifecycle_inputs_and_set_lifecycle(store):

@@ -301,3 +301,81 @@ def test_backlog_flag_set_while_pages_are_full(tmp_path):
     assert not b.backlog
     assert store.get_cursor(CURSOR_NAME)["fetched_at"].startswith("2026-11-21T11:34")
     store.close()
+
+
+def test_builder_pass_runs_rule_extraction(tmp_path):
+    from osint.enrich.actors import ActorLexicon
+    from osint.enrich.rules import RuleSet
+    from osint.pipeline.rule_pass import RulePass
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    title = "Russian shelling of Kyiv kills 3 civilians"
+    lake.write("documents", [
+        _row(1, title, fetched=NOW - timedelta(minutes=50)),
+        _row(2, title, fetched=NOW - timedelta(minutes=40), host="other.example")])
+    b = _builder(store, lake, lambda: NOW)
+    b.rule_pass = RulePass(store, lexicon=ActorLexicon.load(), rules=RuleSet.load(), lake=lake)
+    s = b.run_once()
+    assert s.created == 1 and s.rule_events == 1 and s.rule_errors == 0
+    [ev] = store.list_events(limit=10)
+    assert ev["country"] == "UA" and ev["actor_countries"] == ["RU"]
+    assert ev["foreign_involved"] == 1 and ev["attributed"] == 1
+    got = {(r["field"], r["value"]) for r in store.rule_fields([ev["id"]])[ev["id"]]}
+    assert {("headline", title), ("casualties.killed", "3"),
+            ("weapons_platforms", "artillery")} <= got
+    full = store.get_event(ev["id"])
+    assert any(a["source"] == "rule" and a["country"] == "RU" for a in full["actors"])
+    assert b.clusterer.events[ev["id"]].actors == full["actors"]
+    store.close()
+
+
+def test_builder_pass_reports_unresolved_countries(tmp_path):
+    from osint.core import countries
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    b = _builder(store, lake, lambda: NOW)
+    countries.drain_unresolved()
+    countries.to_iso2("Atlantis", "name")
+    m = b.metrics
+    assert b.run_once().unresolved_country == 1
+    assert m.get("unresolved_country_total") == 1
+    assert b.run_once().unresolved_country == 0
+    store.close()
+
+
+def test_new_verdicts_re_run_rule_extraction(tmp_path):
+    from osint.enrich.actors import ActorLexicon
+    from osint.enrich.rules import RuleSet
+    from osint.pipeline.rule_pass import RulePass
+
+    class Verifier:
+        def __init__(self):
+            self.recs = {}
+
+        def verdicts_since(self, since):
+            return list(self.recs)
+
+        def get_many(self, ids):
+            return {i: self.recs[i] for i in ids if i in self.recs}
+
+    lake = Lake(tmp_path / "lake")
+    store = SqliteStore(tmp_path / "s.sqlite")
+    lake.write("documents", [_row(1, "Shelling of Kyiv kills 3 civilians",
+                                  fetched=NOW - timedelta(minutes=50))])
+    b = _builder(store, lake, lambda: NOW)
+    b.verifier = Verifier()
+    b.rule_pass = RulePass(store, lexicon=ActorLexicon.load(), rules=RuleSet.load(),
+                           extractions=b.verifier)
+    b.run_once()
+    [ev] = store.list_events(limit=10)
+    assert ev["actor_countries"] == []
+    b.verifier.recs[ev["id"]] = {"status": "done", "verdict": "supported", "reasons": [],
+                                 "doc_id": "doc:1", "result": {"actors": [
+                                     {"name": "Russian Armed Forces", "role": "perpetrator"}]}}
+    s = b.run_once()  # no new documents: only the verdict triggers the rule pass
+    assert s.documents == 0 and s.verdicts_applied == 1 and s.rule_events == 1
+    assert store.get_event(ev["id"])["actor_countries"] == ["RU"]
+    assert b.run_once().rule_events == 0  # an unchanged verdict is not re-applied
+    store.close()
