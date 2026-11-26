@@ -42,8 +42,9 @@ export class Trails {
     const key = kind + ":" + id;
     const now = Date.now();
     if (!force && key === this.selKey && now - this.lastSel < 8000) return;
+    const fresh = force || key !== this.selKey; // periodic refreshes of the same track keep the current placeholder (no "loading" flicker)
     this.selKey = key; this.lastSel = now;
-    if (this.onState) this.onState(key, true, null);
+    if (fresh && this.onState) this.onState(key, true, null);
     try {
       const d = await fetchJson("/api/tracks/" + encodeURIComponent(id) + "?hours=6");
       if (this.selKey !== key) { if (this.onState) this.onState(key, false, null); return; } // selection changed / trail toggled off while fetching

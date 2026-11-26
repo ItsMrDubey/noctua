@@ -13,7 +13,7 @@ const extras = (ex, skip) => Object.entries(ex || {}).filter(([k, v]) => !skip.i
 // request is outstanding), then error, then an answered-but-short trail is "empty", else not requested.
 export function trailState({ inFlight, pts, error }) {
   if (pts && pts.length > 1) return "ready";
-  if (inFlight) return "loading";
+  if (inFlight && pts == null && !error) return "loading"; // a refresh with something to show keeps showing it
   if (error) return "error";
   return pts ? "empty" : "off";
 }

@@ -58,6 +58,8 @@ def test_trail_state():
 const o = [
   trailState({ inFlight: true, pts: null }),
   trailState({ inFlight: true, pts: [{}] }),
+  trailState({ inFlight: true, pts: [] }),
+  trailState({ inFlight: true, pts: null, error: "boom" }),
   trailState({ inFlight: false, pts: [{}] }),
   trailState({ inFlight: false, pts: [] }),
   trailState({ inFlight: false, pts: null, error: "boom" }),
@@ -69,7 +71,7 @@ console.log(JSON.stringify(o));
 """ % (pts, pts)
     r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "loading", "empty", "empty", "error", "off", "ready", "ready"]
+    assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "empty", "empty", "error", "empty", "empty", "error", "off", "ready", "ready"]
 
 
 @pytest.mark.skipif(NODE is None, reason="node not installed")
@@ -100,3 +102,28 @@ console.log(JSON.stringify([during, trailState({ ...req, pts })]));
     r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout.strip().splitlines()[-1]) == ["loading", "off"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed")
+def test_trail_periodic_refresh_does_not_flicker():
+    """A throttled (non-forced) refresh of the same selected track must not re-emit onState(true);
+    a forced call or a different track does."""
+    tsrc = (ROOT / "frontend" / "js" / "trails.js").read_text(encoding="utf-8")
+    ss = re.search(r"^  async showSelected.*?^  }\n", tsrc, re.S | re.M).group(0)
+    script = """
+const fetchJson = async () => ({ points: [{}, {}] });
+class T { constructor() { this.sel = { removeAll() {} }; this.scene = { requestRender() {} }; this.selKey = null; this.lastSel = 0; }
+  _draw() {}
+%s}
+const t = new T(); const ev = [];
+t.onState = (k, f) => ev.push(k + ":" + f); t.onPoints = () => {};
+const C = { Color: {} }; globalThis.colorFor = () => ({});
+await t.showSelected("aircraft", "a1", {}, false);
+t.lastSel = 0; await t.showSelected("aircraft", "a1", {}, false);
+t.lastSel = 0; await t.showSelected("aircraft", "a1", {}, true);
+t.lastSel = 0; await t.showSelected("aircraft", "a2", {}, false);
+console.log(JSON.stringify(ev));
+""" % ss
+    r = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout.strip().splitlines()[-1]) == ["aircraft:a1:true", "aircraft:a1:true", "aircraft:a2:true"]
