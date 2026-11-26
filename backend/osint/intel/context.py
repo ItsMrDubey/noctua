@@ -40,6 +40,7 @@ import sqlite3
 import statistics
 import threading
 import time
+import weakref
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -469,14 +470,31 @@ def country_names(runtime) -> dict[str, str]:
     return _country_names[str(path)]
 
 
+# stores whose country-migration marker read done: it only ever flips from not-done to done,
+# so a positive answer is cached (per store); a negative one is re-read every time
+_migrated_stores: weakref.WeakSet = weakref.WeakSet()
+
+
 def _countries_migrated(runtime) -> bool:
-    get = getattr(getattr(runtime, "store", None), "get_cursor", None)
+    store = getattr(runtime, "store", None)
+    try:
+        if store in _migrated_stores:
+            return True
+    except TypeError:  # not weak-referenceable / hashable: no cache
+        pass
+    get = getattr(store, "get_cursor", None)
     if get is None:
         return False
     try:
-        return bool((get(COUNTRY_MIGRATION_STATE) or {}).get("done"))
+        done = bool((get(COUNTRY_MIGRATION_STATE) or {}).get("done"))
     except sqlite3.Error:
         return False
+    if done:
+        try:
+            _migrated_stores.add(store)
+        except TypeError:
+            pass
+    return done
 
 
 def resolve_cc(runtime, subj: dict) -> str | None:
